@@ -7,6 +7,6 @@
 .Renviron
 outputs/*.RData
 doc
-logos
+logos/*.png
 *.Rproj
 connect.json
