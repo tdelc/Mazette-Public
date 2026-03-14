@@ -27,10 +27,13 @@ library(rhandsontable)
 link_json <- Sys.getenv("LINK_JSON")
 path_drive <- Sys.getenv("PATH_DRIVE")
 id_sheet_mazette <- Sys.getenv("ID_DRIVE_MAZETTE")
+path_logos <- Sys.getenv("PATH_LOGOS")
 
 download.file(link_json,destfile = "connect.json")
 drive_auth(path = "connect.json")
 gs4_auth(path = "connect.json")
+
+df_logos <- googledrive::drive_ls(path_logos)
 
 options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))
 

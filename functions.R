@@ -1677,11 +1677,14 @@ report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
   info_brassin <- DB_BRASSINS %>% filter(ID_BRASSIN == id_brassin)
   ventes   <- DB_BIERES %>% filter(ID_BRASSIN == id_brassin)
 
-  name_logo <- info_brassin$`NAME LOGO`
+  name_logo <- paste0(info_brassin$`NAME LOGO`,".png")
   path_logo <- NA
   # if (length(name_logo) != 0 & !is.na(name_logo)){
     try({
-      path_logo <- paste0("logos/",name_logo,".png")
+      path_logo <- paste0("logos/",name_logo)
+      id_png <- df_logos %>% filter(name == name_logo) %>% pull(id)
+      path_png <- paste0("https://drive.google.com/uc?id=",id_png,"&export=download")
+      download.file(path_png,destfile = path_logo,mode = "wb")
       img_magick <- image_read(path_logo) %>% image_scale("200")
       img_grob <- rasterGrob(as.raster(img_magick),interpolate = TRUE)
     },silent = TRUE)
