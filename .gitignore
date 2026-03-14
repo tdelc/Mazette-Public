@@ -9,4 +9,4 @@ outputs
 doc
 logos
 *.Rproj
-*.json
+connect.json
