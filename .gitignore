@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.httr-oauth
+.DS_Store
+.quarto
+.Renviron
+outputs
+doc
+logos
+*.Rproj
+*.json

@@ -1,0 +1,35 @@
+.content-wrapper { overflow: auto; }
+
+.UI_output iframe {
+  width: 100% !important;
+  height: 800px !important;
+}
+      
+.leaflet-top{
+  position: relative;
+}
+      
+.custom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-group-toggle .btn-custom-class2.active {
+  background: lightblue !important;
+}
+
+.btn-group-toggle .btn-custom-class.active {
+  background: lightgreen !important;
+}
+
+.flex-container {
+  display: flex;
+}
+
+.box_cadre {
+  flex: 1;
+  border: 1px solid #3c8dbc;
+  padding: 10px; 
+  border-radius: 2px;
+}
