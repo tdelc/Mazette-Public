@@ -199,8 +199,10 @@ table_ventes <- function(DB_JOURS,DB_OBJECTIFS,date_debut,date_fin){
 }
 
 table_produits_mois <- function(db,debut_mois){
-  DB <- DB_DATE %>% left_join(db) %>%
+  # Optimisation Bolt : Filtrer les données avant la jointure
+  DB <- DB_DATE %>%
     filter(PREMIER_JOUR_MOIS == debut_mois) %>%
+    left_join(db %>% filter(PREMIER_JOUR_MOIS == debut_mois)) %>%
     group_by(PRODUCT) %>%
     summarise(CA = sum(CA_HTVA),.groups = "drop") %>% arrange(-CA) %>%
     mutate(CA = format_CA(CA,-1)) %>%
@@ -1826,11 +1828,14 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
                             format_date = "%d",titre = "",
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
                             is_objectif=TRUE){
+  # Optimisation Bolt : Filtrer les données avant la jointure pour améliorer les performances
+  date_fin <- date_debut + days(nb_jours)
   plot_kpi <- db_kpi %>%
-    left_join(db_obj%>%
+    filter(DATE >= date_debut, DATE <= date_fin) %>%
+    left_join(db_obj %>%
+                filter(DATE >= date_debut, DATE <= date_fin) %>%
                 select(-starts_with("CA_")) %>%
                 rename(ventes_obj = ventes)) %>%
-    filter(DATE >= date_debut,DATE <= date_debut+days(nb_jours)) %>%
     # mutate(JOUR_SEMAINE = factor(JOUR_SEMAINE,levels=vecteur_jours_LOCAL,
     #                              labels = vecteur_jours)) %>%
     mutate(title = paste0(JOUR_SEMAINE," ",format(DATE,format = format_date)))
@@ -1850,12 +1855,15 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
                             format_date = "%d",titre = "",
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
                             is_objectif=TRUE){
+  # Optimisation Bolt : Filtrer les données avant la jointure et déplacer le mutate
+  date_fin <- date_debut + days(nb_jours)
   plot_kpi <- db_kpi %>%
-    left_join(db_obj%>%
+    filter(DATE >= date_debut, DATE <= date_fin) %>%
+    left_join(db_obj %>%
+                filter(DATE >= date_debut, DATE <= date_fin) %>%
                 select(-starts_with("CA_")) %>%
                 rename(ventes_obj = ventes)) %>%
-    mutate(ventes_obj = ventes_obj * (ventes>0)) %>%
-    filter(DATE >= date_debut,DATE <= date_debut+days(nb_jours)) %>%
+    mutate(ventes_obj = ventes_obj * (ventes > 0)) %>%
     summarise(ventes = sum(ventes,na.rm=TRUE),
               ventes_obj = sum(ventes_obj,na.rm=TRUE),
               Jour = sum(Jour),Soir = sum(Soir),
@@ -1993,11 +2001,13 @@ box_ventes_mois <- function(db_kpi,db_obj,debut_mois,fin_mois,
                             titre = paste(format(DATE,format = "%d/%m"),"->",
                                           format(ceiling_date(DATE, unit = "month")-1,
                                                  format = "%d/%m"))){
+  # Optimisation Bolt : Filtrer les données avant la jointure
   ventes <- db_kpi %>%
+    filter(DATE >= debut_mois, DATE <= fin_mois) %>%
     left_join(db_obj %>%
+                filter(DATE >= debut_mois, DATE <= fin_mois) %>%
                 select(-starts_with("CA_")) %>%
                 rename(ventes_obj = ventes)) %>%
-    filter(DATE >= debut_mois,DATE <= fin_mois) %>%
     group_by(PREMIER_JOUR_MOIS) %>%
     summarise(Jour=sum(Jour),Semaine =sum(Semaine),Boisson=sum(Boisson),
               Soir=sum(Soir),`Week-end` =sum(`Week-end`),Nourriture=sum(Nourriture),
