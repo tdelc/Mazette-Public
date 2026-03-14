@@ -5,7 +5,7 @@
 .DS_Store
 .quarto
 .Renviron
-outputs
+outputs/*.RData
 doc
 logos
 *.Rproj
