@@ -48,12 +48,30 @@ label_specific <- function(jour,nb_jours){
     paste0(format(jour,"%a %d/%m/%y")," -> ",format(jour+nb_jours,"%d/%m/%y"))
 }
 
-prepa_db <- function(DB,var_tva){
+# Optimisation Bolt : Pré-calcul pour éviter les jointures redondantes dans le graphe réactif
+# Utilisation de across() au lieu de mutate_if() pour de meilleures performances
+prepa_db_prejoin <- function(DB) {
   DB_DATE %>%
     left_join(DB) %>%
-    mutate_if(is.numeric,replace_na,0) %>%
-    mutate_if(is.character,replace_na,"") %>%
-    rename(ventes = var_tva)
+    mutate(
+      across(where(is.numeric), ~ replace_na(.x, 0)),
+      across(where(is.character), ~ replace_na(.x, ""))
+    )
+}
+
+prepa_db <- function(DB, var_tva) {
+  # Si la jointure a déjà été faite (colonne JOUR_SEMAINE présente), on ne fait que renommer
+  if ("JOUR_SEMAINE" %in% names(DB)) {
+    DB %>% rename(ventes = all_of(var_tva))
+  } else {
+    DB_DATE %>%
+      left_join(DB) %>%
+      mutate(
+        across(where(is.numeric), ~ replace_na(.x, 0)),
+        across(where(is.character), ~ replace_na(.x, ""))
+      ) %>%
+      rename(ventes = all_of(var_tva))
+  }
 }
 
 
