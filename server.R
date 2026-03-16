@@ -118,6 +118,14 @@ if (force_dl | class(drive_mazette)[1] == "try-error"){
 
 source("functions.R", local = TRUE)
 
+# Optimisation Bolt : Pré-calcul des jointures lourdes hors du graphe réactif pour améliorer la fluidité
+DB_JOURS_PRE <- prepa_db_prejoin(DB_JOURS)
+DB_OBJECTIFS_PRE <- prepa_db_prejoin(DB_OBJECTIFS)
+DB_PRODUITS_PRE <- prepa_db_prejoin(DB_PRODUITS)
+DB_HOREKO_PRE <- prepa_db_prejoin(DB_HOREKO)
+DB_KPI_PRE <- prepa_db_prejoin(DB_KPI)
+DB_KPI_SIMPLE_PRE <- prepa_db_prejoin(DB_KPI_SIMPLE)
+
 server <- function(input, output, session) {
 
   #### Valeurs réactives ####
@@ -129,12 +137,13 @@ server <- function(input, output, session) {
 
   var_tva <- reactive({if (input$check_tva) "CA_TVAC" else "CA_HTVA"})
 
-  UPD_JOURS <- reactive({prepa_db(DB_JOURS,var_tva())})
-  UPD_OBJECTIFS <- reactive({prepa_db(DB_OBJECTIFS,var_tva())})
-  UPD_PRODUITS <- reactive({prepa_db(DB_PRODUITS,var_tva())})
-  UPD_HOREKO <- reactive({prepa_db(DB_HOREKO,var_tva())})
-  UPD_KPI <- reactive({prepa_db(DB_KPI,var_tva())})
-  UPD_KPI_SIMPLE <- reactive({prepa_db(DB_KPI_SIMPLE,var_tva())})
+  # Optimisation Bolt : Utilisation des bases pré-jointes pour réduire le temps de calcul réactif
+  UPD_JOURS <- reactive({prepa_db(DB_JOURS_PRE,var_tva())})
+  UPD_OBJECTIFS <- reactive({prepa_db(DB_OBJECTIFS_PRE,var_tva())})
+  UPD_PRODUITS <- reactive({prepa_db(DB_PRODUITS_PRE,var_tva())})
+  UPD_HOREKO <- reactive({prepa_db(DB_HOREKO_PRE,var_tva())})
+  UPD_KPI <- reactive({prepa_db(DB_KPI_PRE,var_tva())})
+  UPD_KPI_SIMPLE <- reactive({prepa_db(DB_KPI_SIMPLE_PRE,var_tva())})
   UPD_TICKETS <- reactive({DB_TICKET})
 
   # UPD_JOURS <- function() {prepa_db(DB_JOURS,var_tva())}
