@@ -1323,9 +1323,11 @@ server <- function(input, output, session) {
     report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
   })
 
+  # Optimisation Bolt : Mise en cache des prévisions de brassins pour éviter des calculs Holt-Winters redondants
   DB_PREDICT <- reactive({
-    table_evo_brassins(max_date=input$predict_date)
-  })
+    table_evo_brassins(max_date = input$predict_date)
+  }) %>%
+    bindCache(input$predict_date, date_jour)
 
   output$table_brassins_fini <- renderDataTable({
     datatable(
