@@ -363,9 +363,10 @@ server <- function(input, output, session) {
                       total = max(100,100*CA_MOIS/OBJECTIF_MOIS))
   })
 
+  # Optimisation Bolt : Mettre en cache le graphique des ventes mensuelles (invalidation quotidienne)
   output$graph_ventes_mois <- renderPlotly({
-    graph_evo_ventes_mois(UPD_JOURS(),UPD_OBJECTIFS(),4) %>% style(textposition = "right")
-  })
+    graph_evo_ventes_mois(UPD_JOURS(), UPD_OBJECTIFS(), 4) %>% style(textposition = "right")
+  }) %>% bindCache(input$check_tva, Sys.Date())
 
   #### Evo Nourriture ####
 
@@ -1323,9 +1324,10 @@ server <- function(input, output, session) {
     report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
   })
 
+  # Optimisation Bolt : Mettre en cache les prédictions de brassins (Holt-Winters) avec invalidation quotidienne
   DB_PREDICT <- reactive({
-    table_evo_brassins(max_date=input$predict_date)
-  })
+    table_evo_brassins(max_date = input$predict_date)
+  }) %>% bindCache(input$predict_date, Sys.Date())
 
   output$table_brassins_fini <- renderDataTable({
     datatable(
@@ -1379,93 +1381,111 @@ server <- function(input, output, session) {
   })
 
   observe({
+    updateSelectInput(session, "choix_biere",
+      choices = data()$BOISSON
+    )
 
-    updateSelectInput(session,"choix_biere",
-                      choices = data()$BOISSON)
+    updateCheckboxGroupButtons(session, "bieres_predict",
+      status = "info",
+      choices = sort(unique(DB_PREDICT()$BOISSON)),
+      selected = sort(unique(DB_PREDICT()$BOISSON))
+    )
+  })
 
-    updateCheckboxGroupButtons(session,"bieres_predict",status = "info",
-                               choices = sort(unique(DB_PREDICT()$BOISSON)),
-                               selected = sort(unique(DB_PREDICT()$BOISSON)))
-
-    lapply(1:nrow(data()), function(i) {
-      output[[paste0("gauge_", i)]] <- renderGauge({
-        gauge(data()[i, "RESTE_PC"],
-              label = paste(round(data()[i, "RESTE_L"],1),' L'),
-              min = 0,
-              max = 100,
-              symbol = "%",
-              sectors = gaugeSectors(success = c(50, 100),
-                                     warning = c(30, 50),
-                                     danger = c(0, 30)))
-      })
-
-      output[[paste0("label_", i)]] <- renderText({
-        data()[i, "BOISSON"]
-      })
-
-      prediction <- predict_fin_brassin(DB_PREDICT(),data()[i, "ID_BRASSIN"])
-      if (is.na(prediction[1]))
-        prediction <- "(Inconnu)"
-      else if (is.na(prediction[3]))
-        prediction <- paste("Vers le",prediction[2])
-      else
-        prediction <- paste0("(entre ",prediction[1]," et ",prediction[3],")")
-
-      output[[paste0("predict_", i)]] <- renderText({prediction})
-    })
-
-    output$graph_biere_TOT <- renderPlotly({
-      ggplotly(graph_evo_brassin(DB_PREDICT() %>%
-                                   filter(BOISSON %in% input$bieres_predict,
-                                          DATE <= input$max_predict)))
-    })
-
-    output$graph_biere <- renderPlotly({
-      id_brassin <- unique(data()[data()$BOISSON == input$choix_biere,"ID_BRASSIN"])
-      ggplotly(graph_predict_brassin(DB_PREDICT() %>% filter(ID_BRASSIN == id_brassin)))
-    })
-
-    observeEvent(input$check_quali,{
-      output$graph_quali_predict <- renderPlotly({
-        # ggplotly(graph_quali_predict(input$predict_date))
-        ggplotly(graph_quali_predict(today()))
-      })
-    })
-
-
-    output$table_biere_cours <- renderDataTable({
-
-      TABLE <- DB_BIERES %>%
-        # filter(DATE <= input$predict_date) %>%
-        filter(DATE <= today()) %>%
-        filter(!FL_FINI & VOLUME_BRASSIN > 0) %>% arrange(desc(DATE)) %>%
-        group_by(ID_BRASSIN) %>% filter(row_number() == 1) %>% ungroup() %>%
-        mutate(across(where(is.numeric), ~round(., 2)))
-
-      TABLE$DATE_FIN_MIN <- NA
-      TABLE$DATE_FIN <- NA
-      TABLE$DATE_FIN_MAX <- NA
-
-      for (id_brassin in TABLE$ID_BRASSIN){
-        predict <- predict_fin_brassin(DB_PREDICT(),id_brassin)
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN_MIN"] <- predict[1]
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN"] <- predict[2]
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN_MAX"] <- predict[3]
-      }
-
-      TABLE <- TABLE %>%
-        arrange(DATE_FIN) %>%
-        select(BOISSON,ID_BRASSIN,VOLUME_BRASSIN,VOLUME_BRASSIN_AJUST,
-               VOLUME_TOT,NB_JOURS_VENTES,PCT,VOLUME_PAR_JOUR,
-               DATE_FIN_MIN,DATE_FIN,DATE_FIN_MAX) %>%
-        mutate(VOLUME_BRASSIN = round(VOLUME_BRASSIN,0),
-               VOLUME_BRASSIN_AJUST = round(VOLUME_BRASSIN_AJUST,0),
-               VOLUME_TOT = round(VOLUME_TOT,0),
-               PCT = paste0(round(PCT*100,0),"%")
+  # Optimisation Bolt : Définir les outputs dynamiques hors de l'observe pour améliorer la réactivité
+  lapply(1:10, function(i) {
+    output[[paste0("gauge_", i)]] <- renderGauge({
+      req(nrow(data()) >= i)
+      gauge(data()[i, "RESTE_PC"],
+        label = paste(round(data()[i, "RESTE_L"], 1), " L"),
+        min = 0,
+        max = 100,
+        symbol = "%",
+        sectors = gaugeSectors(
+          success = c(50, 100),
+          warning = c(30, 50),
+          danger = c(0, 30)
         )
-
-      datatable_simple(TABLE)
+      )
     })
+
+    output[[paste0("label_", i)]] <- renderText({
+      req(nrow(data()) >= i)
+      data()[i, "BOISSON"]
+    })
+
+    output[[paste0("predict_", i)]] <- renderText({
+      req(nrow(data()) >= i)
+      prediction <- predict_fin_brassin(DB_PREDICT(), data()[i, "ID_BRASSIN"])
+      if (is.na(prediction[1])) {
+        "(Inconnu)"
+      } else if (is.na(prediction[3])) {
+        paste("Vers le", prediction[2])
+      } else {
+        paste0("(entre ", prediction[1], " et ", prediction[3], ")")
+      }
+    })
+  })
+
+  # Optimisation Bolt : Sortir les définitions d'outputs du bloc observe pour respecter les bonnes pratiques Shiny
+  output$graph_biere_TOT <- renderPlotly({
+    ggplotly(graph_evo_brassin(DB_PREDICT() %>%
+                                 filter(
+                                   BOISSON %in% input$bieres_predict,
+                                   DATE <= input$max_predict
+                                 )))
+  })
+
+  output$graph_biere <- renderPlotly({
+    id_brassin <- unique(data()[data()$BOISSON == input$choix_biere, "ID_BRASSIN"])
+    ggplotly(graph_predict_brassin(DB_PREDICT() %>% filter(ID_BRASSIN == id_brassin)))
+  })
+
+  observeEvent(input$check_quali, {
+    output$graph_quali_predict <- renderPlotly({
+      # ggplotly(graph_quali_predict(input$predict_date))
+      ggplotly(graph_quali_predict(today()))
+    })
+  })
+
+
+  output$table_biere_cours <- renderDataTable({
+    TABLE <- DB_BIERES %>%
+      # filter(DATE <= input$predict_date) %>%
+      filter(DATE <= today()) %>%
+      filter(!FL_FINI & VOLUME_BRASSIN > 0) %>%
+      arrange(desc(DATE)) %>%
+      group_by(ID_BRASSIN) %>%
+      filter(row_number() == 1) %>%
+      ungroup() %>%
+      mutate(across(where(is.numeric), ~ round(., 2)))
+
+    TABLE$DATE_FIN_MIN <- NA
+    TABLE$DATE_FIN <- NA
+    TABLE$DATE_FIN_MAX <- NA
+
+    for (id_brassin in TABLE$ID_BRASSIN) {
+      predict <- predict_fin_brassin(DB_PREDICT(), id_brassin)
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MIN"] <- predict[1]
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN"] <- predict[2]
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MAX"] <- predict[3]
+    }
+
+    TABLE <- TABLE %>%
+      arrange(DATE_FIN) %>%
+      select(
+        BOISSON, ID_BRASSIN, VOLUME_BRASSIN, VOLUME_BRASSIN_AJUST,
+        VOLUME_TOT, NB_JOURS_VENTES, PCT, VOLUME_PAR_JOUR,
+        DATE_FIN_MIN, DATE_FIN, DATE_FIN_MAX
+      ) %>%
+      mutate(
+        VOLUME_BRASSIN = round(VOLUME_BRASSIN, 0),
+        VOLUME_BRASSIN_AJUST = round(VOLUME_BRASSIN_AJUST, 0),
+        VOLUME_TOT = round(VOLUME_TOT, 0),
+        PCT = paste0(round(PCT * 100, 0), "%")
+      )
+
+    datatable_simple(TABLE)
   })
 
   output$graph_cluster_bieres <- renderPlotly({
