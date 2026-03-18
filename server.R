@@ -363,9 +363,10 @@ server <- function(input, output, session) {
                       total = max(100,100*CA_MOIS/OBJECTIF_MOIS))
   })
 
+  # Optimisation Bolt : Mettre en cache le graphique d'évolution des ventes car il nécessite des calculs cumulatifs et une conversion Plotly
   output$graph_ventes_mois <- renderPlotly({
-    graph_evo_ventes_mois(UPD_JOURS(),UPD_OBJECTIFS(),4) %>% style(textposition = "right")
-  })
+    graph_evo_ventes_mois(UPD_JOURS(), UPD_OBJECTIFS(), 4) %>% style(textposition = "right")
+  }) %>% bindCache(input$check_tva, date_jour)
 
   #### Evo Nourriture ####
 
@@ -1130,8 +1131,10 @@ server <- function(input, output, session) {
 
   #### Historique ####
 
+  # Optimisation Bolt : Mettre en cache l'historique long terme qui utilise un lissage Loess coûteux
   output$vente_LT <- renderPlotly({
-    ggplotly(graph_evo_ventes_LT(UPD_JOURS(),input$LT_indic),tooltip = "text")})
+    ggplotly(graph_evo_ventes_LT(UPD_JOURS(), input$LT_indic), tooltip = "text")
+  }) %>% bindCache(input$check_tva, input$LT_indic, date_jour)
 
   output$stats_LT <- renderDataTable({
     datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[1]])})
@@ -1323,9 +1326,10 @@ server <- function(input, output, session) {
     report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
   })
 
+  # Optimisation Bolt : Mettre en cache les prédictions de brassins (Holt-Winters) qui sont gourmandes en CPU
   DB_PREDICT <- reactive({
-    table_evo_brassins(max_date=input$predict_date)
-  })
+    table_evo_brassins(max_date = input$predict_date)
+  }) %>% bindCache(input$predict_date, date_jour)
 
   output$table_brassins_fini <- renderDataTable({
     datatable(
