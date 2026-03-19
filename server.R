@@ -1556,10 +1556,8 @@ server <- function(input, output, session) {
 
   prepa_table_simulation <- reactive({
     input$reset_simulation
-    DB_DATE %>%
-      left_join(DB_PRODUITS) %>%
-      mutate_if(is.numeric,replace_na,0) %>%
-      mutate_if(is.character,replace_na,"") %>%
+    # Optimisation Bolt : Utilisation de la base pré-jointe DB_PRODUITS_PRE pour éviter des jointures et nettoyages répétitifs dans le graphe réactif
+    DB_PRODUITS_PRE %>%
       filter(PRICE > 0) %>%
       filter(DATE >= input$date_simulation[1],
              DATE <= input$date_simulation[2]) %>%
