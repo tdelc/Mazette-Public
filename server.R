@@ -126,6 +126,11 @@ DB_HOREKO_PRE <- prepa_db_prejoin(DB_HOREKO)
 DB_KPI_PRE <- prepa_db_prejoin(DB_KPI)
 DB_KPI_SIMPLE_PRE <- prepa_db_prejoin(DB_KPI_SIMPLE)
 
+# Optimisation Bolt : Pré-calculer les versions jointes pour éviter les calculs redondants dans le graphe réactif
+DB_PRODUITS_JOURS_PRE <- prepa_db_prejoin(DB_PRODUITS_JOURS)
+DB_PRODUITS_JOURS_FULL_PRE <- prepa_db_prejoin(DB_PRODUITS_JOURS_FULL)
+DB_TICKET_PRE <- prepa_db_prejoin(DB_TICKET)
+
 server <- function(input, output, session) {
 
   #### Valeurs réactives ####
@@ -144,7 +149,7 @@ server <- function(input, output, session) {
   UPD_HOREKO <- reactive({prepa_db(DB_HOREKO_PRE,var_tva())})
   UPD_KPI <- reactive({prepa_db(DB_KPI_PRE,var_tva())})
   UPD_KPI_SIMPLE <- reactive({prepa_db(DB_KPI_SIMPLE_PRE,var_tva())})
-  UPD_TICKETS <- reactive({DB_TICKET})
+  UPD_TICKETS <- reactive({DB_TICKET_PRE})
 
   # UPD_JOURS <- function() {prepa_db(DB_JOURS,var_tva())}
   # UPD_OBJECTIFS <- function() {prepa_db(DB_OBJECTIFS,var_tva())}
@@ -597,8 +602,7 @@ server <- function(input, output, session) {
     test_max <- today()
     test_min <- floor_date(today(), "month") %m-% months(3)
 
-    DB_PRODUITS_JOURS %>%
-      left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>%
+    DB_PRODUITS_JOURS_PRE %>%
       filter(DATE > input$ventes_repartition_date_min,
              DATE <= input$ventes_repartition_date_max,
              # CATEGORY %in% c("A GRIGNOTER (MAIN)","A GRIGNOTER (SUB)",
@@ -616,8 +620,7 @@ server <- function(input, output, session) {
 
   output$table_ventes_repartition_items <- renderDataTable({
 
-    SYNTHESE <- DB_PRODUITS_JOURS %>%
-      left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>%
+    SYNTHESE <- DB_PRODUITS_JOURS_PRE %>%
       filter(DATE > input$ventes_repartition_date_min,
              DATE <= input$ventes_repartition_date_max,
              # CATEGORY %in% c("A GRIGNOTER","DESSERTS","DIKKEBROODJES",
@@ -658,8 +661,7 @@ server <- function(input, output, session) {
   })
 
   db_ventes_items <- reactive({
-    DB_PRODUITS_JOURS %>%
-      left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>%
+    DB_PRODUITS_JOURS_PRE %>%
       filter(DATE > input$ventes_repartition_date_min,
              DATE <= input$ventes_repartition_date_max,
              CATEGORY %in% c(
@@ -856,14 +858,15 @@ server <- function(input, output, session) {
                           str_to_lower(input$config_horaires_text)))
 
     TEST <- TICKETS %>%
-      filter(DATE >= date_debut) %>%
+      filter(DATE >= date_debut, DATE <= today()-1) %>%
       mutate(HEURE = hour(TIMESTAMP),
              HEURE = if_else(HEURE<8,HEURE+24,HEURE)) %>%
-      group_by(DATE,HEURE) %>%
+      group_by(DATE, HEURE) %>%
       summarise(PRIX_TOTAL = sum(PRIX_TOTAL),.groups = "drop") %>%
       full_join(DB_DATE %>% filter(DATE >= date_debut,
-                                  DATE <= today()-1)) %>%
+                                  DATE <= today()-1) %>% select(DATE, JOUR_SEMAINE), by = "DATE") %>%
       complete(DATE, HEURE, fill = list(PRIX_TOTAL = 0)) %>%
+      mutate(HEURE = ifelse(is.na(HEURE),0,HEURE)) %>%
       filter(JOUR_SEMAINE != "lundi") %>%
       mutate(JOUR_SEMAINE = factor(JOUR_SEMAINE,levels = vecteur_jours)) %>%
       group_by(JOUR_SEMAINE,HEURE) %>%
@@ -873,16 +876,16 @@ server <- function(input, output, session) {
       filter(DATE >= date_debut_ref & DATE <= date_fin_ref) %>%
       mutate(HEURE = hour(TIMESTAMP),
              HEURE = if_else(HEURE<8,HEURE+24,HEURE)) %>%
-      group_by(DATE,HEURE) %>%
+      group_by(DATE, HEURE) %>%
       summarise(PRIX_TOTAL = sum(PRIX_TOTAL),.groups = "drop") %>%
       full_join(DB_DATE %>% filter(DATE >= date_debut_ref,
-                                   DATE <= date_fin_ref)) %>%
+                                   DATE <= date_fin_ref) %>% select(DATE, JOUR_SEMAINE), by = "DATE") %>%
       complete(DATE, HEURE, fill = list(PRIX_TOTAL = 0)) %>%
+      mutate(HEURE = ifelse(is.na(HEURE),0,HEURE)) %>%
       filter(JOUR_SEMAINE != "lundi") %>%
       mutate(JOUR_SEMAINE = factor(JOUR_SEMAINE,levels = vecteur_jours)) %>%
       group_by(JOUR_SEMAINE,HEURE) %>%
-      summarise(PRIX_TOTAL = mean(PRIX_TOTAL),.groups = "drop") %>%
-      mutate(HEURE = ifelse(is.na(HEURE),0,HEURE))
+      summarise(PRIX_TOTAL = mean(PRIX_TOTAL),.groups = "drop")
 
     p <- ggplot(TEST) +
       aes(x = HEURE,y=PRIX_TOTAL,fill=JOUR_SEMAINE)+
@@ -1101,8 +1104,7 @@ server <- function(input, output, session) {
     fin_date <- today()
     fin_date <- ymd(paste(year(fin_date),month(fin_date),1))+months(1)
 
-    DB_PRODUITS_JOURS_FULL %>%
-      left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>%
+    DB_PRODUITS_JOURS_FULL_PRE %>%
       filter(CATEGORY %in% input$category_list) %>%
       filter(PRODUCT %in% input$produits_list) %>%
       filter(DATE >= debut_date, DATE <= fin_date) %>%
@@ -1556,10 +1558,8 @@ server <- function(input, output, session) {
 
   prepa_table_simulation <- reactive({
     input$reset_simulation
-    DB_DATE %>%
-      left_join(DB_PRODUITS) %>%
-      mutate_if(is.numeric,replace_na,0) %>%
-      mutate_if(is.character,replace_na,"") %>%
+    # Optimisation Bolt : Utilisation de DB_PRODUITS_PRE déjà joint et remplacement de mutate_if par across
+    DB_PRODUITS_PRE %>%
       filter(PRICE > 0) %>%
       filter(DATE >= input$date_simulation[1],
              DATE <= input$date_simulation[2]) %>%
