@@ -828,6 +828,21 @@ DB_BRASSINS <- IMPORT_BRASSINS %>%
     DT_FIN = `Date de fin de bière`,
     DT_DECLA = `Date de déclaration`,
     FL_FINI = `Bière finie?`
+  )
+
+correct_date <- function(x){
+  if (class(x)[1] == "character") 
+    janitor::excel_numeric_to_date(as.numeric(x))
+  else
+    x
+}
+
+DB_BRASSINS <- DB_BRASSINS %>% 
+  mutate(
+    DT_BRASSIN = correct_date(DT_BRASSIN),
+    DT_CONDI = correct_date(DT_CONDI),
+    DT_FIN = correct_date(DT_FIN),
+    DT_DECLA = correct_date(DT_DECLA)
   ) %>%
   mutate(
     ID_BRASSIN = gsub("\\.0","",ID_BRASSIN),
