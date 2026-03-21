@@ -10,3 +10,5 @@ doc
 logos/*.png
 *.Rproj
 connect.json
+IMPORT 2025.RData
+IMPORT AUTOMATIQUE.xlsx

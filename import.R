@@ -1,7 +1,6 @@
 
 drive_mazette <- drive_download(drive_get(id =id_sheet_mazette),overwrite = TRUE)
 path_mazette <- drive_mazette$local_path
-# path_mazette <- "IMPORT AUTOMATIQUE.xlsx"
 
 vec_sheets <- c("DB JOURS","IMPORT BRASSINS",
                     "NETTOYAGE ET AJOUTS HOREKO",
@@ -65,13 +64,11 @@ IMPORT_PASS <- DB_sheets$`IMPORT PASS`
 # load_old_mazette("1eGu42eV5OYdFe9n4OYltuE179E90HRdDysXxr4dhS6g")
 # load_old_mazette("13dX8O_iBd3xVpdPjR3gG84Yu4KyUPWpbvePdAhq6kRc")
 
-
-
 drive_mazette_2023 <- try(load("outputs/IMPORT 2023-2024.RData"),silent=TRUE)
 
 if (class(drive_mazette_2023)[1] == "try-error"){
   try({
-    drive_download(drive_get(path="IMPORT 2023-2024.RData"),overwrite = TRUE)
+    drive_download(drive_get(id=ID_MAZETTE_2023),overwrite = TRUE)
     load("IMPORT 2023-2024.RData")
   },silent=TRUE)
 }
@@ -89,8 +86,8 @@ drive_mazette_2025 <- try(load("outputs/IMPORT 2025.RData"),silent=TRUE)
 
 if (class(drive_mazette_2025)[1] == "try-error"){
   try({
-    drive_download(drive_get(path="IMPORT 2023-2024.RData"),overwrite = TRUE)
-    load("IMPORT 2023-2024.RData")
+    drive_download(drive_get(id=ID_MAZETTE_2025),overwrite = TRUE)
+    load("IMPORT 2025.RData")
   },silent=TRUE)
 }
 
