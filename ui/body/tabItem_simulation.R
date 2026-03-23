@@ -23,5 +23,21 @@ tabItem_simulation <- tabItem(tabName = "simulation",
               h3("Tous les produits"),
               DTOutput("table_simulation")
           )
+        ),
+        fluidRow(
+          box(width = 12, title = "Impact des variations de prix",
+              dateRangeInput("date_impact_simulation", "Choix de la période d'analyse :",
+                             start = "2026-01-01",
+                             end   = "2026-03-01"),
+            fluidRow(
+              uiOutput("vb_impact_ca"),
+              uiOutput("vb_impact_q")
+              # uiOutput("vb_delta")
+            ),
+            fluidRow(
+              plotlyOutput("graph_impact_CA",height = 800),
+              DTOutput("table_impact_CA")
+            )
+          )
         )
 )

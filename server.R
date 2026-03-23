@@ -1541,6 +1541,12 @@ server <- function(input, output, session) {
                          start = floor_date(today()-2, unit = "week")-weeks(3),
                          end = today()-1)
   })
+  
+  observe({
+    updateDateRangeInput(session,"date_impact_simulation",
+                         start = floor_date(today()-2, unit = "week")-weeks(3),
+                         end = today()-1)
+  })
 
   prepa_table_simulation <- reactive({
     input$reset_simulation
@@ -1667,6 +1673,110 @@ server <- function(input, output, session) {
         rownames= FALSE
       )
     }
+  })
+  
+  df_impact <- reactive({
+    DB_DATE %>%
+      left_join(DB_PRODUITS) %>%
+      mutate_if(is.numeric,replace_na,0) %>%
+      mutate_if(is.character,replace_na,"") %>%
+      filter(PRICE > 0,CATEGORY != "BOISSONS CHAUDES") %>% 
+      filter(DATE >= input$date_impact_simulation[1],
+             DATE <= input$date_impact_simulation[2]) %>%
+      group_by(PRODUCT_FULL) %>% 
+      filter(n_distinct(PRICE) == 2) %>% 
+      arrange(PRODUCT_FULL) %>% 
+      group_by(PRODUCT_FULL,PRICE) %>% 
+      summarise(
+        N_DAYS = n_distinct(DATE),
+        CA = sum(CA_TVAC),
+        Q = sum(QUANTITE),
+        .groups = "drop"
+      ) %>% 
+      mutate(Q_DAYS = Q / N_DAYS,
+             CA_DAYS = CA / N_DAYS) %>% 
+      group_by(PRODUCT_FULL) %>% 
+      arrange(PRODUCT_FULL,-PRICE) %>% 
+      mutate(
+        OLD_PRICE = lead(PRICE),
+        OLD_N_DAYS = lead(N_DAYS),
+        OLD_CA_DAYS = lead(CA_DAYS),
+        OLD_Q_DAYS = lead(Q_DAYS),
+        DIFF_CA_DAYS = CA_DAYS-OLD_CA_DAYS,
+        DIFF_Q_DAYS = Q_DAYS-OLD_Q_DAYS,
+      ) %>% 
+      select(PRODUCT_FULL,OLD_PRICE,PRICE,OLD_N_DAYS,N_DAYS,OLD_Q_DAYS,
+             Q_DAYS,DIFF_Q_DAYS,OLD_CA_DAYS,CA_DAYS,DIFF_CA_DAYS) %>% 
+      filter(row_number() == 1) %>% 
+      ungroup() %>% 
+      mutate(
+        OLD_Q_DAYS = round(OLD_Q_DAYS,1),
+        Q_DAYS = round(Q_DAYS,1),
+        OLD_CA_DAYS = round(OLD_CA_DAYS,1),
+        CA_DAYS = round(CA_DAYS,1),
+        DIFF_CA_DAYS = round(DIFF_CA_DAYS,1),
+        DIFF_Q_DAYS = round(DIFF_Q_DAYS,1)
+      )
+  })
+  
+  
+  output$vb_impact_ca <- renderUI({
+    valueBox_perso(
+      format_CA(sum(df_impact()$DIFF_CA_DAYS),1),
+      subtitle = "Δ CA/jour",
+      icon = icon("compass"),
+      color = "#32CD32"
+    )
+  })
+  
+  output$vb_impact_q <- renderUI({
+    valueBox_perso(
+      round(mean(df_impact()$DIFF_CA_DAYS),1),
+      subtitle = "Δ Quantité/jour moyen",
+      icon = icon("compass"),
+      color = "#FFA500"
+    )
+  })
+  
+  output$table_impact_CA <- renderDataTable({
+    df_impact() %>% 
+      datatable(
+        filter = "top",
+        options = list(pageLength = 25)
+      )
+  })
+  
+  output$graph_impact_CA <- renderPlotly({
+    p <- df_impact() %>% 
+      mutate(
+        PRODUCT = str_remove(PRODUCT_FULL,"\\(.*?\\)"),
+        PRODUCT = str_remove(PRODUCT,"Options focaccias:"),
+        PRODUCT = str_remove(PRODUCT,"Option pikant:"),
+        PRODUCT = str_remove(PRODUCT,"du moment"),
+        PRODUCT = str_squish(PRODUCT),
+        LABEL = paste0("Quantité par jour : ",round(DIFF_Q_DAYS,1))
+      ) %>% 
+      mutate(PRODUCT = fct_reorder(PRODUCT, (DIFF_CA_DAYS))) %>%
+      ggplot() +
+      aes(x=PRODUCT, y=DIFF_CA_DAYS,text=LABEL) +
+      geom_segment(
+        aes(x=PRODUCT, xend=PRODUCT, y=0, yend=DIFF_CA_DAYS),
+        color=ifelse(df_impact()$DIFF_CA_DAYS > 0, "green", "red")
+      ) +
+      geom_point(
+        color=ifelse(df_impact()$DIFF_CA_DAYS > 0, "green", "red")
+      ) +
+      # geom_text(vjust = 1)+
+      coord_flip() +
+      theme(
+        legend.position="none"
+      ) +
+      xlab("") +
+      ylab("Différence de CA") +
+      ggtitle("Impact de l'évolution des prix")+
+      theme_minimal()
+    
+    ggplotly(p,tooltip = "text")
   })
 
   #### Vérification ####
