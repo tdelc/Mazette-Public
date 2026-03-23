@@ -816,7 +816,7 @@ server <- function(input, output, session) {
 
   #### Horaires ####
 
-  # Optimisation Bolt : Mise en cache du graphique car les calculs de lissage LOESS sur des volumes importants sont coûteux
+  # Optimisation Bolt : Mettre en cache le graphique des horaires car le lissage Loess sur de gros volumes de tickets est lourd
   output$graph_horaires_CA <- renderPlot({
 
     if (input$config_horaires_tempo == "Semaines"){
@@ -907,7 +907,6 @@ server <- function(input, output, session) {
     input$config_horaires_text,
     date_jour
   )
-
 
   #### Produits ####
 
