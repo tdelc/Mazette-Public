@@ -816,6 +816,7 @@ server <- function(input, output, session) {
 
   #### Horaires ####
 
+  # Optimisation Bolt : Mise en cache du graphique car les calculs de lissage LOESS sur des volumes importants sont coûteux
   output$graph_horaires_CA <- renderPlot({
 
     if (input$config_horaires_tempo == "Semaines"){
@@ -832,34 +833,26 @@ server <- function(input, output, session) {
     date_fin_ref <- date_debut_ref+7
     ref_texte <- paste("Semaine du",date_debut_ref,"en pointillé.")
 
-    date_debut <- UPD_TICKETS() %>% filter(DATE >= date_debut) %>%
-      summarise(DATE = min(DATE)) %>% pull(DATE)
+    date_debut <- UPD_TICKETS() %>%
+      filter(DATE >= date_debut) %>%
+      summarise(DATE = min(DATE)) %>%
+      pull(DATE)
 
-    aire_texte <- paste("Données à partir de",date_debut,"pour l'aire.")
+    aire_texte <- paste("Données à partir de", date_debut, "pour l'aire.")
 
-    DB_DATE %>% filter(DATE >= date_debut,
-                       DATE <= today()-1) %>%
-      filter(JOUR_SEMAINE != "lundi") %>%
-      left_join(UPD_TICKETS()) %>%
-      group_by(JOUR_SEMAINE,DATE) %>%
-      summarise(nb_tickets = sum(!is.na(PRIX_TOTAL)),
-                PRIX_TOTAL = sum(PRIX_TOTAL),.groups = "drop") %>%
-      mutate(PRIX_TOTAL = ifelse(is.na(PRIX_TOTAL),0,PRIX_TOTAL)) %>%
-      group_by(JOUR_SEMAINE) %>%
-      summarise(nb_jours=sum(nb_tickets>0),
-                nb_tickets = sum(nb_tickets),
-                sum_ca = sum(PRIX_TOTAL),
-                mean_ca = mean(PRIX_TOTAL),.groups = "drop")
+    # Optimisation Bolt : Suppression des calculs inutilisés et filtrage par date avant le filtrage textuel (regex)
+    TICKETS <- UPD_TICKETS() %>%
+      filter(DATE >= date_debut, DATE <= today() - 1)
 
-    TICKETS <- UPD_TICKETS()
-
-    if (input$config_horaires_text != "")
+    if (input$config_horaires_text != "") {
       TICKETS <- TICKETS %>%
-        filter(str_detect(str_to_lower(PRODUCT),
-                          str_to_lower(input$config_horaires_text)))
+        filter(str_detect(
+          str_to_lower(PRODUCT),
+          str_to_lower(input$config_horaires_text)
+        ))
+    }
 
     TEST <- TICKETS %>%
-      filter(DATE >= date_debut, DATE <= today()-1) %>%
       mutate(HEURE = hour(TIMESTAMP),
              HEURE = if_else(HEURE<8,HEURE+24,HEURE)) %>%
       group_by(DATE, HEURE) %>%
@@ -907,8 +900,13 @@ server <- function(input, output, session) {
       labs(caption = paste(aire_texte,ref_texte))
 
     p
-
-  })
+  }) %>% bindCache(
+    input$config_horaires_tempo,
+    input$config_horaires_nb,
+    input$config_horaires_ref,
+    input$config_horaires_text,
+    date_jour
+  )
 
 
   #### Produits ####
