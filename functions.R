@@ -1702,9 +1702,12 @@ report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
   # if (length(name_logo) != 0 & !is.na(name_logo)){
     try({
       path_logo <- paste0("logos/",name_logo)
-      id_png <- df_logos %>% filter(name == name_logo) %>% pull(id)
-      path_png <- paste0("https://drive.google.com/uc?id=",id_png,"&export=download")
-      download.file(path_png,destfile = path_logo,mode = "wb")
+      # Optimisation Bolt : Vérifier si le logo existe déjà localement pour éviter les téléchargements inutiles
+      if (!file.exists(path_logo)) {
+        id_png <- df_logos %>% filter(name == name_logo) %>% pull(id)
+        path_png <- paste0("https://drive.google.com/uc?id=",id_png,"&export=download")
+        download.file(path_png,destfile = path_logo,mode = "wb")
+      }
       img_magick <- image_read(path_logo) %>% image_scale("200")
       img_grob <- rasterGrob(as.raster(img_magick),interpolate = TRUE)
     },silent = TRUE)
