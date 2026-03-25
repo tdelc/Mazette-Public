@@ -700,6 +700,7 @@ server <- function(input, output, session) {
       datatable_simple()
   })
 
+  # Optimisation Bolt : Mettre en cache les graphiques Waffle car leur rendu est coûteux en calcul
   output$graph_ventes_items_midi <- renderPlot({
     db_ventes_items() %>%
       filter(CD_HEURE == "Midi (<17h)",
@@ -708,10 +709,10 @@ server <- function(input, output, session) {
       aes(fill=CATEGORY,values = QUANTITE) +
       geom_waffle(color = "white", size = 0.5, n_rows = 6) +
       facet_wrap(~JOUR_SEMAINE, ncol=1,strip.position = "left") +
-      scale_fill_manual(values = c("#69b3a2", "#404080", "#FFA07A", "#FFD700", "#FF6347"))
-    theme_void() +
+      scale_fill_manual(values = c("#69b3a2", "#404080", "#FFA07A", "#FFD700", "#FF6347")) +
+      theme_void() +
       theme(legend.position = "bottom")
-  })
+  }) %>% bindCache(input$ventes_repartition_date_min, input$ventes_repartition_date_max, date_jour)
 
   output$graph_ventes_items_soir <- renderPlot({
     db_ventes_items() %>%
@@ -722,11 +723,10 @@ server <- function(input, output, session) {
       aes(fill=CATEGORY,values = QUANTITE) +
       geom_waffle(color = "white", size = 0.5, n_rows = 6) +
       facet_wrap(~JOUR_SEMAINE, ncol=1,strip.position = "left") +
-      scale_fill_manual(values = c("#404080", "#FFA07A", "#FFD700"))
-    theme_void() +
+      scale_fill_manual(values = c("#404080", "#FFA07A", "#FFD700")) +
+      theme_void() +
       theme(legend.position = "bottom")
-
-  })
+  }) %>% bindCache(input$ventes_repartition_date_min, input$ventes_repartition_date_max, date_jour)
 
   output$graph_ventes_items <- renderPlot({
 
@@ -745,7 +745,7 @@ server <- function(input, output, session) {
             strip.text = element_text(size = 14)
       )
 
-  })
+  }) %>% bindCache(input$ventes_repartition_date_min, input$ventes_repartition_date_max, date_jour)
 
 
 
