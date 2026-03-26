@@ -1495,27 +1495,42 @@ server <- function(input, output, session) {
 
   #### Budget ####
 
+  # Optimisation Bolt : Création de réactifs dédiés pour les calculs de gauges afin d'éviter les calculs redondants et permettre la mise en cache
+  data_gauge_month <- reactive({
+    gauge_calculs(UPD_OBJECTIFS(), UPD_JOURS(), month)
+  })
+
+  data_gauge_quarter <- reactive({
+    gauge_calculs(UPD_OBJECTIFS(), UPD_JOURS(), quarter)
+  })
+
+  data_gauge_year <- reactive({
+    gauge_calculs(UPD_OBJECTIFS(), UPD_JOURS(), year)
+  })
+
+  # Optimisation Bolt : Mettre en cache les gauges car les calculs de cumul et de ratio sur l'année sont fréquents
   output$gauge_month <- renderGauge({
-    ventes_month <- gauge_calculs(var_tva(),month)
-    output$gauge_month_details <- renderUI({
-      gauge_details(ventes_month)})
-    gauge_ventes(ventes_month)
+    gauge_ventes(data_gauge_month())
+  }) %>% bindCache(input$check_tva, date_jour)
+
+  output$gauge_month_details <- renderUI({
+    gauge_details(data_gauge_month())
   })
 
   output$gauge_quarter <- renderGauge({
-    ventes_quarter <- gauge_calculs(var_tva(),quarter)
-    ventes_quarter <<- ventes_quarter
-    output$gauge_quarter_details <- renderUI({
-      gauge_details(ventes_quarter)})
-    gauge_ventes(ventes_quarter)
+    gauge_ventes(data_gauge_quarter())
+  }) %>% bindCache(input$check_tva, date_jour)
+
+  output$gauge_quarter_details <- renderUI({
+    gauge_details(data_gauge_quarter())
   })
 
   output$gauge_year <- renderGauge({
-    ventes_year <- gauge_calculs(var_tva(),year)
-    ventes_year <<- ventes_year
-    output$gauge_year_details <- renderUI({
-      gauge_details(ventes_year)})
-    gauge_ventes(ventes_year)
+    gauge_ventes(data_gauge_year())
+  }) %>% bindCache(input$check_tva, date_jour)
+
+  output$gauge_year_details <- renderUI({
+    gauge_details(data_gauge_year())
   })
 
 

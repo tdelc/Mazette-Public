@@ -2043,61 +2043,74 @@ box_ventes_mois <- function(db_kpi,db_obj,debut_mois,fin_mois,
 
 #### Gauges ####
 
-gauge_calculs <- function(var_tva,periode,lag=0){
-  OUT <- DB_OBJECTIFS %>% prepa_db(var_tva) %>%
-    select(DATE,OBJECTIF_PCT,obj = ventes) %>%
-    left_join(DB_JOURS %>% prepa_db(var_tva) %>% select(DATE,ventes)) %>%
-    filter(year(DATE) == year(today()),
-           periode(DATE) == periode(today())-lag) %>%
-    mutate(SCORE = sum(ventes,na.rm = TRUE) /
-             sum(obj*(DATE < today()),na.rm = TRUE),
-           SCORE = sum(ventes,na.rm = TRUE) / sum(obj,na.rm = TRUE),
-           SCORE = replace_na(SCORE,0),
-           OBJ = sum(obj,na.rm = TRUE),
-           PCT_OBJ = sum(OBJECTIF_PCT*(ventes == 0),na.rm=TRUE),
-           NB_JOURS = sum((DATE >= today())*(OBJECTIF_PCT > 0),na.rm=TRUE),
-           ACTU = sum(ventes,na.rm = TRUE),
-           DIFF = OBJ - ACTU,
-           DIFF_DATE = sum(ventes*(DATE < today()),na.rm = TRUE) -
-             sum(obj*(DATE < today()),na.rm = TRUE),
-           OBJ_DATE = sum(obj*(DATE < today()),na.rm = TRUE),
-           ATTEINT_DATE = sum(ventes*(DATE < today()),na.rm = TRUE),
-           ventes_new = ifelse(DATE < today(),NA,DIFF*OBJECTIF_PCT/PCT_OBJ),
-           ventes_full = ifelse(DATE < today(),ventes,ventes_new)
+# Optimisation Bolt : Passage des bases préparées en arguments pour éviter les jointures redondantes
+gauge_calculs <- function(db_obj, db_jours, periode, lag = 0) {
+  date_ref <- today()
+
+  OUT <- db_obj %>%
+    select(DATE, OBJECTIF_PCT, obj = ventes) %>%
+    left_join(db_jours %>% select(DATE, ventes), by = "DATE") %>%
+    filter(
+      year(DATE) == year(date_ref),
+      periode(DATE) == periode(date_ref) - lag
+    ) %>%
+    mutate(
+      SCORE = sum(ventes, na.rm = TRUE) / sum(obj, na.rm = TRUE),
+      SCORE = replace_na(SCORE, 0),
+      OBJ = sum(obj, na.rm = TRUE),
+      PCT_OBJ = sum(OBJECTIF_PCT * (ventes == 0), na.rm = TRUE),
+      NB_JOURS = sum((DATE >= date_ref) * (OBJECTIF_PCT > 0), na.rm = TRUE),
+      ACTU = sum(ventes, na.rm = TRUE),
+      DIFF = OBJ - ACTU,
+      DIFF_DATE = sum(ventes * (DATE < date_ref), na.rm = TRUE) -
+        sum(obj * (DATE < date_ref), na.rm = TRUE),
+      OBJ_DATE = sum(obj * (DATE < date_ref), na.rm = TRUE),
+      ATTEINT_DATE = sum(ventes * (DATE < date_ref), na.rm = TRUE),
+      ventes_new = ifelse(DATE < date_ref, NA, DIFF * OBJECTIF_PCT / PCT_OBJ),
+      ventes_full = ifelse(DATE < date_ref, ventes, ventes_new)
     )
-  OUT %>% summarise(score = mean(SCORE)*100,
-                    atteint = sum(ventes,na.rm = TRUE),
-                    reste = sum(ventes_new,na.rm = TRUE),
-                    objectif = sum(obj,na.rm = TRUE),
-                    ATTEINT_DATE = mean(ATTEINT_DATE,na.rm = TRUE),
-                    DIFF_DATE = mean(DIFF_DATE,na.rm = TRUE),
-                    OBJ_DATE = mean(OBJ_DATE,na.rm = TRUE),
-                    nb_jours = mean(NB_JOURS,na.rm = TRUE))
+
+  OUT %>% summarise(
+    score = mean(SCORE) * 100,
+    atteint = sum(ventes, na.rm = TRUE),
+    reste = sum(ventes_new, na.rm = TRUE),
+    objectif = sum(obj, na.rm = TRUE),
+    ATTEINT_DATE = mean(ATTEINT_DATE, na.rm = TRUE),
+    DIFF_DATE = mean(DIFF_DATE, na.rm = TRUE),
+    OBJ_DATE = mean(OBJ_DATE, na.rm = TRUE),
+    nb_jours = mean(NB_JOURS, na.rm = TRUE)
+  )
 }
 
-gauge_ventes <- function(db_gauge){
-  gauge(db_gauge$score, label = paste0(
-    format_CA(db_gauge$atteint,-2),
-    "\n sur ",format_CA(db_gauge$objectif,-2)),
-        min = 0, max = 100, symbol = "%",
-        sectors = gaugeSectors(success = c(100, 1000),
-                               warning = c(80, 100),
-                               danger = c(0, 80)))
+gauge_ventes <- function(db_gauge) {
+  gauge(db_gauge$score,
+    label = paste0(
+      format_CA(db_gauge$atteint, -2),
+      "\n sur ", format_CA(db_gauge$objectif, -2)
+    ),
+    min = 0, max = 100, symbol = "%",
+    sectors = gaugeSectors(
+      success = c(100, 1000),
+      warning = c(80, 100),
+      danger = c(0, 80)
+    )
+  )
 }
 
-gauge_details <- function(db_gauge){
-  db_gauge <<- db_gauge
+gauge_details <- function(db_gauge) {
+  # Optimisation Bolt : Suppression de l'assignation globale <<-
   db_gauge <- db_gauge %>%
-    mutate(ratio = (atteint - objectif)/objectif,
-           ratio = (ATTEINT_DATE / OBJ_DATE),
-           diff = abs(atteint - objectif))
+    mutate(
+      ratio = (ATTEINT_DATE / OBJ_DATE),
+      diff = abs(atteint - objectif)
+    )
 
   descriptionBlock(
-    number = paste0(round(db_gauge$ratio*100,1),"%"),
-    numberColor = ifelse(db_gauge$ratio > 1,"green","red"),
-    numberIcon = icon(ifelse(db_gauge$ratio > 1,"caret-up","caret-down")),
-    header = format_CA(db_gauge$DIFF_DATE,-1),
-    text = ifelse(db_gauge$ratio > 1,"Avance à date","Retard à date"),
+    number = paste0(round(db_gauge$ratio * 100, 1), "%"),
+    numberColor = ifelse(db_gauge$ratio > 1, "green", "red"),
+    numberIcon = icon(ifelse(db_gauge$ratio > 1, "caret-up", "caret-down")),
+    header = format_CA(db_gauge$DIFF_DATE, -1),
+    text = ifelse(db_gauge$ratio > 1, "Avance à date", "Retard à date"),
     rightBorder = TRUE,
     marginBottom = FALSE
   )
