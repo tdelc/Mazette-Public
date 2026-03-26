@@ -700,7 +700,7 @@ server <- function(input, output, session) {
       datatable_simple()
   })
 
-  # Optimisation Bolt : Mettre en cache les graphiques Waffle car ils sont gourmands en calcul
+  # Optimisation Bolt : Mettre en cache les graphiques Waffle car leur rendu est coûteux en calcul
   output$graph_ventes_items_midi <- renderPlot({
     db_ventes_items() %>%
       filter(CD_HEURE == "Midi (<17h)",

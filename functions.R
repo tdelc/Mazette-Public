@@ -1702,7 +1702,7 @@ report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
   # if (length(name_logo) != 0 & !is.na(name_logo)){
     try({
       path_logo <- paste0("logos/",name_logo)
-      # Optimisation Bolt : Ne télécharger le logo que s'il n'existe pas déjà localement
+      # Optimisation Bolt : Vérifier si le logo existe déjà localement pour éviter un téléchargement inutile
       if (!file.exists(path_logo)) {
         id_png <- df_logos %>% filter(name == name_logo) %>% pull(id)
         path_png <- paste0("https://drive.google.com/uc?id=",id_png,"&export=download")
