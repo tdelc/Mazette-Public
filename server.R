@@ -714,6 +714,7 @@ server <- function(input, output, session) {
       theme(legend.position = "bottom")
   }) %>% bindCache(input$ventes_repartition_date_min, input$ventes_repartition_date_max, date_jour)
 
+  # Optimisation Bolt : Mettre en cache les graphiques Waffle car ils sont gourmands en calcul
   output$graph_ventes_items_soir <- renderPlot({
     db_ventes_items() %>%
       filter(CD_HEURE == "Soir (>=17h)",
@@ -728,6 +729,7 @@ server <- function(input, output, session) {
       theme(legend.position = "bottom")
   }) %>% bindCache(input$ventes_repartition_date_min, input$ventes_repartition_date_max, date_jour)
 
+  # Optimisation Bolt : Mettre en cache les graphiques Waffle car ils sont gourmands en calcul
   output$graph_ventes_items <- renderPlot({
 
     db_ventes_items() %>%
@@ -1080,9 +1082,17 @@ server <- function(input, output, session) {
       summarise(ventes = sum(ventes,na.rm = TRUE),.groups = "drop")
   })
 
+  # Optimisation Bolt : Mettre en cache l'évolution par produit car le lissage Loess est coûteux
   output$graph_CA_produits <- renderPlotly({
     ggplotly(graph_evo_ventes_LT(data_produits_jours(),
-                                 input$produits_indic),tooltip = "text")})
+                                 input$produits_indic),tooltip = "text")
+  }) %>% bindCache(
+    input$check_tva,
+    input$produits_indic,
+    input$table_category_evo_rows_selected,
+    input$table_produits_evo_rows_selected,
+    date_jour
+  )
 
   output$table_produits_previous <- renderPlot({
     table_produits(data_produits_filter() %>%
@@ -1110,6 +1120,7 @@ server <- function(input, output, session) {
       summarise(QUANTITE=round(mean(QUANTITE)),.groups = "drop")
   })
 
+  # Optimisation Bolt : Mettre en cache le graphique Waffle car il est gourmand en calcul
   output$graph_produits_items <- renderPlot({
 
     db_produits_items() %>%
@@ -1127,7 +1138,12 @@ server <- function(input, output, session) {
             strip.text = element_text(size = 14)
       )
 
-  })
+  }) %>% bindCache(
+    input$produits_periode,
+    input$category_list,
+    input$produits_list,
+    date_jour
+  )
 
   #### Historique ####
 
@@ -1429,12 +1445,13 @@ server <- function(input, output, session) {
       ggplotly(graph_predict_brassin(DB_PREDICT() %>% filter(ID_BRASSIN == id_brassin)))
     })
 
-    observeEvent(input$check_quali,{
-      output$graph_quali_predict <- renderPlotly({
-        # ggplotly(graph_quali_predict(input$predict_date))
-        ggplotly(graph_quali_predict(today()))
-      })
-    })
+    # Optimisation Bolt : Sortie du observeEvent (anti-pattern) et ajout de cache car le calcul est très long
+    output$graph_quali_predict <- renderPlotly({
+      # ggplotly(graph_quali_predict(input$predict_date))
+      ggplotly(graph_quali_predict(today()))
+    }) %>%
+      bindEvent(input$check_quali) %>%
+      bindCache(date_jour)
 
 
     output$table_biere_cours <- renderDataTable({
