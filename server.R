@@ -1152,12 +1152,20 @@ server <- function(input, output, session) {
     ggplotly(graph_evo_ventes_LT(UPD_JOURS(), input$LT_indic), tooltip = "text")
   }) %>% bindCache(input$check_tva, input$LT_indic, date_jour)
 
+  # Optimisation Bolt : Calculer les statistiques une seule fois via un réactif pour éviter des calculs redondants
+  data_stats_LT <- reactive({
+    table_stats_ventes_LT(UPD_JOURS(), input$LT_indic, input$LT_flag)
+  })
+
   output$stats_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[1]])})
+    datatable_simple(data_stats_LT()[[1]])
+  })
   output$meilleurs_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[2]])})
+    datatable_simple(data_stats_LT()[[2]])
+  })
   output$pires_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[3]])})
+    datatable_simple(data_stats_LT()[[3]])
+  })
 
 
   #### Comparaison ####
@@ -1338,9 +1346,10 @@ server <- function(input, output, session) {
     updateSelectInput(session,"report_choice",choices = vec_id_brassins)
   })
 
+  # Optimisation Bolt : Mettre en cache le rapport de brassin car il implique des téléchargements de logos et du rendu Patchwork
   output$report <- renderPlot({
-    report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
-  })
+    report_brassin(DB_BRASSINS, DB_BIERES, DB_PRODUITS, input$report_choice)
+  }) %>% bindCache(input$report_choice, date_jour)
 
   # Optimisation Bolt : Mettre en cache les prédictions de brassins (Holt-Winters) qui sont gourmandes en CPU
   DB_PREDICT <- reactive({
@@ -1398,100 +1407,121 @@ server <- function(input, output, session) {
                  arrange(RESTE_PC))
   })
 
+  # Optimisation Bolt : Sortie des définitions d'outputs du observe() pour éviter des re-définitions inutiles
   observe({
+    updateSelectInput(session, "choix_biere",
+      choices = data()$BOISSON
+    )
 
-    updateSelectInput(session,"choix_biere",
-                      choices = data()$BOISSON)
+    updateCheckboxGroupButtons(session, "bieres_predict",
+      status = "info",
+      choices = sort(unique(DB_PREDICT()$BOISSON)),
+      selected = sort(unique(DB_PREDICT()$BOISSON))
+    )
+  })
 
-    updateCheckboxGroupButtons(session,"bieres_predict",status = "info",
-                               choices = sort(unique(DB_PREDICT()$BOISSON)),
-                               selected = sort(unique(DB_PREDICT()$BOISSON)))
-
-    lapply(1:nrow(data()), function(i) {
-      output[[paste0("gauge_", i)]] <- renderGauge({
-        gauge(data()[i, "RESTE_PC"],
-              label = paste(round(data()[i, "RESTE_L"],1),' L'),
-              min = 0,
-              max = 100,
-              symbol = "%",
-              sectors = gaugeSectors(success = c(50, 100),
-                                     warning = c(30, 50),
-                                     danger = c(0, 30)))
-      })
-
-      output[[paste0("label_", i)]] <- renderText({
-        data()[i, "BOISSON"]
-      })
-
-      prediction <- predict_fin_brassin(DB_PREDICT(),data()[i, "ID_BRASSIN"])
-      if (is.na(prediction[1]))
-        prediction <- "(Inconnu)"
-      else if (is.na(prediction[3]))
-        prediction <- paste("Vers le",prediction[2])
-      else
-        prediction <- paste0("(entre ",prediction[1]," et ",prediction[3],")")
-
-      output[[paste0("predict_", i)]] <- renderText({prediction})
-    })
-
-    output$graph_biere_TOT <- renderPlotly({
-      ggplotly(graph_evo_brassin(DB_PREDICT() %>%
-                                   filter(BOISSON %in% input$bieres_predict,
-                                          DATE <= input$max_predict)))
-    })
-
-    output$graph_biere <- renderPlotly({
-      id_brassin <- unique(data()[data()$BOISSON == input$choix_biere,"ID_BRASSIN"])
-      ggplotly(graph_predict_brassin(DB_PREDICT() %>% filter(ID_BRASSIN == id_brassin)))
-    })
-
-    # Optimisation Bolt : Sortie du observeEvent (anti-pattern) et ajout de cache car le calcul est très long
-    output$graph_quali_predict <- renderPlotly({
-      # ggplotly(graph_quali_predict(input$predict_date))
-      ggplotly(graph_quali_predict(today()))
-    }) %>%
-      bindEvent(input$check_quali) %>%
-      bindCache(date_jour)
-
-
-    output$table_biere_cours <- renderDataTable({
-
-      TABLE <- DB_BIERES %>%
-        # filter(DATE <= input$predict_date) %>%
-        filter(DATE <= today()) %>%
-        filter(!FL_FINI & VOLUME_BRASSIN > 0) %>% arrange(desc(DATE)) %>%
-        group_by(ID_BRASSIN) %>% filter(row_number() == 1) %>% ungroup() %>%
-        mutate(across(where(is.numeric), ~round(., 2)))
-
-      TABLE$DATE_FIN_MIN <- NA
-      TABLE$DATE_FIN <- NA
-      TABLE$DATE_FIN_MAX <- NA
-
-      for (id_brassin in TABLE$ID_BRASSIN){
-        predict <- predict_fin_brassin(DB_PREDICT(),id_brassin)
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN_MIN"] <- predict[1]
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN"] <- predict[2]
-        TABLE[TABLE$ID_BRASSIN == id_brassin,"DATE_FIN_MAX"] <- predict[3]
-      }
-
-      TABLE <- TABLE %>%
-        arrange(DATE_FIN) %>%
-        select(BOISSON,ID_BRASSIN,VOLUME_BRASSIN,VOLUME_BRASSIN_AJUST,
-               VOLUME_TOT,NB_JOURS_VENTES,PCT,VOLUME_PAR_JOUR,
-               DATE_FIN_MIN,DATE_FIN,DATE_FIN_MAX) %>%
-        mutate(VOLUME_BRASSIN = round(VOLUME_BRASSIN,0),
-               VOLUME_BRASSIN_AJUST = round(VOLUME_BRASSIN_AJUST,0),
-               VOLUME_TOT = round(VOLUME_TOT,0),
-               PCT = paste0(round(PCT*100,0),"%")
+  # Optimisation Bolt : Définition des jauges au top-level avec req() pour la sécurité reactive
+  lapply(1:10, function(i) {
+    output[[paste0("gauge_", i)]] <- renderGauge({
+      req(nrow(data()) >= i)
+      gauge(data()[i, "RESTE_PC"],
+        label = paste(round(data()[i, "RESTE_L"], 1), " L"),
+        min = 0,
+        max = 100,
+        symbol = "%",
+        sectors = gaugeSectors(
+          success = c(50, 100),
+          warning = c(30, 50),
+          danger = c(0, 30)
         )
+      )
+    })
 
-      datatable_simple(TABLE)
+    output[[paste0("label_", i)]] <- renderText({
+      req(nrow(data()) >= i)
+      data()[i, "BOISSON"]
+    })
+
+    output[[paste0("predict_", i)]] <- renderText({
+      req(nrow(data()) >= i)
+      prediction <- predict_fin_brassin(DB_PREDICT(), data()[i, "ID_BRASSIN"])
+      if (is.na(prediction[1])) {
+        prediction <- "(Inconnu)"
+      } else if (is.na(prediction[3])) {
+        prediction <- paste("Vers le", prediction[2])
+      } else {
+        prediction <- paste0("(entre ", prediction[1], " et ", prediction[3], ")")
+      }
+      prediction
     })
   })
 
+  # Optimisation Bolt : Mettre en cache l'évolution globale des brassins
+  output$graph_biere_TOT <- renderPlotly({
+    ggplotly(graph_evo_brassin(DB_PREDICT() %>%
+      filter(
+        BOISSON %in% input$bieres_predict,
+        DATE <= input$max_predict
+      )))
+  }) %>% bindCache(input$bieres_predict, input$max_predict, date_jour)
+
+  # Optimisation Bolt : Mettre en cache le graphique de prédiction par brassin
+  output$graph_biere <- renderPlotly({
+    req(input$choix_biere)
+    id_brassin <- unique(data()[data()$BOISSON == input$choix_biere, "ID_BRASSIN"])
+    ggplotly(graph_predict_brassin(DB_PREDICT() %>% filter(ID_BRASSIN == id_brassin)))
+  }) %>% bindCache(input$choix_biere, date_jour)
+
+  # Optimisation Bolt : Sortie du observeEvent (anti-pattern) et ajout de cache car le calcul est très long
+  output$graph_quali_predict <- renderPlotly({
+    ggplotly(graph_quali_predict(today()))
+  }) %>%
+    bindEvent(input$check_quali) %>%
+    bindCache(date_jour)
+
+
+  output$table_biere_cours <- renderDataTable({
+    TABLE <- DB_BIERES %>%
+      filter(DATE <= today()) %>%
+      filter(!FL_FINI & VOLUME_BRASSIN > 0) %>%
+      arrange(desc(DATE)) %>%
+      group_by(ID_BRASSIN) %>%
+      filter(row_number() == 1) %>%
+      ungroup() %>%
+      mutate(across(where(is.numeric), ~ round(., 2)))
+
+    TABLE$DATE_FIN_MIN <- NA
+    TABLE$DATE_FIN <- NA
+    TABLE$DATE_FIN_MAX <- NA
+
+    for (id_brassin in TABLE$ID_BRASSIN) {
+      predict <- predict_fin_brassin(DB_PREDICT(), id_brassin)
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MIN"] <- predict[1]
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN"] <- predict[2]
+      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MAX"] <- predict[3]
+    }
+
+    TABLE <- TABLE %>%
+      arrange(DATE_FIN) %>%
+      select(
+        BOISSON, ID_BRASSIN, VOLUME_BRASSIN, VOLUME_BRASSIN_AJUST,
+        VOLUME_TOT, NB_JOURS_VENTES, PCT, VOLUME_PAR_JOUR,
+        DATE_FIN_MIN, DATE_FIN, DATE_FIN_MAX
+      ) %>%
+      mutate(
+        VOLUME_BRASSIN = round(VOLUME_BRASSIN, 0),
+        VOLUME_BRASSIN_AJUST = round(VOLUME_BRASSIN_AJUST, 0),
+        VOLUME_TOT = round(VOLUME_TOT, 0),
+        PCT = paste0(round(PCT * 100, 0), "%")
+      )
+
+    datatable_simple(TABLE)
+  })
+
+  # Optimisation Bolt : Mettre en cache le clustering des bières
   output$graph_cluster_bieres <- renderPlotly({
     ggplotly(graph_cluster_bieres())
-  })
+  }) %>% bindCache(date_jour)
 
   #### Budget ####
 
@@ -1534,17 +1564,14 @@ server <- function(input, output, session) {
   })
 
 
+  # Optimisation Bolt : Mettre en cache les graphiques d'écart car ils calculent des sommes cumulées
   output$graph_evo_ecart_budget <- renderPlotly({
-    graph_evo_ecart_budget(UPD_OBJECTIFS(),UPD_JOURS())
-  })
+    graph_evo_ecart_budget(UPD_OBJECTIFS(), UPD_JOURS())
+  }) %>% bindCache(input$check_tva, date_jour)
 
   output$graph_evo_ecart_ym1 <- renderPlotly({
     graph_evo_ecart_ym1(UPD_JOURS())
-  })
-
-  output$graph_evo_ecart_ym1 <- renderPlotly({
-    graph_evo_ecart_ym1(UPD_JOURS())
-  })
+  }) %>% bindCache(input$check_tva, date_jour)
 
   observe({
     vec_year <- sort(unique(year(DB_JOURS$DATE)))
@@ -1552,9 +1579,10 @@ server <- function(input, output, session) {
                        choices = vec_year,selected = vec_year[length(vec_year)])
   })
 
+  # Optimisation Bolt : Mettre en cache le panorama annuel car il est complexe à rendre
   output$graph_evo_annee_complete <- renderPlot({
-    graph_evo_annee_complete(UPD_JOURS(),input$year_panorama)
-  })
+    graph_evo_annee_complete(UPD_JOURS(), input$year_panorama)
+  }) %>% bindCache(input$check_tva, input$year_panorama, date_jour)
 
 
   #### Comptabilité ####
