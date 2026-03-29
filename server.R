@@ -1152,12 +1152,22 @@ server <- function(input, output, session) {
     ggplotly(graph_evo_ventes_LT(UPD_JOURS(), input$LT_indic), tooltip = "text")
   }) %>% bindCache(input$check_tva, input$LT_indic, date_jour)
 
+  # Optimisation Bolt : Consolidation des appels redondants à table_stats_ventes_LT et mise en cache
+  data_stats_LT <- reactive({
+    table_stats_ventes_LT(UPD_JOURS(), input$LT_indic, input$LT_flag)
+  }) %>% bindCache(input$check_tva, input$LT_indic, input$LT_flag, date_jour)
+
   output$stats_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[1]])})
+    datatable_simple(data_stats_LT()[[1]])
+  })
+
   output$meilleurs_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[2]])})
+    datatable_simple(data_stats_LT()[[2]])
+  })
+
   output$pires_LT <- renderDataTable({
-    datatable_simple(table_stats_ventes_LT(UPD_JOURS(),input$LT_indic,input$LT_flag)[[3]])})
+    datatable_simple(data_stats_LT()[[3]])
+  })
 
 
   #### Comparaison ####
