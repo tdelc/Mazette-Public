@@ -1348,9 +1348,10 @@ server <- function(input, output, session) {
     updateSelectInput(session,"report_choice",choices = vec_id_brassins)
   })
 
+  # Optimisation Bolt : Mettre en cache le rapport de brassin car le rendu est complexe (patchwork)
   output$report <- renderPlot({
     report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
-  })
+  }) %>% bindCache(input$report_choice, date_jour)
 
   # Optimisation Bolt : Mettre en cache les prédictions de brassins (Holt-Winters) qui sont gourmandes en CPU
   DB_PREDICT <- reactive({
@@ -1550,10 +1551,6 @@ server <- function(input, output, session) {
 
   output$graph_evo_ecart_budget <- renderPlotly({
     graph_evo_ecart_budget(UPD_OBJECTIFS(),UPD_JOURS())
-  })
-
-  output$graph_evo_ecart_ym1 <- renderPlotly({
-    graph_evo_ecart_ym1(UPD_JOURS())
   })
 
   output$graph_evo_ecart_ym1 <- renderPlotly({
