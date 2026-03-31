@@ -1556,19 +1556,16 @@ server <- function(input, output, session) {
     graph_evo_ecart_ym1(UPD_JOURS())
   })
 
-  output$graph_evo_ecart_ym1 <- renderPlotly({
-    graph_evo_ecart_ym1(UPD_JOURS())
-  })
-
   observe({
     vec_year <- sort(unique(year(DB_JOURS$DATE)))
     updateRadioButtons(session,"year_panorama",inline = TRUE,
                        choices = vec_year,selected = vec_year[length(vec_year)])
   })
 
+  # Optimisation Bolt : Mise en cache du panorama annuel pour éviter des recalculs de géométries complexes
   output$graph_evo_annee_complete <- renderPlot({
-    graph_evo_annee_complete(UPD_JOURS(),input$year_panorama)
-  })
+    graph_evo_annee_complete(UPD_JOURS(), input$year_panorama)
+  }) %>% bindCache(input$year_panorama, input$check_tva, date_jour)
 
 
   #### Comptabilité ####
