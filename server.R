@@ -1552,13 +1552,10 @@ server <- function(input, output, session) {
     graph_evo_ecart_budget(UPD_OBJECTIFS(),UPD_JOURS())
   })
 
+  # Optimisation Bolt : Mettre en cache l'évolution par rapport à l'année précédente car le calcul est lourd
   output$graph_evo_ecart_ym1 <- renderPlotly({
     graph_evo_ecart_ym1(UPD_JOURS())
-  })
-
-  output$graph_evo_ecart_ym1 <- renderPlotly({
-    graph_evo_ecart_ym1(UPD_JOURS())
-  })
+  }) %>% bindCache(input$check_tva, date_jour)
 
   observe({
     vec_year <- sort(unique(year(DB_JOURS$DATE)))
