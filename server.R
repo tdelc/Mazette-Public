@@ -1348,9 +1348,10 @@ server <- function(input, output, session) {
     updateSelectInput(session,"report_choice",choices = vec_id_brassins)
   })
 
+  # Optimisation Bolt : Mettre en cache le rapport de brassin car le rendu patchwork de plusieurs graphiques est lourd
   output$report <- renderPlot({
-    report_brassin(DB_BRASSINS,DB_BIERES,DB_PRODUITS,input$report_choice)
-  })
+    report_brassin(DB_BRASSINS, DB_BIERES, DB_PRODUITS, input$report_choice)
+  }) %>% bindCache(input$report_choice, date_jour)
 
   # Optimisation Bolt : Mettre en cache les prédictions de brassins (Holt-Winters) qui sont gourmandes en CPU
   DB_PREDICT <- reactive({
@@ -1548,27 +1549,26 @@ server <- function(input, output, session) {
   })
 
 
+  # Optimisation Bolt : Mettre en cache l'écart au budget car le calcul cumulatif sur l'année est redondant
   output$graph_evo_ecart_budget <- renderPlotly({
-    graph_evo_ecart_budget(UPD_OBJECTIFS(),UPD_JOURS())
-  })
+    graph_evo_ecart_budget(UPD_OBJECTIFS(), UPD_JOURS())
+  }) %>% bindCache(input$check_tva, date_jour)
 
+  # Optimisation Bolt : Suppression d'une définition doublon et mise en cache de l'écart N vs N-1
   output$graph_evo_ecart_ym1 <- renderPlotly({
     graph_evo_ecart_ym1(UPD_JOURS())
-  })
-
-  output$graph_evo_ecart_ym1 <- renderPlotly({
-    graph_evo_ecart_ym1(UPD_JOURS())
-  })
+  }) %>% bindCache(input$check_tva, date_jour)
 
   observe({
     vec_year <- sort(unique(year(DB_JOURS$DATE)))
-    updateRadioButtons(session,"year_panorama",inline = TRUE,
-                       choices = vec_year,selected = vec_year[length(vec_year)])
+    updateRadioButtons(session, "year_panorama", inline = TRUE,
+                       choices = vec_year, selected = vec_year[length(vec_year)])
   })
 
+  # Optimisation Bolt : Mettre en cache le panorama annuel car le rendu des géométries ggplot2 est complexe
   output$graph_evo_annee_complete <- renderPlot({
-    graph_evo_annee_complete(UPD_JOURS(),input$year_panorama)
-  })
+    graph_evo_annee_complete(UPD_JOURS(), input$year_panorama)
+  }) %>% bindCache(input$year_panorama, input$check_tva, date_jour)
 
 
   #### Comptabilité ####
