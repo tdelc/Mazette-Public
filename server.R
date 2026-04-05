@@ -124,6 +124,7 @@ DB_JOURS_PRE <- prepa_db_prejoin(DB_JOURS)
 DB_OBJECTIFS_PRE <- prepa_db_prejoin(DB_OBJECTIFS)
 DB_PRODUITS_PRE <- prepa_db_prejoin(DB_PRODUITS)
 DB_HOREKO_PRE <- prepa_db_prejoin(DB_HOREKO)
+DB_HEURES_PRE <- prepa_db_prejoin(DB_HEURES)
 DB_KPI_PRE <- prepa_db_prejoin(DB_KPI)
 DB_KPI_SIMPLE_PRE <- prepa_db_prejoin(DB_KPI_SIMPLE)
 
@@ -151,6 +152,11 @@ server <- function(input, output, session) {
   UPD_KPI <- reactive({prepa_db(DB_KPI_PRE,var_tva())})
   UPD_KPI_SIMPLE <- reactive({prepa_db(DB_KPI_SIMPLE_PRE,var_tva())})
   UPD_TICKETS <- reactive({DB_TICKET_PRE})
+
+  # Optimisation Bolt : Réactif pour filtrer les heures par mois et mise en cache pour éviter les recalculs
+  UPD_HEURES <- reactive({
+    DB_HEURES_PRE %>% filter(PREMIER_JOUR_MOIS == debut_mois_heures())
+  }) %>% bindCache(input$heures_date, date_jour)
 
   # UPD_JOURS <- function() {prepa_db(DB_JOURS,var_tva())}
   # UPD_OBJECTIFS <- function() {prepa_db(DB_OBJECTIFS,var_tva())}
@@ -1210,10 +1216,9 @@ server <- function(input, output, session) {
     floor_date(input$heures_date, unit = "month")
   })
 
+  # Optimisation Bolt : Utilisation du réactif UPD_HEURES() pour éviter les jointures et filtrages redondants
   output$heures_detail <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(PERSONNE = ifelse(PERSONNE == "Pointage",
                                ".Pointage",PERSONNE)) %>%
       group_by(PERSONNE,SECTEUR) %>%
@@ -1229,10 +1234,9 @@ server <- function(input, output, session) {
              `Coût du travail` = format_CA(`Coût du travail`))
   })
 
+  # Optimisation Bolt : Utilisation du réactif UPD_HEURES() pré-joint et filtré
   output$heures_service <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(Type = ifelse(PERSONNE == "Pointage","Pointée","Listée")) %>%
       group_by(Type,SECTEUR) %>%
       summarise(`Nombre d'heures` = sum(NB_HEURES_JOUR),
@@ -1247,10 +1251,9 @@ server <- function(input, output, session) {
              `Coût du travail` = format_CA(`Coût du travail`))
   })
 
+  # Optimisation Bolt : Utilisation du réactif UPD_HEURES() pré-joint et filtré
   output$heures_personne <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(PERSONNE = ifelse(PERSONNE == "Pointage",
                                ".Pointage",PERSONNE)) %>%
       group_by(PERSONNE) %>%
@@ -1286,10 +1289,10 @@ server <- function(input, output, session) {
 
   })
 
+  # Optimisation Bolt : Utilisation de DB_HEURES_PRE pour éviter la jointure répétitive
   output$evo_heures <- renderPlotly({
 
-    COUT_TRAVAIL_HOREKO <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
+    COUT_TRAVAIL_HOREKO <- DB_HEURES_PRE %>%
       filter(PREMIER_JOUR_MOIS >= debut_mois_heures()-years(1),
              PREMIER_JOUR_MOIS <= debut_mois_heures()) %>%
       group_by(PREMIER_JOUR_MOIS) %>%

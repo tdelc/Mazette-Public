@@ -864,8 +864,6 @@ graph_evo_heures <- function(DB_HOREKO){
 
 graph_evo_heures2 <- function(db_heures){
 
-  db_heures <<- db_heures
-
   SYN_CA <- db_heures %>%
     filter(!is.na(Compta),!is.na(Horeko)) %>%
     mutate(EcartPct = paste0(round(Compta / Horeko * 100, 0), "%"),
