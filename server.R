@@ -124,6 +124,7 @@ DB_JOURS_PRE <- prepa_db_prejoin(DB_JOURS)
 DB_OBJECTIFS_PRE <- prepa_db_prejoin(DB_OBJECTIFS)
 DB_PRODUITS_PRE <- prepa_db_prejoin(DB_PRODUITS)
 DB_HOREKO_PRE <- prepa_db_prejoin(DB_HOREKO)
+DB_HEURES_PRE <- prepa_db_prejoin(DB_HEURES)
 DB_KPI_PRE <- prepa_db_prejoin(DB_KPI)
 DB_KPI_SIMPLE_PRE <- prepa_db_prejoin(DB_KPI_SIMPLE)
 
@@ -1210,10 +1211,14 @@ server <- function(input, output, session) {
     floor_date(input$heures_date, unit = "month")
   })
 
+  # Optimisation Bolt : Utilisation d'un réactif partagé et mis en cache pour les heures de travail
+  UPD_HEURES <- reactive({
+    DB_HEURES_PRE %>%
+      filter(PREMIER_JOUR_MOIS == debut_mois_heures())
+  }) %>% bindCache(input$heures_date, date_jour)
+
   output$heures_detail <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(PERSONNE = ifelse(PERSONNE == "Pointage",
                                ".Pointage",PERSONNE)) %>%
       group_by(PERSONNE,SECTEUR) %>%
@@ -1230,9 +1235,7 @@ server <- function(input, output, session) {
   })
 
   output$heures_service <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(Type = ifelse(PERSONNE == "Pointage","Pointée","Listée")) %>%
       group_by(Type,SECTEUR) %>%
       summarise(`Nombre d'heures` = sum(NB_HEURES_JOUR),
@@ -1248,9 +1251,7 @@ server <- function(input, output, session) {
   })
 
   output$heures_personne <- renderTable({
-    DB <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
-      filter(PREMIER_JOUR_MOIS == debut_mois_heures()) %>%
+    DB <- UPD_HEURES() %>%
       mutate(PERSONNE = ifelse(PERSONNE == "Pointage",
                                ".Pointage",PERSONNE)) %>%
       group_by(PERSONNE) %>%
@@ -1288,8 +1289,7 @@ server <- function(input, output, session) {
 
   output$evo_heures <- renderPlotly({
 
-    COUT_TRAVAIL_HOREKO <- DB_HEURES %>%
-      left_join(DB_DATE) %>%
+    COUT_TRAVAIL_HOREKO <- DB_HEURES_PRE %>%
       filter(PREMIER_JOUR_MOIS >= debut_mois_heures()-years(1),
              PREMIER_JOUR_MOIS <= debut_mois_heures()) %>%
       group_by(PREMIER_JOUR_MOIS) %>%
