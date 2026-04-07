@@ -1357,6 +1357,23 @@ server <- function(input, output, session) {
     table_evo_brassins(max_date = input$predict_date)
   }) %>% bindCache(input$predict_date, date_jour)
 
+  # Optimisation Bolt : Calculer les dates de fin prévues en une seule fois pour éviter les filtres répétés dans les sorties
+  DB_FIN_BRASSINS <- reactive({
+    req(DB_PREDICT())
+    DB_PREDICT() %>%
+      group_by(ID_BRASSIN) %>%
+      summarise(
+        idx_mean = which(VOLUME_RESTANT <= 0)[1],
+        idx_min = which(LO_50 <= 0)[1],
+        idx_max = which(HI_50 <= 0)[1],
+        DATE_FIN_MIN = if(!is.na(idx_mean)) DATE[idx_min] else as.Date(NA),
+        DATE_FIN = if(!is.na(idx_mean)) DATE[idx_mean] else as.Date(NA),
+        DATE_FIN_MAX = if(!is.na(idx_mean)) DATE[idx_max] else as.Date(NA),
+        .groups = "drop"
+      ) %>%
+      select(ID_BRASSIN, DATE_FIN_MIN, DATE_FIN, DATE_FIN_MAX)
+  }) %>% bindCache(input$predict_date, date_jour)
+
   output$table_brassins_fini <- renderDataTable({
     datatable(
       DB_BIERES %>%
@@ -1438,13 +1455,14 @@ server <- function(input, output, session) {
 
     output[[paste0("predict_", i)]] <- renderText({
       req(nrow(data()) >= i)
-      prediction <- predict_fin_brassin(DB_PREDICT(), data()[i, "ID_BRASSIN"])
-      if (is.na(prediction[1]))
+      # Optimisation Bolt : Utilisation de DB_FIN_BRASSINS() pour éviter predict_fin_brassin() en boucle
+      prediction <- DB_FIN_BRASSINS() %>% filter(ID_BRASSIN == data()[i, "ID_BRASSIN"])
+      if (nrow(prediction) == 0 || is.na(prediction$DATE_FIN[1]))
         "(Inconnu)"
-      else if (is.na(prediction[3]))
-        paste("Vers le", prediction[2])
+      else if (is.na(prediction$DATE_FIN_MAX[1]))
+        paste("Vers le", prediction$DATE_FIN[1])
       else
-        paste0("(entre ", prediction[1], " et ", prediction[3], ")")
+        paste0("(entre ", prediction$DATE_FIN_MIN[1], " et ", prediction$DATE_FIN_MAX[1], ")")
     })
   })
 
@@ -1478,18 +1496,9 @@ server <- function(input, output, session) {
       group_by(ID_BRASSIN) %>% filter(row_number() == 1) %>% ungroup() %>%
       mutate(across(where(is.numeric), ~round(., 2)))
 
-    TABLE$DATE_FIN_MIN <- NA
-    TABLE$DATE_FIN <- NA
-    TABLE$DATE_FIN_MAX <- NA
-
-    for (id_brassin in TABLE$ID_BRASSIN) {
-      predict <- predict_fin_brassin(DB_PREDICT(), id_brassin)
-      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MIN"] <- predict[1]
-      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN"] <- predict[2]
-      TABLE[TABLE$ID_BRASSIN == id_brassin, "DATE_FIN_MAX"] <- predict[3]
-    }
-
+    # Optimisation Bolt : Utilisation d'une jointure avec DB_FIN_BRASSINS() au lieu d'une boucle lente
     TABLE <- TABLE %>%
+      left_join(DB_FIN_BRASSINS(), by = "ID_BRASSIN") %>%
       arrange(DATE_FIN) %>%
       select(BOISSON, ID_BRASSIN, VOLUME_BRASSIN, VOLUME_BRASSIN_AJUST,
              VOLUME_TOT, NB_JOURS_VENTES, PCT, VOLUME_PAR_JOUR,
