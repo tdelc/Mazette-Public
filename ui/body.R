@@ -19,6 +19,7 @@ body <- function(){
       tabItem_ventes,
       tabItem_ventes_repartition,
       tabItem_comparaison,
+      tabItem_vacances,
       tabItem_historique,
       tabItem_budget,
 

@@ -72,10 +72,13 @@ calculer_objectifs_journaliers <- function(annee, mois, ca_htva, ca_tvac) {
 
 #### DB_DATE ####
 
+source("vacances_data.R")
+
 DB_DATE <- tibble(
   DATE = list(seq.Date(min(ymd(IMPORT_OLD$DATEVALUE)),
                        ceiling_date(today(), "year")-1,by= "1 day"))) %>%
   unnest(cols = c(DATE)) %>%
+  add_vacances_info() %>%
   mutate(
     JOUR_SEMAINE = lubridate::wday(DATE,week_start = 1),
     JOUR_SEMAINE = factor(vecteur_jours[JOUR_SEMAINE],
