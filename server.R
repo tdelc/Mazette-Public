@@ -1750,7 +1750,8 @@ server <- function(input, output, session) {
       left_join(DB_PRODUITS) %>%
       mutate_if(is.numeric,replace_na,0) %>%
       mutate_if(is.character,replace_na,"") %>%
-      filter(PRICE > 0,CATEGORY != "BOISSONS CHAUDES") %>% 
+      # filter(PRICE > 0,CATEGORY != "BOISSONS CHAUDES") %>% 
+      filter(PRICE > 0) %>% 
       filter(DATE >= input$date_impact_simulation[1],
              DATE <= input$date_impact_simulation[2]) %>%
       group_by(PRODUCT_FULL) %>% 
