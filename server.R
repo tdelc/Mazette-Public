@@ -28,6 +28,8 @@ library(rhandsontable)
 link_json <- Sys.getenv("LINK_JSON")
 path_drive <- Sys.getenv("PATH_DRIVE")
 id_sheet_mazette <- Sys.getenv("ID_DRIVE_MAZETTE")
+ID_MAZETTE_2023 <- Sys.getenv("ID_MAZETTE_2023")
+ID_MAZETTE_2025 <- Sys.getenv("ID_MAZETTE_2025")
 path_logos <- Sys.getenv("PATH_LOGOS")
 
 download.file(link_json,destfile = "connect.json")
