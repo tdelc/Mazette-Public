@@ -20,6 +20,7 @@ sidebar <- function(){
                    menuSubItem("Ventes horaires", tabName = "horaires", icon = icon("clock")),
                    menuSubItem("Historique", tabName = "historique", icon = icon("clock-rotate-left")),
                    menuSubItem("Comparaison", tabName = "comparaison", icon = icon("code-compare")),
+                   menuSubItem("Analyse Vacances", tabName = "vacances", icon = icon("umbrella-beach")),
                    menuSubItem("Analyse annuelle", tabName = "budget", icon = icon("euro-sign"))
           ),
           menuItem("Évolution Produits", tabName = "produits", icon = icon("tags")),

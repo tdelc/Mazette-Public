@@ -1514,6 +1514,74 @@ server <- function(input, output, session) {
     graph_evo_annee_complete(UPD_JOURS(),input$year_panorama)
   })
 
+  #### Vacances ####
+
+  data_vacances <- reactive({
+    UPD_JOURS() %>%
+      filter(ventes > 0) %>%
+      left_join(DB_DATE %>% select(DATE, TYPE_VACANCES, VACANCES_FR, VACANCES_NL))
+  })
+
+  output$vb_vacances_ca_hors <- renderValueBox({
+    val <- data_vacances() %>% filter(TYPE_VACANCES == "Hors vacances") %>% summarise(m = mean(ventes)) %>% pull(m)
+    valueBox(format_CA(val), "Moyenne Hors Vacances", icon = icon("calendar-check"), color = "blue")
+  })
+
+  output$vb_vacances_ca_fr <- renderValueBox({
+    val <- data_vacances() %>% filter(TYPE_VACANCES == "FR uniquement") %>% summarise(m = mean(ventes)) %>% pull(m)
+    valueBox(format_CA(val), "Moyenne FR uniquement", icon = icon("school"), color = "red")
+  })
+
+  output$vb_vacances_ca_nl <- renderValueBox({
+    val <- data_vacances() %>% filter(TYPE_VACANCES == "NL uniquement") %>% summarise(m = mean(ventes)) %>% pull(m)
+    valueBox(format_CA(val), "Moyenne NL uniquement", icon = icon("school"), color = "orange")
+  })
+
+  output$vb_vacances_ca_communes <- renderValueBox({
+    val <- data_vacances() %>% filter(TYPE_VACANCES == "Communes") %>% summarise(m = mean(ventes)) %>% pull(m)
+    valueBox(format_CA(val), "Moyenne Communes", icon = icon("people-group"), color = "green")
+  })
+
+  output$graph_vacances_comparaison <- renderPlotly({
+    df_plot <- data_vacances() %>%
+      group_by(TYPE_VACANCES) %>%
+      summarise(mean_ca = mean(ventes), .groups = "drop") %>%
+      mutate(TYPE_VACANCES = factor(TYPE_VACANCES, levels = c("Hors vacances", "FR uniquement", "NL uniquement", "Communes")))
+
+    p <- ggplot(df_plot) +
+      aes(x = TYPE_VACANCES, y = mean_ca, fill = TYPE_VACANCES) +
+      geom_col() +
+      scale_y_continuous(labels = dollar_format(suffix = "€", prefix = "", big.mark = ".", decimal.mark = ",")) +
+      labs(x = "Type de vacances", y = "CA moyen par jour") +
+      theme_minimal() +
+      theme_mazette() +
+      theme(legend.position = "none")
+
+    ggplotly(p)
+  })
+
+  output$table_vacances_detail <- renderDataTable({
+    # Grouper par année scolaire et période pour plus de détail
+    # On peut essayer de repérer les blocs de vacances
+    df_table <- data_vacances() %>%
+      filter(TYPE_VACANCES != "Hors vacances") %>%
+      mutate(ANNEE_SCOLAIRE = ifelse(month(DATE) >= 9, paste0(year(DATE), "-", year(DATE)+1), paste0(year(DATE)-1, "-", year(DATE)))) %>%
+      group_by(ANNEE_SCOLAIRE, TYPE_VACANCES) %>%
+      summarise(
+        NB_JOURS = n(),
+        CA_TOTAL = sum(ventes),
+        CA_MOYEN = mean(ventes),
+        .groups = "drop"
+      ) %>%
+      arrange(desc(ANNEE_SCOLAIRE), TYPE_VACANCES) %>%
+      mutate(
+        CA_TOTAL = format_CA(CA_TOTAL),
+        CA_MOYEN = format_CA(CA_MOYEN)
+      )
+
+    datatable_simple(df_table)
+  })
+
 
   #### Comptabilité ####
 
