@@ -1,5 +1,660 @@
 
 
+#### REFONTE — Volet "Maintenant" ####
+
+# Tronque un nom de produit trop long
+tronque_nom <- function(x, max = 40) {
+  ifelse(nchar(x) > max, paste0(substr(x, 1, max), "…"), x)
+}
+
+# Produit "bière" = catégorie contenant BIÈRE (rotation constante -> exclu des comparaisons)
+est_biere <- function(category) {
+  str_detect(toupper(replace_na(category, "")), "BI[EÈ]RE")
+}
+
+# Top produits (CA HTVA) sur une période [date_debut, date_fin]
+top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10) {
+  db_produits %>%
+    filter(DATE >= date_debut, DATE <= date_fin) %>%
+    group_by(PRODUCT) %>%
+    summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
+              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(CA)) %>%
+    slice_head(n = n) %>%
+    transmute(Produit = tronque_nom(PRODUCT),
+              Quantité = Quantite,
+              `CA HTVA` = format_CA(CA, -1))
+}
+
+# Évolution des produits (hors bières) : semaine en cours vs semaine précédente
+evolution_produits_semaine <- function(db_produits, date_debut_semaine, n = 10,
+                                       sens = c("hausse", "baisse")) {
+  sens <- match.arg(sens)
+
+  agrege <- function(d1, d2) {
+    db_produits %>%
+      filter(DATE >= d1, DATE <= d2, !est_biere(CATEGORY)) %>%
+      group_by(PRODUCT) %>%
+      summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE), .groups = "drop")
+  }
+
+  sem    <- agrege(date_debut_semaine,     date_debut_semaine + 6)
+  sem_m1 <- agrege(date_debut_semaine - 7, date_debut_semaine - 1) %>%
+    rename(QUANTITE_m1 = QUANTITE)
+
+  evo <- inner_join(sem, sem_m1, by = "PRODUCT") %>%
+    mutate(delta = QUANTITE - QUANTITE_m1)
+
+  evo <- if (sens == "hausse") arrange(evo, desc(delta)) else arrange(evo, delta)
+
+  evo %>%
+    slice_head(n = n) %>%
+    transmute(Produit = tronque_nom(PRODUCT),
+              `Cette sem.` = QUANTITE,
+              `Sem. -1` = QUANTITE_m1,
+              `Δ` = delta)
+}
+
+# Cumul jour à jour du CA réalisé vs objectif sur un mois donné
+progression_mois <- function(db_kpi, db_obj, mois = floor_date(today(), "month")) {
+  fin <- ceiling_date(mois, "month") - 1
+  
+  reel <- db_kpi %>% filter(DATE >= mois, DATE <= fin) %>% transmute(DATE, ventes)
+  obj  <- db_obj %>% filter(DATE >= mois, DATE <= fin) %>% transmute(DATE, objectif = ventes)
+  
+  full_join(reel, obj, by = "DATE") %>%
+    arrange(DATE) %>%
+    mutate(ventes   = replace_na(ventes, 0),
+           objectif = replace_na(objectif, 0),
+           cum_reel = cumsum(ventes),
+           cum_obj  = cumsum(objectif),
+           # on n'affiche pas le cumulé réalisé pour les jours pas encore passés
+           cum_reel = ifelse(DATE > today(), NA, cum_reel))
+}
+
+# Graphe de progression mensuelle : objectif cumulé (pointillé) + réalisé cumulé (aire)
+graph_progression_mois <- function(prog, mois = floor_date(today(), "month")) {
+  plot_ly(prog) %>%
+    add_lines(x = ~DATE, y = ~cum_obj, name = "Objectif cumulé",
+              line = list(color = "#260b01", dash = "dot", width = 1.5),
+              hovertemplate = ~paste0(format(DATE, "%d/%m"), "<br>Objectif ",
+                                      format_CA(cum_obj, -1), "<extra></extra>")) %>%
+    add_lines(x = ~DATE, y = ~cum_reel, name = "Réalisé cumulé",
+              line = list(color = "#732c02", width = 3),
+              fill = "tozeroy", fillcolor = "rgba(115,44,2,0.10)",
+              connectgaps = FALSE,
+              hovertemplate = ~paste0(format(DATE, "%d/%m"), "<br>Réalisé ",
+                                      format_CA(cum_reel, -1), "<extra></extra>")) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "CA cumulé (€)"),
+           legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+
+#### REFONTE — Volet "Détail" ####
+
+# Graphe des CA journaliers (barres cliquables) sur une période
+graph_ca_jour <- function(db_kpi, db_obj, d1, d2, source = "detail_jour") {
+  dat <- db_kpi %>%
+    select(DATE, ventes) %>%
+    left_join(db_obj %>% select(DATE, objectif = ventes), by = "DATE") %>%
+    filter(DATE >= d1, DATE <= d2, ventes > 0) %>%
+    arrange(DATE)
+
+  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+
+  plot_ly(dat, source = source) %>%
+    add_bars(x = ~DATE, y = ~ventes, name = "CA",
+             marker = list(color = couleurs),
+             hovertemplate = ~paste0(format(DATE, "%a %d/%m"), "<br>CA ",
+                                     format_CA(ventes, -1), "<extra></extra>")) %>%
+    add_lines(x = ~DATE, y = ~objectif, name = "Objectif",
+              line = list(color = "#260b01", dash = "dot", width = 1)) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
+           bargap = 0.3, legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Liste des produits (CA, quantité) sur une période -> table sélectionnable
+liste_produits_periode <- function(db_produits, d1, d2) {
+  db_produits %>%
+    filter(DATE >= d1, DATE <= d2) %>%
+    group_by(Produit = PRODUCT) %>%
+    summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
+              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(CA))
+}
+
+# Évolution hebdomadaire d'un produit
+evolution_un_produit <- function(db_produits, produit, d1, d2) {
+  db_produits %>%
+    filter(PRODUCT == produit, DATE >= d1, DATE <= d2) %>%
+    mutate(SEMAINE = floor_date(DATE, unit = "week", week_start = 1)) %>%
+    group_by(SEMAINE) %>%
+    summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
+              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+    arrange(SEMAINE)
+}
+
+# Graphe d'évolution d'un produit (CA en barres + quantité en ligne)
+graph_evolution_produit <- function(evo, produit) {
+  plot_ly(evo, source = "detail_produit") %>%
+    add_bars(x = ~SEMAINE, y = ~CA, name = "CA (€)",
+             marker = list(color = "#732c02"),
+             hovertemplate = ~paste0("Semaine du ", format(SEMAINE, "%d/%m"),
+                                     "<br>CA ", format_CA(CA, -1), "<extra></extra>")) %>%
+    add_lines(x = ~SEMAINE, y = ~Quantite, name = "Quantité", yaxis = "y2",
+              line = list(color = "#d98236", width = 2),
+              hovertemplate = ~paste0(Quantite, " vendus<extra></extra>")) %>%
+    layout(yaxis = list(title = "CA (€)"),
+           yaxis2 = list(title = "Quantité", overlaying = "y", side = "right",
+                         showgrid = FALSE),
+           xaxis = list(title = ""), legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+
+#### REFONTE — Volet "Historique" ####
+
+# Agrège le CA réalisé + objectif par semaine ou par mois.
+# (db = sortie de prepa_db : colonnes DATE, ventes, PREMIER_JOUR_SEMAINE, PREMIER_JOUR_MOIS)
+agrege_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"),
+                              exclure_courant = TRUE) {
+  unite <- match.arg(unite)
+  col <- if (unite == "semaine") "PREMIER_JOUR_SEMAINE" else "PREMIER_JOUR_MOIS"
+
+  reel <- db_kpi %>%
+    group_by(PERIODE = .data[[col]]) %>%
+    summarise(ventes = sum(ventes, na.rm = TRUE), .groups = "drop")
+  obj <- db_obj %>%
+    group_by(PERIODE = .data[[col]]) %>%
+    summarise(objectif = sum(ventes, na.rm = TRUE), .groups = "drop")
+
+  res <- left_join(reel, obj, by = "PERIODE") %>% arrange(PERIODE)
+
+  if (exclure_courant) {
+    courant <- if (unite == "semaine") floor_date(today(), "week", week_start = 1)
+               else floor_date(today(), "month")
+    res <- res %>% filter(PERIODE < courant)
+  }
+  res
+}
+
+# Graphe historique : barres (CA réalisé, vert si >= objectif) + ligne objectif
+graph_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"), n = 12) {
+  unite <- match.arg(unite)
+  dat <- agrege_historique(db_kpi, db_obj, unite) %>%
+    filter(ventes > 0)
+  # %>%  slice_tail(n = n)
+
+  lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
+         else format(dat$PERIODE, "%B %Y")
+  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+
+  plot_ly(dat) %>%
+    add_bars(x = ~PERIODE, y = ~ventes, name = "CA réalisé",
+             marker = list(color = couleurs),
+             hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1), "<extra></extra>")) %>%
+    add_lines(x = ~PERIODE, y = ~objectif, name = "Objectif",
+              line = list(color = "#260b01", dash = "dot", width = 1.5),
+              hovertemplate = ~paste0("Objectif ", format_CA(objectif, -1), "<extra></extra>")) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
+           bargap = 0.3, legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois"), n = 12) {
+  
+  unite <- match.arg(unite)
+  dat <- agrege_historique(db_kpi, db_obj, unite) %>%
+    filter(ventes > 0)
+  
+  dat$ma <- forecast::ma(dat$ventes,5)
+  
+  lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
+  else format(dat$PERIODE, "%B %Y")
+  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+  
+  plot_ly(dat) %>%
+    add_lines(x = ~PERIODE, y = ~ventes, name = "CA réalisé",
+              line = list(color = "#d98236"),
+             hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1), "<extra></extra>")) %>%
+    add_lines(x = ~PERIODE, y = ~ma, name = "",
+              line = list(color = "#5B7BAA")) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
+           bargap = 0.3, legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+  
+  # p <- dat %>% 
+  #   ggplot() +
+  #   aes(x = PERIODE, y = ventes) +
+  #   geom_line()+
+  #   scale_x_date(breaks = "years")+
+  #   labs(x = "", y = "CA (€)")+
+  #   geom_smooth(method = "loess",formula = 'y ~ x')
+  # 
+  # ggplotly(p) %>% 
+  #   layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
+  #          bargap = 0.3, legend = list(orientation = "h"),
+  #          paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+
+
+#### REFONTE — Volet "Bières" ####
+
+# Niveau actuel de chaque bière en cours (dernière mesure connue)
+niveau_bieres_actuel <- function(max_date = today()) {
+  DB_BIERES %>%
+    filter(!FL_FINI, DATE <= max_date, DATE >= max_date - 30) %>%
+    group_by(ID_BRASSIN, BOISSON) %>%
+    arrange(DATE) %>%
+    slice_tail(n = 1) %>%
+    ungroup() %>%
+    transmute(ID_BRASSIN, BOISSON,
+              VOLUME_TOTAL = VOLUME_BRASSIN_AJUST,
+              VOLUME_RESTANT = pmax(0, DIFF),
+              PCT = ifelse(VOLUME_BRASSIN_AJUST > 0,
+                           round(100 * pmax(0, DIFF) / VOLUME_BRASSIN_AJUST), 0)) %>%
+    arrange(PCT)
+}
+
+# Grille de jauges plotly (un indicateur par bière, vert/ambre/rouge selon niveau)
+graph_niveaux_bieres <- function(niveaux) {
+  n <- nrow(niveaux)
+  if (n == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
+
+  ncol <- min(n, 5)
+  nlig <- ceiling(n / ncol)
+
+  p <- plot_ly()
+  for (i in seq_len(n)) {
+    lig <- (i - 1) %/% ncol
+    col <- (i - 1) %% ncol
+    pct <- niveaux$PCT[i]
+    couleur <- if (pct < 20) "#c0392b" else if (pct < 40) "#d98236" else "#5B7B5A"
+    titre <- paste0(niveaux$BOISSON[i],
+                    "<br><span style='font-size:0.7em;color:#888'>",
+                    round(niveaux$VOLUME_RESTANT[i]), " / ",
+                    round(niveaux$VOLUME_TOTAL[i]), " L</span>")
+    p <- p %>% add_trace(
+      type = "indicator", mode = "gauge+number",
+      value = pct, number = list(suffix = " %"),
+      title = list(text = titre, font = list(size = 15)),
+      gauge = list(axis = list(range = list(0, 100), ticksuffix = "%"),
+                   bar = list(color = couleur),
+                   bordercolor = "rgba(0,0,0,0.10)"),
+      domain = list(row = lig, column = col)
+    )
+  }
+  p %>% layout(grid = list(rows = nlig, columns = ncol, pattern = "independent"),
+               margin = list(t = 50, b = 10),
+               paper_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Évolution + prédiction du volume restant (version plotly de graph_evo_brassin)
+graph_evo_brassin_plotly <- function(db, max_affichage = today() %m+% months(1)) {
+  if (is.null(db) || nrow(db) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
+
+  # On n'affiche la prédiction que jusqu'à un mois après aujourd'hui (au-delà,
+  # l'extrapolation HoltWinters n'apporte rien et écrase l'échelle).
+  db <- db %>% filter(DATE <= max_affichage)
+  if (nrow(db) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
+
+  bieres <- unique(db$BOISSON)
+  pal <- setNames(
+    grDevices::colorRampPalette(
+      c("#732c02", "#d98236", "#5B7B5A", "#2980b9", "#9b59b6"))(length(bieres)),
+    bieres)
+
+  plt <- plot_ly()
+  for (b in bieres) {
+    sub  <- db %>% filter(BOISSON == b) %>% arrange(DATE)
+    act  <- sub %>% filter(!FL_PREDICT)
+    pred <- sub %>% filter(FL_PREDICT)
+    couleur <- pal[[b]]
+
+    plt <- plt %>% add_lines(
+      data = act, x = ~DATE, y = ~VOLUME_RESTANT,
+      name = b, legendgroup = b, line = list(color = couleur, width = 2.5),
+      hovertemplate = ~paste0(BOISSON, "<br>", format(DATE, "%d/%m"), "<br>",
+                              round(VOLUME_RESTANT), " L<extra></extra>"))
+
+    if (nrow(pred) > 0) {
+      pred2 <- bind_rows(slice_tail(act, n = 1), pred)
+      plt <- plt %>% add_lines(
+        data = pred2, x = ~DATE, y = ~VOLUME_RESTANT,
+        name = b, legendgroup = b, showlegend = FALSE,
+        line = list(color = couleur, width = 2, dash = "dot"),
+        hovertemplate = ~paste0(BOISSON, " (prév.)<br>", format(DATE, "%d/%m"), "<br>",
+                                round(VOLUME_RESTANT), " L<extra></extra>"))
+    }
+  }
+  plt %>% layout(xaxis = list(title = ""),
+                 yaxis = list(title = "Volume restant (L)", rangemode = "tozero",range = c(0, 400)),
+                 legend = list(orientation = "h"),
+                 paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Table des dates de fin de fût prévues (tôt / estimée / tard) par bière
+table_predictions_fin <- function(db_predict) {
+  if (is.null(db_predict) || nrow(db_predict) == 0)
+    return(tibble(Bière = character(), `Volume restant` = character(),
+                  `Fin (tôt)` = character(), `Fin estimée` = character(),
+                  `Fin (tard)` = character()))
+
+  fmt <- function(x) {
+    x <- as.Date(x, origin = "1970-01-01")
+    ifelse(is.na(x), "—", format(x, "%a %d/%m/%Y"))
+  }
+
+  unique(db_predict$ID_BRASSIN) %>%
+    map_df(function(id) {
+      fin  <- predict_fin_brassin(db_predict, id)
+      info <- db_predict %>%
+        filter(ID_BRASSIN == id, !FL_PREDICT) %>%
+        slice_tail(n = 1)
+      tibble(Bière = info$BOISSON,
+             `Volume restant` = paste0(round(info$VOLUME_RESTANT), " L"),
+             `Fin (tôt)`  = fmt(fin[1]),
+             `Fin estimée` = fmt(fin[2]),
+             `Fin (tard)` = fmt(fin[3]),
+             ord = suppressWarnings(as.numeric(as.Date(fin[2], origin = "1970-01-01"))))
+    }) %>%
+    arrange(ord) %>%
+    select(-ord)
+}
+
+
+#### REFONTE — Volet "Simulation" ####
+
+# Base de simulation : par produit sur une période -> quantité, CA HTVA, prix moyen HTVA.
+# Ordre stable (CATEGORY puis CA décroissant) pour mapper les éditions par n° de ligne.
+prepa_simulation <- function(db_produits, d1, d2) {
+  db_produits %>%
+    filter(DATE >= d1, DATE <= d2, CA_HTVA > 0, QUANTITE > 0) %>%
+    group_by(CATEGORY, PRODUCT) %>%
+    summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
+              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+    mutate(PRIX_MOYEN = round(CA / QUANTITE, 2)) %>%
+    arrange(CATEGORY, desc(CA))
+}
+
+# Applique un vecteur de prix simulés (indexé par n° de ligne) à la base.
+# Hypothèse : quantité inchangée -> le CA varie au prorata du prix.
+calc_simulation <- function(base, prix_simu) {
+  if (is.null(prix_simu) || length(prix_simu) != nrow(base))
+    prix_simu <- base$PRIX_MOYEN
+  base %>%
+    mutate(PRIX_SIMU = as.numeric(prix_simu),
+           PRIX_SIMU = ifelse(is.na(PRIX_SIMU), PRIX_MOYEN, PRIX_SIMU),
+           CA_SIMU = QUANTITE * PRIX_SIMU,
+           DELTA = CA_SIMU - CA)
+}
+
+# Mise en forme pour affichage DT (table éditable côté serveur)
+table_simulation_aff <- function(sim) {
+  sim %>%
+    transmute(Catégorie = CATEGORY,
+              Produit = tronque_nom(PRODUCT),
+              Quantité = QUANTITE,
+              `Prix moyen` = PRIX_MOYEN,
+              `Prix simulé` = round(PRIX_SIMU, 2),
+              `CA actuel` = round(CA),
+              `CA simulé` = round(CA_SIMU),
+              `Δ CA` = round(DELTA))
+}
+
+
+#### REFONTE — Volet "Compta / Gestion" ####
+# Les DB de coûts (DB_COUTS_HORAIRES) et de matières (DB_CONSO_MP) sont fictives
+# pour l'instant — cf. donnees_fictives_compta.R (générateurs + tutoriel). Les
+# helpers ci-dessous ne dépendent QUE de leurs colonnes, donc ils marcheront tels
+# quels une fois les vraies sources branchées.
+
+# Agrège CA / main d'œuvre / matières / profit par semaine ou par mois.
+#   db_kpi  : sortie de prepa_db (colonnes DATE, ventes)
+#   db_couts: DB_COUTS_HORAIRES (DATE, SECTEUR, COUT, ...)
+#   db_conso: DB_CONSO_MP (SEMAINE, SECTEUR, CONSO, ...)
+agrege_compta <- function(db_kpi, db_couts, db_conso,
+                          unite = c("semaine", "mois", "annee"),
+                          d1 = NULL, d2 = NULL, exclure_courant = FALSE) {
+  unite <- match.arg(unite)
+  per <- function(d) switch(unite,
+    semaine = floor_date(d, "week", week_start = 1),
+    mois    = floor_date(d, "month"),
+    annee   = floor_date(d, "year"))
+
+  if (!is.null(d1)) {
+    d1 <- as.Date(d1)
+    db_kpi   <- filter(db_kpi,   DATE    >= d1)
+    db_couts <- filter(db_couts, DATE    >= d1)
+    db_conso <- filter(db_conso, SEMAINE >= floor_date(d1, "week", week_start = 1))
+  }
+  if (!is.null(d2)) {
+    d2 <- as.Date(d2)
+    db_kpi   <- filter(db_kpi,   DATE    <= d2)
+    db_couts <- filter(db_couts, DATE    <= d2)
+    db_conso <- filter(db_conso, SEMAINE <= d2)
+  }
+
+  ca <- db_kpi %>%
+    mutate(PERIODE = per(DATE)) %>%
+    group_by(PERIODE) %>%
+    summarise(CA = sum(ventes, na.rm = TRUE), .groups = "drop")
+
+  couts <- db_couts %>%
+    mutate(PERIODE = per(DATE)) %>%
+    group_by(PERIODE) %>%
+    summarise(COUTS_RH = sum(COUT, na.rm = TRUE), .groups = "drop")
+
+  conso <- db_conso %>%
+    mutate(PERIODE = per(SEMAINE)) %>%
+    group_by(PERIODE) %>%
+    summarise(MATIERES = sum(CONSO, na.rm = TRUE), .groups = "drop")
+
+  res <- ca %>%
+    full_join(couts, by = "PERIODE") %>%
+    full_join(conso, by = "PERIODE") %>%
+    arrange(PERIODE) %>%
+    mutate(across(c(CA, COUTS_RH, MATIERES), ~replace_na(., 0)),
+           CHARGES = COUTS_RH + MATIERES,
+           PROFIT  = CA - CHARGES,
+           MARGE   = ifelse(CA > 0, round(100 * PROFIT / CA, 1), NA_real_))
+
+  if (exclure_courant) {
+    res <- res %>% filter(PERIODE < per(today()))
+  }
+  # Borne les périodes à la fenêtre demandée (évite qu'une semaine de stock à
+  # cheval sur deux mois/années fasse apparaître une période hors fenêtre).
+  if (!is.null(d1)) res <- res %>% filter(PERIODE >= per(d1))
+  if (!is.null(d2)) res <- res %>% filter(PERIODE <= d2)
+  res %>% filter(CA > 0 | CHARGES > 0)
+}
+
+# Graphe « compte de résultat » : charges empilées (main d'œuvre + matières),
+# ligne de CA, et losange de profit (vert si positif, rouge sinon).
+graph_compta <- function(comptes, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  if (is.null(comptes) || nrow(comptes) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+
+  lbl <- switch(unite,
+    semaine = paste0("Sem. du ", format(comptes$PERIODE, "%d/%m/%Y")),
+    mois    = format(comptes$PERIODE, "%B %Y"),
+    annee   = format(comptes$PERIODE, "%Y"))
+  coul_profit <- ifelse(comptes$PROFIT >= 0, "#5B7B5A", "#c0392b")
+
+  plot_ly(comptes) %>%
+    add_bars(x = ~PERIODE, y = ~COUTS_RH, name = "Main d'œuvre",
+             marker = list(color = "#d98236"),
+             hovertemplate = ~paste0(lbl, "<br>Main d'œuvre ",
+                                     format_CA(COUTS_RH, -1), "<extra></extra>")) %>%
+    add_bars(x = ~PERIODE, y = ~MATIERES, name = "Matières premières",
+             marker = list(color = "#d3c0ac"),
+             hovertemplate = ~paste0(lbl, "<br>Matières ",
+                                     format_CA(MATIERES, -1), "<extra></extra>")) %>%
+    add_lines(x = ~PERIODE, y = ~CA, name = "CA (HTVA)",
+              line = list(color = "#732c02", width = 2.5),
+              hovertemplate = ~paste0(lbl, "<br>CA ",
+                                      format_CA(CA, -1), "<extra></extra>")) %>%
+    add_markers(x = ~PERIODE, y = ~PROFIT, name = "Profit",
+                marker = list(color = coul_profit, size = 9, symbol = "diamond"),
+                hovertemplate = ~paste0(lbl, "<br>Profit ", format_CA(PROFIT, -1),
+                                        " (", MARGE, " %)<extra></extra>")) %>%
+    layout(barmode = "stack", xaxis = list(title = ""), yaxis = list(title = "€"),
+           legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Tableau du compte de résultat par période (du plus récent au plus ancien).
+table_compta_aff <- function(comptes, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  if (is.null(comptes) || nrow(comptes) == 0)
+    return(tibble(Période = character()))
+  comptes %>%
+    arrange(desc(PERIODE)) %>%
+    transmute(Période = label_periode(PERIODE, unite),
+              `CA (HTVA)`    = format_CA(CA, -1),
+              `Main d'œuvre` = format_CA(COUTS_RH, -1),
+              Matières       = format_CA(MATIERES, -1),
+              Charges        = format_CA(CHARGES, -1),
+              Profit         = format_CA(PROFIT, -1),
+              Marge          = ifelse(is.na(MARGE), "—", paste0(MARGE, " %")))
+}
+
+# Répartition des charges par secteur sur une période (barres horizontales).
+graph_compta_secteurs <- function(db_couts, db_conso, d1, d2) {
+  rh <- db_couts %>%
+    filter(DATE >= d1, DATE <= d2) %>%
+    group_by(SECTEUR) %>%
+    summarise(MONTANT = sum(COUT, na.rm = TRUE), .groups = "drop") %>%
+    mutate(TYPE = "Main d'œuvre")
+  mp <- db_conso %>%
+    filter(SEMAINE >= d1, SEMAINE <= d2) %>%
+    group_by(SECTEUR) %>%
+    summarise(MONTANT = sum(CONSO, na.rm = TRUE), .groups = "drop") %>%
+    mutate(TYPE = "Matières premières")
+
+  dat <- bind_rows(rh, mp) %>% arrange(MONTANT)
+  if (nrow(dat) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+  dat$SECTEUR <- factor(dat$SECTEUR, levels = dat$SECTEUR)
+  couleurs <- ifelse(dat$TYPE == "Main d'œuvre", "#d98236", "#d3c0ac")
+
+  plot_ly(dat) %>%
+    add_bars(y = ~SECTEUR, x = ~MONTANT, orientation = "h", color = ~TYPE,
+             marker = list(color = couleurs),
+             hovertemplate = ~paste0(SECTEUR, " (", TYPE, ")<br>",
+                                     format_CA(MONTANT, -1), "<extra></extra>")) %>%
+    layout(xaxis = list(title = "€"), yaxis = list(title = ""),
+           legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+
+#### REFONTE — Volet "Comparaison" ####
+
+# Étiquette lisible d'une période (date = début de période) selon la granularité.
+label_periode <- function(periode, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  switch(unite,
+    semaine = paste0("Sem. ", format(periode, "%d/%m/%y")),
+    mois    = format(periode, "%b %Y"),
+    annee   = format(periode, "%Y"))
+}
+
+# Début de période d'une date selon la granularité.
+debut_periode <- function(d, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  switch(unite,
+    semaine = floor_date(d, "week", week_start = 1),
+    mois    = floor_date(d, "month"),
+    annee   = floor_date(d, "year"))
+}
+
+# Périodes disponibles (avec ventes), de la plus récente à la plus ancienne.
+liste_periodes_dispo <- function(db_kpi, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  db_kpi %>%
+    filter(ventes > 0) %>%
+    mutate(PERIODE = debut_periode(DATE, unite)) %>%
+    distinct(PERIODE) %>%
+    arrange(desc(PERIODE)) %>%
+    pull(PERIODE)
+}
+
+# Tableau de comparaison : une ligne par période sélectionnée, avec ventes vs
+# objectif ET la compta (charges / profit / marge).
+comparaison_periodes <- function(db_kpi, db_obj, db_couts, db_conso,
+                                 unite = c("semaine", "mois", "annee"),
+                                 periodes = NULL) {
+  unite <- match.arg(unite)
+
+  comptes <- agrege_compta(db_kpi, db_couts, db_conso, unite, exclure_courant = FALSE)
+
+  obj <- db_obj %>%
+    mutate(PERIODE = debut_periode(DATE, unite)) %>%
+    group_by(PERIODE) %>%
+    summarise(OBJECTIF = sum(ventes, na.rm = TRUE), .groups = "drop")
+
+  res <- comptes %>%
+    left_join(obj, by = "PERIODE") %>%
+    mutate(OBJECTIF = replace_na(OBJECTIF, 0),
+           PCT_OBJ  = ifelse(OBJECTIF > 0, round(100 * CA / OBJECTIF, 1), NA_real_))
+
+  if (!is.null(periodes))
+    res <- res %>% filter(PERIODE %in% as.Date(periodes))
+
+  res %>% arrange(PERIODE)
+}
+
+# Barres groupées : CA réalisé / Objectif / Profit pour chaque période comparée.
+graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  if (is.null(comp) || nrow(comp) == 0)
+    return(plotly_empty() %>% layout(title = "Sélectionnez des périodes à comparer"))
+
+  comp <- comp %>% arrange(PERIODE)
+  lab  <- factor(label_periode(comp$PERIODE, unite),
+                 levels = label_periode(comp$PERIODE, unite))
+
+  plot_ly(comp) %>%
+    add_bars(x = lab, y = ~CA, name = "CA réalisé",
+             marker = list(color = "#732c02"),
+             hovertemplate = ~paste0("CA ", format_CA(CA, -1), "<extra></extra>")) %>%
+    add_bars(x = lab, y = ~OBJECTIF, name = "Objectif",
+             marker = list(color = "#d98236"),
+             hovertemplate = ~paste0("Objectif ", format_CA(OBJECTIF, -1), "<extra></extra>")) %>%
+    add_bars(x = lab, y = ~PROFIT, name = "Profit",
+             marker = list(color = "#5B7B5A"),
+             hovertemplate = ~paste0("Profit ", format_CA(PROFIT, -1),
+                                     " (", MARGE, " %)<extra></extra>")) %>%
+    layout(barmode = "group", xaxis = list(title = ""), yaxis = list(title = "€"),
+           legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Tableau comparatif (ventes vs objectif + compta), période la plus récente en tête.
+table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  if (is.null(comp) || nrow(comp) == 0)
+    return(tibble(Période = character()))
+  comp %>%
+    arrange(desc(PERIODE)) %>%
+    transmute(Période        = label_periode(PERIODE, unite),
+              `CA (HTVA)`    = format_CA(CA, -1),
+              Objectif       = format_CA(OBJECTIF, -1),
+              `% obj.`       = ifelse(is.na(PCT_OBJ), "—", paste0(PCT_OBJ, " %")),
+              Charges        = format_CA(CHARGES, -1),
+              Profit         = format_CA(PROFIT, -1),
+              Marge          = ifelse(is.na(MARGE), "—", paste0(MARGE, " %")))
+}
+
+
 #### Générique ####
 
 datatable_simple <- function(table){
@@ -1809,7 +2464,8 @@ CDDDE
   final_plot <- p1_timeline + p2_sales + p3_logo + p3_kpi + p4_donut +
     plot_layout(design = layout) + # Hauteur relative des panneaux
     plot_annotation(
-      title = paste("ANALYSE DE BRASSIN :", info_brassin$NOM_BRASSIN),
+      title = paste0("ANALYSE DE BRASSIN : ", info_brassin$NOM_BRASSIN,
+                    " ( brassin n°",id_brassin,")"),
       theme = theme(
         plot.title = element_text(size = 20, face = "bold", color = "#2c3e50"),
         plot.subtitle = element_text(size = 14, color = "#7f8c8d"),

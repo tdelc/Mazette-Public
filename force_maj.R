@@ -32,7 +32,6 @@ date_fin_8_semaines <- today()
 print(system.time({source("functions.R", local = TRUE)}))
 print(system.time({source("import.R", local = TRUE)}))
 print(system.time({source("nettoyage_ajout.R", local = TRUE)}))
-print(system.time({source("modules.R", local = TRUE)}))
 
 prefix <- "R_env_"
 date_jour <- max(DB_JOURS$DATE)
