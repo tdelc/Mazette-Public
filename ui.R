@@ -90,6 +90,11 @@ ui_app <- function() {
       ui_historique()
     ),
     nav_panel(
+      title = "Année",
+      icon = icon("calendar-check"),
+      ui_annee()
+    ),
+    nav_panel(
       title = "Bières",
       icon = icon("beer-mug-empty"),
       ui_bieres()
@@ -141,50 +146,114 @@ ui_comparaison <- function() {
 }
 
 ui_compta <- function() {
-  tagList(
-    layout_columns(
-      fill = FALSE,
-      col_widths = c(3, 3, 3, 3),
-      value_box("CA (HTVA)", textOutput("compta_vb_ca"),
-                showcase = icon("cash-register"), theme = "primary"),
-      value_box("Charges", textOutput("compta_vb_charges"),
-                showcase = icon("file-invoice-dollar"),
-                theme = value_box_theme(bg = MZ_AMBRE, fg = "#ffffff")),
-      value_box("Profit", textOutput("compta_vb_profit"),
-                showcase = icon("piggy-bank"),
-                theme = value_box_theme(bg = "#5B7B5A", fg = "#ffffff")),
-      value_box("Marge moyenne", textOutput("compta_vb_marge"),
-                showcase = icon("percent"),
-                theme = value_box_theme(bg = "#efe7d8", fg = MZ_BRUN))
+  navset_card_tab(
+    id = "compta_tabs",
+    nav_panel(
+      title = "Par semaine",
+      icon = icon("calendar-week"),
+      ui_compta_volet("sem")
+    ),
+    nav_panel(
+      title = "Par mois",
+      icon = icon("calendar-days"),
+      ui_compta_volet("mois")
+    )
+  )
+}
+
+# Un volet compta (semaine ou mois). `sfx` préfixe tous les identifiants pour
+# que les deux sous-onglets soient indépendants.
+# NB : tout est construit statiquement ; l'activation du panneau de comparaison
+# se fait par shinyjs::show/hide (pas de renderUI, qui casserait les
+# dépendances CSS bslib).
+ui_compta_volet <- function(sfx) {
+  id <- function(x) paste0("compta_", sfx, "_", x)
+
+  panneau <- function(cle) {
+    div(
+      class = "compta-panel", id = id(paste0("panel_", cle)),
+      div(class = "compta-panel-titre",
+          textOutput(id(paste0("titre_", cle)), inline = TRUE)),
+      uiOutput(id(paste0("kpi_", cle))),
+      card(
+        full_screen = TRUE,
+        card_header("Coûts par secteur"),
+        plotlyOutput(id(paste0("secteurs_", cle)), height = "260px"),
+        DTOutput(id(paste0("table_", cle)))
+      )
+    )
+  }
+
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Période",
+      width = 290,
+      selectInput(id("a"), "Période analysée", choices = NULL),
+      hr(),
+      checkboxInput(id("cmp"), "Comparer avec une autre période", value = FALSE),
+      shinyjs::hidden(
+        div(id = id("cmp_box"),
+            selectInput(id("b"), "Période comparée", choices = NULL))
+      ),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Food Cost"), " = matières / CA", tags$br(),
+          tags$b("Work Cost"), " = personnel / CA", tags$br(),
+          tags$b("Prime Cost"), " = (matières + personnel) / CA", tags$br(),
+          tags$b("Marge"), " = CA − prime cost", tags$br(), tags$br(),
+          "Coûts fictifs (cf. donnees_fictives_compta.R).")
     ),
     card(
       full_screen = TRUE,
-      card_header("Compte de résultat simplifié"),
+      card_header("Évolution — cliquez une barre pour analyser la période"),
+      plotlyOutput(id("evo"), height = "330px")
+    ),
+    div(class = "compta-split", panneau("a"), shinyjs::hidden(panneau("b"))),
+    shinyjs::hidden(
+      div(id = id("ecarts_box"),
+          card(
+            card_header("Écarts — période analysée moins période comparée"),
+            uiOutput(id("ecarts"))
+          ))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Évolution des indicateurs (% du CA)"),
+      plotlyOutput(id("kpi_evo"), height = "320px")
+    )
+  )
+}
+
+ui_annee <- function() {
+  tagList(
+    card(
+      card_header("Suivi de l'année en cours (à date)"),
       layout_columns(
         fill = FALSE,
-        col_widths = c(5, 7),
-        dateRangeInput("compta_periode", "Période",
-                       start = NULL, end = NULL,
-                       separator = " → ", language = "fr",
-                       weekstart = 1, format = "dd/mm/yyyy"),
-        radioButtons("compta_unite", "Granularité",
-                     c("Par semaine" = "semaine", "Par mois" = "mois",
-                       "Par année" = "annee"),
-                     selected = "mois", inline = TRUE)
+        col_widths = c(3, 9),
+        selectInput("annee_choisie", "Année", choices = NULL),
+        div(class = "small text-muted align-self-end pb-2",
+            "Cumuls arrêtés à hier : on ne compare que les jours déjà écoulés.")
       ),
-      plotlyOutput("compta_graph", height = "360px"),
-      div(class = "small text-muted",
-          "Profit = CA HTVA − main d'œuvre − matières premières. ",
-          "Coûts horaires et variations de stock fictifs ",
-          "(cf. donnees_fictives_compta.R).")
+      uiOutput("annee_kpi")
     ),
-    layout_columns(
-      col_widths = c(7, 5),
-      card(full_screen = TRUE,
-           card_header("Détail par période"),
-           DTOutput("compta_table")),
-      card(card_header("Répartition des charges par secteur"),
-           plotlyOutput("compta_secteurs", height = "360px"))
+    card(
+      full_screen = TRUE,
+      card_header("Écart cumulé de CA vs objectif"),
+      plotlyOutput("annee_ecart_obj", height = "340px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Écart cumulé de CA vs N-1 (même semaine, même jour)"),
+      plotlyOutput("annee_ecart_ym1", height = "340px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Écart cumulé de marge vs N-1"),
+      plotlyOutput("annee_ecart_marge", height = "340px"),
+      div(class = "small text-muted",
+          "Marge quotidienne = CA − personnel du jour − matières de la semaine ",
+          "réparties sur 7 jours.")
     )
   )
 }
@@ -264,13 +333,9 @@ ui_historique <- function() {
   tagList(
     card(
       card_header("Historique du chiffre d'affaires"),
-      layout_columns(
-        fill = FALSE,
-        col_widths = c(5, 7),
-        radioButtons("hist_unite", "Granularité",
-                     c("Par semaine" = "semaine", "Par mois" = "mois"),
-                     selected = "semaine", inline = TRUE)
-      ),
+      radioButtons("hist_unite", "Granularité",
+                   c("Par semaine" = "semaine", "Par mois" = "mois"),
+                   selected = "semaine", inline = TRUE),
       plotlyOutput("hist_graph", height = "330px"),
       plotlyOutput("hist_evo", height = "410px")
     )
@@ -312,6 +377,16 @@ ui_detail <- function() {
       )
     ),
     nav_panel(
+      title = "Par semaine",
+      icon = icon("calendar-week"),
+      ui_detail_periode("sem")
+    ),
+    nav_panel(
+      title = "Par mois",
+      icon = icon("calendar-days"),
+      ui_detail_periode("mois")
+    ),
+    nav_panel(
       title = "Par produit",
       icon = icon("box"),
       layout_columns(
@@ -325,6 +400,43 @@ ui_detail <- function() {
           plotlyOutput("detail_produit_graph", height = "280px"),
           div(class = "mt-3", DTOutput("detail_produit_table"))
         )
+      )
+    )
+  )
+}
+
+# Drill-down "Par semaine" / "Par mois" de l'onglet Détail : même principe que
+# "Par jour" — on clique une barre pour détailler la période.
+# Périmètre : ce volet reste centré sur les VENTES (répartition, produits).
+# Le résultat financier de la période (coûts, marge, KPI) est dans l'onglet
+# Compta, qui offre la même granularité semaine / mois.
+ui_detail_periode <- function(sfx) {
+  id <- function(x) paste0("detail_", sfx, "_", x)
+
+  tagList(
+    layout_columns(
+      fill = FALSE,
+      col_widths = c(8, 4),
+      dateRangeInput(id("periode"), "Période",
+                     start = NULL, end = NULL,
+                     separator = " → ", language = "fr",
+                     weekstart = 1, format = "dd/mm/yyyy"),
+      div(class = "small text-muted align-self-end pb-2",
+          "Cliquez sur une barre pour détailler la période.")
+    ),
+    plotlyOutput(id("graph"), height = "300px"),
+    hr(),
+    card_header(textOutput(id("titre"), inline = TRUE)),
+    layout_columns(
+      col_widths = c(7, 5),
+      div(
+        h6("Répartition dans la période", class = "section-sub"),
+        plotlyOutput(id("repartition"), height = "260px"),
+        div(class = "mt-3", uiOutput(id("box")))
+      ),
+      div(
+        h6("Top produits de la période", class = "section-sub"),
+        DTOutput(id("produits"))
       )
     )
   )

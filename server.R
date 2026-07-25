@@ -110,10 +110,11 @@ server <- function(input, output, session) {
   UPD_KPI_SIMPLE <- prepa_db(DB_KPI_SIMPLE, "CA_HTVA")
   UPD_OBJECTIFS  <- prepa_db(DB_OBJECTIFS, "CA_HTVA")
 
-  # DB fictives compta (coûts horaires + matières), calées sur le calendrier réel
-  DATES_COMPTA      <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
-  DB_COUTS_HORAIRES <- generer_couts_horaires(DATES_COMPTA)
-  DB_CONSO_MP       <- generer_conso_mp(DATES_COMPTA)
+  # DB fictives compta (personnel + matières), calées sur le calendrier réel.
+  # 4 secteurs : Service / Transformation alimentaire / Brasserie / Support.
+  DATES_COMPTA     <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
+  DB_COUTS_TRAVAIL <- generer_couts_travail(DATES_COMPTA)
+  DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA)
 
   # Dernier jour d'ouverture (= "veille")
   date_veille <- DB_KPI_SIMPLE %>%
@@ -322,18 +323,92 @@ server <- function(input, output, session) {
     )
   })
   
+  # Personnel du jour, par secteur
   output$detail_jour_travail <- renderDT({
     datatable_simple(
-      DB_COUTS_HORAIRES %>% filter(DATE == jour_detail())
+      DB_COUTS_TRAVAIL %>%
+        filter(DATE == jour_detail()) %>%
+        transmute(Secteur = SECTEUR, Heures = round(HEURES),
+                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
+                  Personnel = format_CA(COUT_TRAVAIL, -1))
     )
   })
-  
+
+  # Matières de la semaine du jour sélectionné, par secteur
   output$detail_jour_cout <- renderDT({
     datatable_simple(
-      DB_CONSO_MP %>% filter(SEMAINE == floor_date(
-        jour_detail(),unit="week",week_start = 1))
+      DB_COUTS_MATIERE %>%
+        filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
+        transmute(Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
+                  Stock = format_CA(VARIATION_STOCK, -1),
+                  Matières = format_CA(COUT_MATIERE, -1))
     )
   })
+
+  #### Volet "Détail" — Par semaine / Par mois ####
+  # Un même bloc sert les deux sous-onglets (suffixes "sem" et "mois").
+  registre_detail_periode <- function(sfx, unite, defaut_debut) {
+    id <- function(x) paste0("detail_", sfx, "_", x)
+    src <- paste0("detail_", sfx)
+
+    observe({
+      updateDateRangeInput(session, id("periode"),
+                           start = defaut_debut, end = date_veille)
+    })
+
+    periode <- reactive({
+      rng <- input[[id("periode")]]
+      if (is.null(rng) || any(is.na(rng))) c(defaut_debut, date_veille) else rng
+    })
+
+    output[[id("graph")]] <- renderPlotly({
+      p <- periode()
+      graph_ca_periode(UPD_KPI_SIMPLE, UPD_OBJECTIFS, p[1], p[2],
+                       unite = unite, source = src)
+    })
+
+    # Période sélectionnée au clic (défaut : la dernière période connue)
+    choisie <- reactiveVal(NULL)
+    observeEvent(event_data("plotly_click", source = src), {
+      ev <- event_data("plotly_click", source = src)
+      if (!is.null(ev$x)) choisie(debut_periode(as.Date(ev$x), unite))
+    })
+
+    periode_sel <- reactive({
+      p <- choisie()
+      if (is.null(p)) debut_periode(date_veille, unite) else p
+    })
+
+    output[[id("titre")]] <- renderText({
+      d1 <- periode_sel()
+      d2 <- fin_periode(d1, unite)
+      paste0(label_periode(d1, unite), "  (",
+             format(d1, "%d/%m"), " → ", format(d2, "%d/%m/%Y"), ")")
+    })
+
+    output[[id("repartition")]] <- renderPlotly({
+      graph_repartition_periode(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+                                periode_sel(), unite = unite)
+    })
+
+    output[[id("box")]] <- renderUI({
+      d1 <- periode_sel()
+      box_ventes_total(UPD_KPI_SIMPLE, UPD_OBJECTIFS, d1,
+                       as.numeric(fin_periode(d1, unite) - d1),
+                       titre = label_periode(d1, unite), is_semaine = TRUE)
+    })
+
+    output[[id("produits")]] <- renderDT({
+      d1 <- periode_sel()
+      datatable_simple(
+        top_produits_periode(DB_PRODUITS_JOURS_FULL, d1,
+                             fin_periode(d1, unite), n = 20)
+      )
+    })
+  }
+
+  registre_detail_periode("sem",  "semaine", date_veille - weeks(26))
+  registre_detail_periode("mois", "mois",    floor_date(date_veille, "month") %m-% months(12))
 
   #### Volet "Détail" — Par produit ####
 
@@ -531,56 +606,91 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Compta / Gestion" ####
+  # Un bloc générique sert les deux sous-onglets (semaine / mois). Chaque volet
+  # a un panneau A (période analysée) et un panneau B (période comparée), ce
+  # dernier étant affiché/masqué par shinyjs — l'UI reste statique.
+  registre_compta_volet <- function(sfx, unite) {
+    id  <- function(x) paste0("compta_", sfx, "_", x)
+    src <- paste0("compta_evo_", sfx)
 
-  # Période par défaut : année en cours
-  observe({
-    updateDateRangeInput(session, "compta_periode",
-                         start = floor_date(today(), "year"), end = today())
-  })
+    # Liste des périodes proposées dans les deux sélecteurs
+    observe({
+      dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE, unite)
+      req(length(dispo) > 0)
+      choix <- setNames(as.character(dispo), label_periode(dispo, unite))
+      updateSelectInput(session, id("a"), choices = choix,
+                        selected = as.character(dispo[1]))
+      updateSelectInput(session, id("b"), choices = choix,
+                        selected = as.character(dispo[min(2, length(dispo))]))
+    })
 
-  compta_periode_val <- reactive({
-    rng <- input$compta_periode
-    if (is.null(rng) || any(is.na(rng)))
-      c(floor_date(today(), "year"), today()) else rng
-  })
+    # Agrégat de toutes les périodes (pour les graphiques d'évolution)
+    comptes <- reactive({
+      agrege_compta(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, unite)
+    })
 
-  compta_data <- reactive({
-    p <- compta_periode_val()
-    agrege_compta(UPD_KPI_SIMPLE, DB_COUTS_HORAIRES, DB_CONSO_MP,
-                  unite = input$compta_unite, d1 = p[1], d2 = p[2])
-  })
+    periode_a <- reactive({ req(input[[id("a")]]); as.Date(input[[id("a")]]) })
+    periode_b <- reactive({ req(input[[id("b")]]); as.Date(input[[id("b")]]) })
 
-  output$compta_graph <- renderPlotly({
-    graph_compta(compta_data(), unite = input$compta_unite)
-  })
+    # Clic sur une barre -> devient la période analysée (panneau A)
+    observeEvent(event_data("plotly_click", source = src), {
+      ev <- event_data("plotly_click", source = src)
+      if (!is.null(ev$x))
+        updateSelectInput(session, id("a"),
+                          selected = as.character(debut_periode(as.Date(ev$x), unite)))
+    })
 
-  output$compta_table <- renderDT({
-    datatable_simple(table_compta_aff(compta_data(), unite = input$compta_unite))
-  })
+    # Activation du second volet : split de l'écran en deux boxes
+    observeEvent(input[[id("cmp")]], {
+      cibles <- c(id("cmp_box"), id("panel_b"), id("ecarts_box"))
+      if (isTRUE(input[[id("cmp")]])) {
+        for (cible in cibles) shinyjs::show(cible)
+      } else {
+        for (cible in cibles) shinyjs::hide(cible)
+      }
+    })
 
-  output$compta_secteurs <- renderPlotly({
-    p <- compta_periode_val()
-    graph_compta_secteurs(DB_COUTS_HORAIRES, DB_CONSO_MP, p[1], p[2])
-  })
+    output[[id("evo")]] <- renderPlotly({
+      graph_evo_compta(comptes(), unite = unite, source = src,
+                       selection = periode_a())
+    })
 
-  output$compta_vb_ca <- renderText({
-    format_CA(sum(compta_data()$CA, na.rm = TRUE), -1)
-  })
+    output[[id("kpi_evo")]] <- renderPlotly({
+      graph_evo_kpi_compta(comptes(), unite = unite)
+    })
 
-  output$compta_vb_charges <- renderText({
-    format_CA(sum(compta_data()$CHARGES, na.rm = TRUE), -1)
-  })
+    apercu_a <- reactive({
+      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+                    periode_a(), unite)
+    })
+    apercu_b <- reactive({
+      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+                    periode_b(), unite)
+    })
 
-  output$compta_vb_profit <- renderText({
-    format_CA(sum(compta_data()$PROFIT, na.rm = TRUE), -1)
-  })
+    # Contenu d'un panneau (identique pour A et B)
+    registre_panneau <- function(cle, ap) {
+      output[[id(paste0("titre_", cle))]] <- renderText({
+        a <- ap()
+        paste0(a$libelle, "  (", format(a$bornes[1], "%d/%m"), " → ",
+               format(a$bornes[2], "%d/%m/%Y"), ")")
+      })
+      output[[id(paste0("kpi_", cle))]] <- renderUI({ kpi_compta_tiles(ap()) })
+      output[[id(paste0("secteurs_", cle))]] <- renderPlotly({
+        graph_secteurs_compta(ap())
+      })
+      output[[id(paste0("table_", cle))]] <- renderDT({
+        datatable_simple(table_secteurs_compta(ap()))
+      })
+    }
+    registre_panneau("a", apercu_a)
+    registre_panneau("b", apercu_b)
 
-  output$compta_vb_marge <- renderText({
-    d <- compta_data()
-    ca <- sum(d$CA, na.rm = TRUE)
-    pr <- sum(d$PROFIT, na.rm = TRUE)
-    if (ca > 0) paste0(round(100 * pr / ca, 1), " %") else "—"
-  })
+    output[[id("ecarts")]] <- renderUI({ kpi_ecarts_tiles(apercu_a(), apercu_b()) })
+  }
+
+  registre_compta_volet("sem",  "semaine")
+  registre_compta_volet("mois", "mois")
 
   #### Volet "Comparaison" ####
 
@@ -597,7 +707,7 @@ server <- function(input, output, session) {
   comp_data <- reactive({
     req(input$comp_periodes)
     comparaison_periodes(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
-                         DB_COUTS_HORAIRES, DB_CONSO_MP,
+                         DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
                          unite = input$comp_unite, periodes = input$comp_periodes)
   })
 
@@ -607,6 +717,49 @@ server <- function(input, output, session) {
 
   output$comp_table <- renderDT({
     datatable_simple(table_comparaison_aff(comp_data(), unite = input$comp_unite))
+  })
+
+  #### Volet "Année" ####
+
+  observe({
+    annees <- UPD_KPI_SIMPLE %>%
+      filter(ventes > 0) %>%
+      pull(DATE) %>% year() %>% unique() %>% sort(decreasing = TRUE)
+    req(length(annees) > 0)
+    updateSelectInput(session, "annee_choisie", choices = annees,
+                      selected = annees[1])
+  })
+
+  annee_val <- reactive({
+    if (is.null(input$annee_choisie)) year(today())
+    else as.integer(input$annee_choisie)
+  })
+
+  serie_annee <- reactive({
+    serie_annuelle(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, annee_val())
+  })
+
+  serie_annee_m1 <- reactive({
+    serie_annuelle(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, annee_val() - 1)
+  })
+
+  output$annee_kpi <- renderUI({
+    kpi_annee_tiles(serie_annee(), serie_annee_m1())
+  })
+
+  output$annee_ecart_obj <- renderPlotly({
+    graph_ecart_objectif(serie_annee())
+  })
+
+  output$annee_ecart_ym1 <- renderPlotly({
+    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "ventes")
+  })
+
+  output$annee_ecart_marge <- renderPlotly({
+    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
+                    serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
 
 }

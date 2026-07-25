@@ -129,3 +129,65 @@ body {
 table.dataTable td, table.dataTable th {
   font-size: 0.86rem;
 }
+
+/* ----- Tuiles KPI compta (food / work / prime cost) ----- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+.kpi-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.7rem;
+  padding: 0.75rem 0.9rem;
+  color: #ffffff;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(38, 11, 1, 0.10);
+}
+.kpi-tile-val {
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.kpi-tile-lab {
+  font-size: 0.78rem;
+  opacity: 0.92;
+  margin-top: 0.15rem;
+}
+.kpi-tile-sub {
+  font-size: 0.72rem;
+  opacity: 0.75;
+  margin-top: 0.1rem;
+}
+.kpi-tile-icon {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.6rem;
+  font-size: 3.1rem;
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+/* ----- Panneaux compta côte à côte (comparaison A / B) ----- */
+.compta-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.compta-panel {
+  flex: 1 1 0;
+  min-width: 330px;
+}
+.compta-panel-titre {
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  font-weight: 700;
+  color: var(--mz-brun, #732c02);
+  margin-bottom: 0.4rem;
+}
