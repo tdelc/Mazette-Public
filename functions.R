@@ -1729,6 +1729,27 @@ evo_conso_bieres <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
     arrange(SEMAINE)
 }
 
+# Trajectoire hebdomadaire des principales bières de la semaine choisie :
+# permet de voir lesquelles montent, lesquelles s'essoufflent.
+evo_top_bieres <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12) {
+  semaine <- as.Date(semaine)
+  top <- conso_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+    slice_head(n = n_top) %>%
+    pull(BOISSON)
+  if (length(top) == 0) return(tibble(SEMAINE = as.Date(character()),
+                                      BOISSON = character(), LITRES = numeric()))
+
+  debut <- semaine - weeks(n_semaines - 1)
+  tickets_bieres(db_ticket, ref, debut, semaine + 6) %>%
+    filter(BOISSON %in% top) %>%
+    mutate(SEMAINE = floor_date(DATE, "week", week_start = 1)) %>%
+    group_by(SEMAINE, BOISSON) %>%
+    summarise(LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
+    complete(SEMAINE, BOISSON, fill = list(LITRES = 0)) %>%
+    mutate(BOISSON = factor(BOISSON, levels = top)) %>%
+    arrange(BOISSON, SEMAINE)
+}
+
 # Répartition des formats servis (33 cl, 50 cl, dégustation...).
 formats_bieres <- function(db_ticket, ref, semaine) {
   semaine <- as.Date(semaine)
@@ -1740,12 +1761,20 @@ formats_bieres <- function(db_ticket, ref, semaine) {
     arrange(desc(VERRES))
 }
 
-kpi_bieres_tiles <- function(comp, formats) {
+kpi_bieres_tiles <- function(comp, formats, horaire = NULL) {
   litres  <- sum(comp$LITRES);    litres_m1 <- sum(comp$LITRES_M1)
   verres  <- sum(comp$VERRES);    verres_m1 <- sum(comp$VERRES_M1)
   ca      <- sum(comp$CA);        ca_m1     <- sum(comp$CA_M1)
   nb      <- sum(comp$LITRES > 0); nb_m1    <- sum(comp$LITRES_M1 > 0)
-  fut33   <- litres / 20   # équivalent fûts de 20 L
+  tanker  <- litres / 500   # un tanker = 500 L
+
+  # Heure de plus forte consommation sur la semaine
+  pic <- NULL
+  if (!is.null(horaire) && nrow(horaire) > 0) {
+    h <- horaire %>% filter(PERIODE == "Semaine") %>% slice_max(LITRES, n = 1,
+                                                                with_ties = FALSE)
+    if (nrow(h) == 1) pic <- h
+  }
 
   div(
     class = "kpi-grid",
@@ -1755,12 +1784,12 @@ kpi_bieres_tiles <- function(comp, formats) {
     tuile_evolution(ca, ca_m1, "CA bières", "euro-sign",
                     function(x) format_CA(x, -1)),
     tuile_evolution(nb, nb_m1, "Bières différentes", "list-ul"),
-    kpi_tile(paste0(round(fut33, 1)), "Équivalent fûts (20 L)", CONSO_BRUN,
+    kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,
              "boxes-stacked", sous_titre = paste0(round(litres / 7), " L / jour")),
-    kpi_tile(if (verres > 0) paste0(round(1000 * litres / verres), " ml") else "—",
-             "Volume moyen par verre", "#8d7b68", "ruler-vertical",
-             sous_titre = if (nrow(formats) > 0)
-               paste0("format dominant : ", formats$FORMAT[1]) else NULL)
+    kpi_tile(if (is.null(pic)) "—" else as.character(pic$HEURE),
+             "Pic de consommation", "#8d7b68", "clock",
+             sous_titre = if (is.null(pic)) NULL
+                          else paste0(round(pic$LITRES), " L sur la semaine"))
   )
 }
 
@@ -1789,29 +1818,39 @@ graph_top_bieres <- function(comp, n = 12) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Litres par heure de service : semaine en aire, S-1 en pointillé.
-graph_conso_horaire <- function(hor) {
-  if (is.null(hor) || nrow(hor) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée horaire"))
+# Trajectoire des principales bières : une ligne par bière, litres par semaine.
+# La semaine analysée est marquée d'un point, pour situer le contexte.
+graph_tendance_bieres <- function(evo, semaine = NULL) {
+  if (is.null(evo) || nrow(evo) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière servie"))
 
-  act  <- hor %>% filter(PERIODE == "Semaine") %>% arrange(HEURE)
-  prec <- hor %>% filter(PERIODE == "S-1") %>% arrange(HEURE)
+  bieres <- levels(droplevels(evo$BOISSON))
+  pal <- setNames(
+    grDevices::colorRampPalette(
+      c(CONSO_BRUN, CONSO_AMBRE, "#5B7B5A", "#2980b9", "#9b59b6"))(length(bieres)),
+    bieres)
 
   p <- plot_ly()
-  if (nrow(prec) > 0)
-    p <- p %>% add_lines(data = prec, x = ~HEURE, y = ~LITRES, name = "S-1",
-                         line = list(color = "#8d7b68", dash = "dot", width = 2),
-                         hovertemplate = ~paste0(HEURE, " (S-1)<br>",
-                                                 round(LITRES), " L<extra></extra>"))
-  p %>%
-    add_lines(data = act, x = ~HEURE, y = ~LITRES, name = "Semaine",
-              line = list(color = CONSO_BRUN, width = 3),
-              fill = "tozeroy", fillcolor = "rgba(115,44,2,0.12)",
-              hovertemplate = ~paste0(HEURE, "<br>", round(LITRES),
-                                      " L<extra></extra>")) %>%
-    layout(xaxis = list(title = "Heure de service"),
-           yaxis = list(title = "Litres"), legend = list(orientation = "h"),
-           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+  for (b in bieres) {
+    sub <- evo %>% filter(BOISSON == b) %>% arrange(SEMAINE)
+    p <- p %>% add_lines(
+      data = sub, x = ~SEMAINE, y = ~LITRES, name = b,
+      line = list(color = pal[[b]], width = 2.5),
+      hovertemplate = ~paste0(b, "<br>Sem. ", format(SEMAINE, "%d/%m"), "<br>",
+                              round(LITRES), " L<extra></extra>"))
+    if (!is.null(semaine)) {
+      pt <- sub %>% filter(SEMAINE == as.Date(semaine))
+      if (nrow(pt) > 0)
+        p <- p %>% add_markers(data = pt, x = ~SEMAINE, y = ~LITRES,
+                               name = b, legendgroup = b, showlegend = FALSE,
+                               marker = list(color = pal[[b]], size = 9),
+                               hoverinfo = "skip")
+    }
+  }
+  p %>% layout(xaxis = list(title = ""),
+               yaxis = list(title = "Litres par semaine", rangemode = "tozero"),
+               legend = list(orientation = "h"),
+               paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
 # Heatmap jour x heure des litres servis.
@@ -1819,11 +1858,17 @@ graph_heatmap_bieres <- function(jh) {
   if (is.null(jh) || nrow(jh) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
 
-  mat <- jh %>%
+  # pivot_wider ordonne les colonnes par ordre d'APPARITION dans les données
+  # (18h, 19h, ... puis 11h). On complète la grille puis on resélectionne les
+  # colonnes dans l'ordre des niveaux du facteur (heure de service).
+  jh <- jh %>%
     mutate(HEURE = droplevels(HEURE)) %>%
+    complete(JOUR, HEURE, fill = list(LITRES = 0))
+  heures <- levels(jh$HEURE)
+
+  mat <- jh %>%
     pivot_wider(names_from = HEURE, values_from = LITRES, values_fill = 0) %>%
     arrange(JOUR)
-  heures <- setdiff(names(mat), "JOUR")
   z <- as.matrix(mat[, heures, drop = FALSE])
 
   plot_ly(x = heures, y = as.character(mat$JOUR), z = z, type = "heatmap",
@@ -2019,7 +2064,11 @@ graph_focaccias_jour <- function(jour_act, jour_prec) {
   if (is.null(jour_act) || nrow(jour_act) == 0)
     return(plotly_empty() %>% layout(title = "Aucune focaccia vendue"))
 
-  jours <- as.character(jour_act$JOUR)
+  # `add_lines` retrie les points par x : avec des jours en texte, la trace S-1
+  # ressortait dans l'ordre alphabétique (dimanche, jeudi, lundi...). On passe
+  # donc un FACTEUR ORDONNÉ, dont le tri suit les niveaux lundi -> dimanche.
+  jours <- factor(as.character(jour_act$JOUR), levels = as.character(jour_act$JOUR))
+
   p <- plot_ly() %>%
     add_bars(x = jours, y = jour_act$QUANTITE, name = "Semaine",
              marker = list(color = CONSO_BRUN),
@@ -2031,7 +2080,7 @@ graph_focaccias_jour <- function(jour_act, jour_prec) {
                          hovertemplate = paste0("S-1 : ", jour_prec$QUANTITE,
                                                 "<extra></extra>"))
   p %>% layout(xaxis = list(title = "", categoryorder = "array",
-                            categoryarray = jours),
+                            categoryarray = levels(jours)),
                yaxis = list(title = "Focaccias"),
                legend = list(orientation = "h"), bargap = 0.35,
                paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
@@ -2113,14 +2162,23 @@ table_focaccias <- function(fs) {
   prec <- agg(fs$prec) %>% rename(Q_M1 = Q, CA_M1 = CA)
   if (nrow(act) == 0 && nrow(prec) == 0) return(tibble(Variante = character()))
 
-  full_join(act, prec, by = "VARIANTE") %>%
+  res <- full_join(act, prec, by = "VARIANTE") %>%
     mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
-    arrange(desc(Q)) %>%
-    mutate(PART = ifelse(sum(Q) > 0, 100 * Q / sum(Q), NA_real_),
+    arrange(desc(Q))
+
+  # Le total est calculé hors du mutate : `ifelse(sum(Q) > 0, ...)` renverrait
+  # une valeur de longueur 1 (la condition est un scalaire), recyclée sur
+  # toutes les lignes — toutes les parts afficheraient le même pourcentage.
+  total <- sum(res$Q)
+
+  res %>%
+    mutate(PART = if (total > 0) 100 * Q / total else NA_real_,
            EVO = ifelse(Q_M1 > 0, round(100 * (Q - Q_M1) / Q_M1, 1), NA_real_)) %>%
     transmute(Variante   = VARIANTE,
               Quantité   = Q,
-              `Part`     = ifelse(is.na(PART), "—", paste0(round(PART), " %")),
+              # une décimale : à l'entier, huit petites parts arrondies
+              # chacune vers le haut faisaient une somme à 102 %
+              `Part`     = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
               `CA`       = format_CA(CA, -1),
               `Qté S-1`  = Q_M1,
               `Évol.`    = ifelse(is.na(EVO), "—",

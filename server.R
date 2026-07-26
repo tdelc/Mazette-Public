@@ -1025,16 +1025,23 @@ server <- function(input, output, session) {
     formats_bieres(DB_TICKET, REF_BIERES, conso_sem())
   })
 
+  conso_horaire <- reactive({
+    conso_bieres_horaire(DB_TICKET, REF_BIERES, conso_sem())
+  })
+
   output$conso_kpi <- renderUI({
-    kpi_bieres_tiles(conso_comp(), conso_formats())
+    kpi_bieres_tiles(conso_comp(), conso_formats(), conso_horaire())
   })
 
   output$conso_top <- renderPlotly({
     graph_top_bieres(conso_comp())
   })
 
-  output$conso_horaire <- renderPlotly({
-    graph_conso_horaire(conso_bieres_horaire(DB_TICKET, REF_BIERES, conso_sem()))
+  output$conso_tendance <- renderPlotly({
+    graph_tendance_bieres(
+      evo_top_bieres(DB_TICKET, REF_BIERES, conso_sem(),
+                     n_top = 5, n_semaines = 12),
+      semaine = conso_sem())
   })
 
   output$conso_heatmap <- renderPlotly({

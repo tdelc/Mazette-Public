@@ -474,17 +474,20 @@ ui_conso_bieres <- function() {
            card_header("Top bières — litres servis vs S-1"),
            plotlyOutput("conso_top", height = "420px")),
       card(full_screen = TRUE,
-           card_header("Consommation par heure de service"),
-           plotlyOutput("conso_horaire", height = "420px"))
+           card_header("Tendance des principales bières"),
+           plotlyOutput("conso_tendance", height = "420px"),
+           div(class = "small text-muted",
+               "Les 5 bières les plus servies cette semaine, suivies sur ",
+               "12 semaines. Le point marque la semaine analysée."))
     ),
     layout_columns(
       col_widths = c(8, 4),
       card(full_screen = TRUE,
            card_header("Quand boit-on ? (litres par jour et par heure)"),
-           plotlyOutput("conso_heatmap", height = "330px")),
+           plotlyOutput("conso_heatmap", height = "360px")),
       card(full_screen = TRUE,
            card_header("Formats servis"),
-           plotlyOutput("conso_formats", height = "330px"))
+           plotlyOutput("conso_formats", height = "360px"))
     ),
     card(
       full_screen = TRUE,
