@@ -957,6 +957,103 @@ DB_BRASSINS[DB_BRASSINS$ID_BRASSIN %in% vec_brassin_bug,"FL_FINI"] <- TRUE
 #   mutate(CA_HTVA = if_else(is.na(CA_HTVA),0,CA_HTVA),
 #          CA_TVAC = if_else(is.na(CA_TVAC),0,CA_TVAC))
 
+#### DB_HEURES ####
+
+prepa_heures <- function(id_drive){
+  
+  drive_mazette <- drive_download(drive_get(id =id_drive),overwrite = TRUE)
+  DB_HEURES <- read_excel(drive_mazette$local_path,sheet = "Rapport",skip = 1)
+  DB_HEURES <- DB_HEURES %>% 
+    filter(!is.na(Jour),Jour != "Jour",Jour != "Nom") %>% 
+    mutate(DATE = as.Date(as.numeric(Jour), origin = "1899-12-30")) %>% 
+    mutate(HEURE_DEB = substr(Temps,1,5),
+           HEURE_FIN = substr(Temps,9,13)) %>% 
+    rename(CONTRAT = `Type de contrat`,
+           DEPARTEMENT = `Nom de l’équipe`,
+           HEURES_PAUSE = Pauses)
+  
+  # Nettoyage
+  DB_HEURES <- DB_HEURES %>% filter(Temps != "12:08 - 12:06")
+  
+  DB_HEURES <- DB_HEURES %>%
+    mutate(
+      debut_h = hour(hm(HEURE_DEB)) + minute(hm(HEURE_DEB))/60,
+      fin_h   = hour(hm(HEURE_FIN))   + minute(hm(HEURE_FIN))/60,
+      HEURE_MIDI = case_when(
+        debut_h == 0 & fin_h == 0 ~ 0,
+        debut_h >= 17 ~ 0,
+        fin_h <= 17 & fin_h > 7 ~ fin_h - debut_h,
+        TRUE ~ 17 - debut_h
+        # fin_h > 7 ~ pmin(fin_h, 17) - pmin(debut_h, 17),
+        # TRUE ~ 24 - (debut_h + fin_h)
+      ),
+      HEURE_SOIR = case_when(
+        debut_h == 0 & fin_h == 0 ~ 0,
+        fin_h > 7 & fin_h <= 17 ~ 0,
+        # fin_h > 17 ~ pmax(fin_h, 17) - pmax(debut_h, 17),
+        fin_h >= 17 ~ fin_h - 17,
+        debut_h >= 17 ~ 24 - debut_h + fin_h,
+        # TRUE ~ 7 + fin_h
+        TRUE ~ 7 + fin_h
+      )
+    ) %>%
+    mutate(HEURES = as.numeric(`Heures travaillées`)) %>% 
+    filter(HEURES > 0) %>% 
+    # Correction des heures en imputant les heures travaillées selon la clé
+    # Heures midi et heures soir
+    mutate(
+      PC_MIDI = HEURE_MIDI / (HEURE_MIDI + HEURE_SOIR),
+      PC_SOIR = HEURE_SOIR / (HEURE_MIDI + HEURE_SOIR),
+      HEURE_MIDI = HEURES * PC_MIDI,
+      HEURE_SOIR = HEURES * PC_SOIR
+    ) %>% 
+    # filter(HEURES - (HEURE_SOIR + HEURE_MIDI) < 0.2) %>%
+    select(DATE,CONTRAT,DEPARTEMENT,HEURE_MIDI,HEURE_SOIR,
+           HEURE_DEB,HEURE_FIN,debut_h,fin_h,HEURES,HEURES_PAUSE) %>%
+    pivot_longer(cols = c(HEURE_MIDI,HEURE_SOIR), names_to = "CD_HEURE",values_to = "NB_HEURES") %>% 
+    group_by(DATE,CONTRAT,DEPARTEMENT,CD_HEURE) %>% 
+    summarise(NB_HEURES = sum(NB_HEURES)) %>% 
+    left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>% 
+    mutate(CD_HEURE = ifelse(CD_HEURE == "HEURE_MIDI","Midi (<17h)","Soir (>=17h)")) %>% 
+    mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "mardi","Soir (>=17h)", CD_HEURE)) %>% 
+    mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "dimanche","Midi (<17h)", CD_HEURE)) %>% 
+    ungroup()
+  
+  df_cout <- read_excel(drive_mazette$local_path,sheet = "Cout")
+  colnames(df_cout) <- c("CONTRAT","COUT_HEURE")
+  
+  DB_HEURES <- DB_HEURES %>% left_join(df_cout) %>% 
+    mutate(COUT = COUT_HEURE * NB_HEURES)
+  
+  return(DB_HEURES)
+}
+
+DB_COUTS_TRAVAIL <- prepa_heures(id_sheet_heures) |> 
+  mutate(
+    SECTEUR = case_when(
+      DEPARTEMENT == "Transfo alimentaire" ~ "Transformation alimentaire",
+      DEPARTEMENT == "Fabrik de boissons" ~ "Brasserie",
+      DEPARTEMENT == "Support" ~ "Support",
+      DEPARTEMENT == "Service" ~ "Service",
+      TRUE ~ "Secteur inconnu"
+    ),
+    CRENEAU = case_when(
+      SECTEUR != "Service" ~ "Journée",
+      CD_HEURE == "Soir (>=17h)" ~ "Soir",
+      CD_HEURE == "Midi (<17h)" ~ "Midi",
+      TRUE ~ "Créneau inconnu"
+    ),
+  ) |> 
+  group_by(DATE,SECTEUR,CRENEAU) |> 
+  summarise(
+    HEURES = sum(NB_HEURES),
+    COUT_TRAVAIL = sum(COUT),
+    TAUX_HORAIRE = COUT_TRAVAIL / HEURES,
+    .groups = "drop"
+  )
+
+
+
 #### Nettoyage ####
 
 

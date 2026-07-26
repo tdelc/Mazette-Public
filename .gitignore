@@ -14,3 +14,4 @@ connect.json
 IMPORT 2025.RData
 IMPORT 2023-2024.RData
 IMPORT AUTOMATIQUE.xlsx
+*.xlsm

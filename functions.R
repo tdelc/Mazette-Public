@@ -573,6 +573,11 @@ agrege_compta <- function(db_kpi, db_travail, db_matiere,
     db_travail <- filter(db_travail, DATE    <= d2)
     db_matiere <- filter(db_matiere, SEMAINE <= d2)
   }
+  
+  # Se limiter aux données dispo en db_travail et en db_matiere
+  db_kpi <- db_kpi |> 
+    filter(DATE %in% db_travail$DATE,
+           PREMIER_JOUR_SEMAINE %in% db_matiere$SEMAINE)
 
   ca <- db_kpi %>%
     mutate(PERIODE = debut_periode(DATE, unite)) %>%
@@ -598,6 +603,7 @@ agrege_compta <- function(db_kpi, db_travail, db_matiere,
   ca %>%
     full_join(trav, by = "PERIODE") %>%
     full_join(mat,  by = "PERIODE") %>%
+    filter(!is.na(CA)) |> 
     arrange(PERIODE) %>%
     mutate(across(c(CA, TRAVAIL, HEURES, FOOD, GENERAL), ~replace_na(., 0))) %>%
     mutate(MATIERE = FOOD + GENERAL,
@@ -818,9 +824,12 @@ graph_evo_kpi_compta <- function(comptes, unite = c("semaine", "mois", "annee"))
 # Barres horizontales empilées matière/personnel par secteur (+ ligne Prime Cost).
 graph_secteurs_compta <- function(ap) {
   sect <- ap$secteurs %>% filter(TOTAL != 0)
-  if (nrow(sect) == 0)
-    return(plotly_empty() %>% layout(title = "Aucun coût sur la période"))
-
+  if (nrow(sect) == 0 | sum(sect$TRAVAIL) == 0)
+    return(plotly_empty() %>% 
+             layout(title = "Aucun coût sur la période",
+                    paper_bgcolor = "rgba(0,0,0,0)", 
+                    plot_bgcolor = "rgba(0,0,0,0)"))
+  
   # Total en haut, puis les secteurs du plus coûteux au moins coûteux
   sect <- sect %>% arrange(TOTAL)
   tot <- tibble(SECTEUR = "Prime Cost",
@@ -856,6 +865,9 @@ graph_secteurs_compta <- function(ap) {
 table_secteurs_compta <- function(ap) {
   sect <- ap$secteurs
   ca <- ap$total$CA
+  
+  if (is.na(ca) || ca == 0) return(NULL)
+  
   tot <- sect %>%
     summarise(SECTEUR = "Total", HEURES = sum(HEURES), ACHATS = sum(ACHATS),
               STOCK = sum(STOCK), MATIERE = sum(MATIERE),
@@ -1186,6 +1198,10 @@ ca_par_creneau <- function(db_produits, d1 = NULL, d2 = NULL) {
 base_travail <- function(db_produits, db_travail, d1, d2) {
   d1 <- as.Date(d1); d2 <- as.Date(d2)
   piz <- jours_pizzwanze(db_produits)
+  
+  # Ne prendre les jours de db_produits que pour les jours de db_travail connu
+  db_produits <- db_produits |> 
+    filter(DATE %in% db_travail$DATE)
 
   ca <- ca_par_creneau(db_produits, d1, d2)
 
@@ -1200,8 +1216,9 @@ base_travail <- function(db_produits, db_travail, d1, d2) {
 
   # Coûts indirects, mutualisés à la semaine
   indirect <- db_travail %>%
-    filter(SECTEUR != "Service", DATE >= d1, DATE <= d2,
-           wday(DATE, week_start = 1) != 1) %>%
+    filter(SECTEUR != "Service", DATE >= d1, DATE <= d2
+           # ,wday(DATE, week_start = 1)!= 1
+           ) %>%
     mutate(SEMAINE = floor_date(DATE, "week", week_start = 1),
            EST_TRANSFO = SECTEUR == "Transformation alimentaire") %>%
     group_by(SEMAINE) %>%
@@ -1442,7 +1459,8 @@ graph_nuage_creneaux <- function(stats) {
                         rangemode = "tozero"),
            yaxis = list(title = "CA HTVA moyen par ouverture (€)",
                         rangemode = "tozero"),
-           legend = list(orientation = "h"),
+           # legend = list(orientation = "h"),
+           legend = list(yref = "container", y = 0, yanchor = "bottom"),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
@@ -1546,7 +1564,9 @@ graph_decomposition_creneaux <- function(stats) {
              hovertemplate = ~paste0(CRENEAU_LABEL, "<br>Indirects ",
                                      format_CA(C_INDIRECT, -1), "<extra></extra>")) %>%
     layout(barmode = "stack", xaxis = list(title = "€ par ouverture"),
-           yaxis = list(title = ""), legend = list(orientation = "h"),
+           yaxis = list(title = ""), 
+           legend = list(yref = "container", y = 0, yanchor = "bottom"),
+           # legend = list(orientation = "h"),
            margin = list(l = 10),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }

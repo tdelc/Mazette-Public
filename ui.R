@@ -310,7 +310,7 @@ ui_compta_volet <- function(sfx) {
           tags$b("Work Cost"), " = personnel / CA", tags$br(),
           tags$b("Prime Cost"), " = (matières + personnel) / CA", tags$br(),
           tags$b("Marge"), " = CA − prime cost", tags$br(), tags$br(),
-          "Coûts fictifs (cf. donnees_fictives_compta.R).")
+          "Coûts des matières fictifs (cf. donnees_fictives_compta.R).")
     ),
     card(
       full_screen = TRUE,

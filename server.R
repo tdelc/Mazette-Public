@@ -18,6 +18,7 @@ library(patchwork)
 link_json <- Sys.getenv("LINK_JSON")
 path_drive <- Sys.getenv("PATH_DRIVE")
 id_sheet_mazette <- Sys.getenv("ID_DRIVE_MAZETTE")
+id_sheet_heures <- Sys.getenv("ID_DRIVE_HEURES")
 ID_MAZETTE_2023 <- Sys.getenv("ID_MAZETTE_2023")
 ID_MAZETTE_2025 <- Sys.getenv("ID_MAZETTE_2025")
 path_logos <- Sys.getenv("PATH_LOGOS")
@@ -126,7 +127,14 @@ server <- function(input, output, session) {
   if (!is.finite(CA_HEBDO_REEL) || CA_HEBDO_REEL <= 0)
     CA_HEBDO_REEL <- CA_HEBDO_DEFAUT
 
-  DB_COUTS_TRAVAIL <- generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
+  DB_COUTS_TRAVAIL_FICTIF <- generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
+  
+  # Remplacer pour les données connues du coût du travail
+  # date_connues <- DB_COUTS_TRAVAIL |> pull(DATE) |> unique()
+  # DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL_FICTIF |> 
+  #   filter(!DATE %in% date_connues) |> 
+  #   add_row(DB_COUTS_TRAVAIL)
+  
   DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
   
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
