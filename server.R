@@ -997,4 +997,113 @@ server <- function(input, output, session) {
     datatable_simple(table_creneaux(cren_stats()))
   })
 
+  #### Volet "Bières" — consommation ####
+
+  # Référentiel des vraies bières, calculé une seule fois
+  REF_BIERES <- ref_bieres(DB_PRODUITS)
+
+  # Semaines proposées (la semaine en cours, partielle, est exclue)
+  observe({
+    sems <- semaines_dispo(DB_TICKET)
+    req(length(sems) > 0)
+    updateSelectInput(session, "conso_semaine",
+                      choices = setNames(as.character(sems),
+                                         paste0("Sem. du ", format(sems, "%d/%m/%Y"))),
+                      selected = as.character(sems[1]))
+  })
+
+  conso_sem <- reactive({
+    req(input$conso_semaine)
+    as.Date(input$conso_semaine)
+  })
+
+  conso_comp <- reactive({
+    conso_bieres_comparee(DB_TICKET, REF_BIERES, conso_sem())
+  })
+
+  conso_formats <- reactive({
+    formats_bieres(DB_TICKET, REF_BIERES, conso_sem())
+  })
+
+  output$conso_kpi <- renderUI({
+    kpi_bieres_tiles(conso_comp(), conso_formats())
+  })
+
+  output$conso_top <- renderPlotly({
+    graph_top_bieres(conso_comp())
+  })
+
+  output$conso_horaire <- renderPlotly({
+    graph_conso_horaire(conso_bieres_horaire(DB_TICKET, REF_BIERES, conso_sem()))
+  })
+
+  output$conso_heatmap <- renderPlotly({
+    graph_heatmap_bieres(conso_bieres_jour_heure(DB_TICKET, REF_BIERES, conso_sem()))
+  })
+
+  output$conso_formats <- renderPlotly({
+    graph_formats_bieres(conso_formats())
+  })
+
+  output$conso_evo <- renderPlotly({
+    graph_evo_conso_bieres(
+      evo_conso_bieres(DB_TICKET, REF_BIERES, n_semaines = 26,
+                       fin = conso_sem() + 6),
+      semaine = conso_sem())
+  })
+
+  output$conso_table <- renderDT({
+    datatable_simple(table_conso_bieres(conso_comp()))
+  })
+
+  #### Volet "Focaccias" ####
+
+  observe({
+    sems <- semaines_dispo(DB_PRODUITS)
+    req(length(sems) > 0)
+    updateSelectInput(session, "foca_semaine",
+                      choices = setNames(as.character(sems),
+                                         paste0("Sem. du ", format(sems, "%d/%m/%Y"))),
+                      selected = as.character(sems[1]))
+  })
+
+  foca_sem <- reactive({
+    req(input$foca_semaine)
+    as.Date(input$foca_semaine)
+  })
+
+  foca_data <- reactive({
+    focaccias_semaine(DB_PRODUITS, foca_sem())
+  })
+
+  foca_evo <- reactive({
+    evo_focaccias(DB_PRODUITS, n_semaines = 26, fin = foca_sem() + 6)
+  })
+
+  output$foca_kpi <- renderUI({
+    kpi_focaccias_tiles(foca_data())
+  })
+
+  output$foca_jour <- renderPlotly({
+    fs <- foca_data()
+    graph_focaccias_jour(focaccias_par_jour(fs$act, foca_sem()),
+                         focaccias_par_jour(fs$prec, foca_sem() - 7))
+  })
+
+  output$foca_variantes <- renderPlotly({
+    graph_variantes_focaccias(focaccias_variantes(foca_data()$act))
+  })
+
+  output$foca_evo <- renderPlotly({
+    graph_evo_focaccias(foca_evo(), semaine = foca_sem())
+  })
+
+  output$foca_options <- renderPlotly({
+    graph_options_focaccias(foca_evo())
+  })
+
+  output$foca_table <- renderDT({
+    datatable_simple(table_focaccias(foca_data()))
+  })
+
 }

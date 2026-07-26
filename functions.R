@@ -1588,6 +1588,545 @@ table_creneaux <- function(stats) {
                                       paste0(RATIO_TOTAL, " %")))
 }
 
+#### REFONTE — Volet "Consommation" (bières & focaccias) ####
+# Deux volets de suivi de la consommation, à la maille SEMAINE, toujours
+# comparés à la semaine précédente (S-1).
+#
+# Sources :
+#   DB_TICKET   : une ligne par produit vendu, avec TIMESTAMP (donc l'heure),
+#                 BOISSON et VOLUME_TOT_L -> analyse horaire et en litres.
+#                 Attention : DATE est le JOUR DE SERVICE (une vente à 1h du
+#                 matin est rattachée à la soirée de la veille).
+#   DB_PRODUITS : une ligne par (jour, produit) avec PRODUCT_FULL complet,
+#                 options comprises -> seule source qui porte les suppléments
+#                 des focaccias. Peut contenir plusieurs lignes par jour et
+#                 produit : toujours agréger.
+
+# Heures de service, dans l'ordre d'une soirée (on ouvre le matin, on ferme
+# après minuit) plutôt que dans l'ordre naturel 0..23.
+# Palette locale (functions.R ne dépend pas de ui.R)
+CONSO_BRUN  <- "#732c02"
+CONSO_AMBRE <- "#d98236"
+
+ORDRE_HEURES_SERVICE <- c(6:23, 0:5)
+
+heure_service <- function(ts) {
+  factor(hour(ts), levels = ORDRE_HEURES_SERVICE,
+         labels = paste0(ORDRE_HEURES_SERVICE, "h"))
+}
+
+# Semaines (lundi) disponibles dans une table, de la plus récente à la plus
+# ancienne. `complete_only` retire la semaine en cours, forcément partielle.
+semaines_dispo <- function(db, col = "DATE", complete_only = TRUE) {
+  s <- db %>%
+    mutate(SEM = floor_date(.data[[col]], "week", week_start = 1)) %>%
+    distinct(SEM) %>%
+    filter(!is.na(SEM)) %>%
+    arrange(desc(SEM)) %>%
+    pull(SEM)
+  if (complete_only) s <- s[s < floor_date(today(), "week", week_start = 1)]
+  s
+}
+
+# Tuile d'évolution : valeur de la semaine + écart en % vs S-1.
+# `sens_positif = FALSE` quand une hausse est une mauvaise nouvelle.
+tuile_evolution <- function(valeur, reference, libelle, icone,
+                            format_val = function(x) format(round(x)),
+                            sens_positif = TRUE) {
+  evo <- if (is.na(reference) || reference == 0) NA_real_
+         else 100 * (valeur - reference) / reference
+  couleur <- if (is.na(evo)) "#8d7b68"
+             else if ((evo >= 0) == sens_positif) COUL_VERT else COUL_ROUGE
+  sous <- if (is.na(evo)) "pas de S-1"
+          else paste0(if (evo >= 0) "+" else "", round(evo, 1), " % vs S-1")
+  kpi_tile(format_val(valeur), libelle, couleur, icone, sous_titre = sous)
+}
+
+
+##### Bières — consommation #####
+
+# Référentiel des vraies bières (catégories BIÈRES / ANCIENNES BIÈRES), pour
+# écarter les autres boissons volumétriques (limonade, kéfir, cola, cidre...).
+ref_bieres <- function(db_produits) {
+  db_produits %>%
+    filter(est_biere(CATEGORY), !is.na(BOISSON), BOISSON != "") %>%
+    distinct(BOISSON) %>%
+    pull(BOISSON)
+}
+
+# Lignes de ticket correspondant à des bières, sur une fenêtre de dates.
+tickets_bieres <- function(db_ticket, ref, d1, d2) {
+  db_ticket %>%
+    filter(BOISSON %in% ref, DATE >= as.Date(d1), DATE <= as.Date(d2),
+           QUANTITE > 0) %>%
+    mutate(LITRES = replace_na(VOLUME_TOT_L, 0),
+           HEURE  = heure_service(TIMESTAMP))
+}
+
+# Consommation par bière sur une fenêtre : verres, litres, CA.
+conso_bieres <- function(db_ticket, ref, d1, d2) {
+  tickets_bieres(db_ticket, ref, d1, d2) %>%
+    group_by(BOISSON) %>%
+    summarise(VERRES = sum(QUANTITE, na.rm = TRUE),
+              LITRES = sum(LITRES, na.rm = TRUE),
+              CA     = sum(PRIX_TOTAL, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(LITRES))
+}
+
+# Consommation d'une semaine, comparée à la semaine précédente.
+conso_bieres_comparee <- function(db_ticket, ref, semaine) {
+  semaine <- as.Date(semaine)
+  act <- conso_bieres(db_ticket, ref, semaine, semaine + 6)
+  prec <- conso_bieres(db_ticket, ref, semaine - 7, semaine - 1) %>%
+    rename(VERRES_M1 = VERRES, LITRES_M1 = LITRES, CA_M1 = CA)
+
+  full_join(act, prec, by = "BOISSON") %>%
+    mutate(across(where(is.numeric), ~replace_na(., 0)),
+           DELTA_L   = LITRES - LITRES_M1,
+           EVO_PCT   = ifelse(LITRES_M1 > 0,
+                              round(100 * DELTA_L / LITRES_M1, 1), NA_real_),
+           STATUT    = case_when(LITRES_M1 == 0 & LITRES > 0 ~ "Nouveauté",
+                                 LITRES == 0 & LITRES_M1 > 0 ~ "Arrêtée",
+                                 TRUE ~ "En cours")) %>%
+    arrange(desc(LITRES))
+}
+
+# Litres par heure de service, semaine courante et S-1.
+conso_bieres_horaire <- function(db_ticket, ref, semaine) {
+  semaine <- as.Date(semaine)
+  par_heure <- function(d1, d2, nom) {
+    tickets_bieres(db_ticket, ref, d1, d2) %>%
+      group_by(HEURE) %>%
+      summarise(LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
+      mutate(PERIODE = nom)
+  }
+  bind_rows(par_heure(semaine, semaine + 6, "Semaine"),
+            par_heure(semaine - 7, semaine - 1, "S-1")) %>%
+    filter(!is.na(HEURE), LITRES > 0)
+}
+
+# Litres par jour de semaine et par heure (heatmap).
+conso_bieres_jour_heure <- function(db_ticket, ref, semaine) {
+  semaine <- as.Date(semaine)
+  tickets_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+    mutate(JOUR = wday(DATE, label = TRUE, abbr = FALSE, week_start = 1)) %>%
+    group_by(JOUR, HEURE) %>%
+    summarise(LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
+    filter(!is.na(HEURE))
+}
+
+# Historique hebdomadaire des litres servis.
+evo_conso_bieres <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
+  fin <- if (is.null(fin)) max(db_ticket$DATE, na.rm = TRUE) else as.Date(fin)
+  debut <- floor_date(fin, "week", week_start = 1) - weeks(n_semaines - 1)
+  tickets_bieres(db_ticket, ref, debut, fin) %>%
+    mutate(SEMAINE = floor_date(DATE, "week", week_start = 1)) %>%
+    group_by(SEMAINE) %>%
+    summarise(LITRES = sum(LITRES, na.rm = TRUE),
+              VERRES = sum(QUANTITE, na.rm = TRUE),
+              CA     = sum(PRIX_TOTAL, na.rm = TRUE),
+              NB_BIERES = n_distinct(BOISSON), .groups = "drop") %>%
+    arrange(SEMAINE)
+}
+
+# Répartition des formats servis (33 cl, 50 cl, dégustation...).
+formats_bieres <- function(db_ticket, ref, semaine) {
+  semaine <- as.Date(semaine)
+  tickets_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+    filter(!is.na(VOLUME_CL)) %>%
+    group_by(FORMAT = paste0(VOLUME_CL, " cl")) %>%
+    summarise(VERRES = sum(QUANTITE, na.rm = TRUE),
+              LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(VERRES))
+}
+
+kpi_bieres_tiles <- function(comp, formats) {
+  litres  <- sum(comp$LITRES);    litres_m1 <- sum(comp$LITRES_M1)
+  verres  <- sum(comp$VERRES);    verres_m1 <- sum(comp$VERRES_M1)
+  ca      <- sum(comp$CA);        ca_m1     <- sum(comp$CA_M1)
+  nb      <- sum(comp$LITRES > 0); nb_m1    <- sum(comp$LITRES_M1 > 0)
+  fut33   <- litres / 20   # équivalent fûts de 20 L
+
+  div(
+    class = "kpi-grid",
+    tuile_evolution(litres, litres_m1, "Litres servis", "beer-mug-empty",
+                    function(x) paste0(format(round(x)), " L")),
+    tuile_evolution(verres, verres_m1, "Verres servis", "wine-glass"),
+    tuile_evolution(ca, ca_m1, "CA bières", "euro-sign",
+                    function(x) format_CA(x, -1)),
+    tuile_evolution(nb, nb_m1, "Bières différentes", "list-ul"),
+    kpi_tile(paste0(round(fut33, 1)), "Équivalent fûts (20 L)", CONSO_BRUN,
+             "boxes-stacked", sous_titre = paste0(round(litres / 7), " L / jour")),
+    kpi_tile(if (verres > 0) paste0(round(1000 * litres / verres), " ml") else "—",
+             "Volume moyen par verre", "#8d7b68", "ruler-vertical",
+             sous_titre = if (nrow(formats) > 0)
+               paste0("format dominant : ", formats$FORMAT[1]) else NULL)
+  )
+}
+
+# Top bières par litres, colorées selon l'évolution vs S-1.
+graph_top_bieres <- function(comp, n = 12) {
+  if (is.null(comp) || nrow(comp) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière servie"))
+
+  dat <- comp %>% filter(LITRES > 0) %>% slice_head(n = n) %>% arrange(LITRES)
+  if (nrow(dat) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune bière servie"))
+  dat <- dat %>% mutate(BOISSON = factor(BOISSON, levels = BOISSON))
+
+  plot_ly(dat) %>%
+    add_bars(y = ~BOISSON, x = ~LITRES_M1, orientation = "h", name = "S-1",
+             marker = list(color = "#d3c0ac"),
+             hovertemplate = ~paste0(BOISSON, " (S-1)<br>", round(LITRES_M1),
+                                     " L<extra></extra>")) %>%
+    add_bars(y = ~BOISSON, x = ~LITRES, orientation = "h", name = "Semaine",
+             marker = list(color = CONSO_BRUN),
+             hovertemplate = ~paste0(BOISSON, "<br>", round(LITRES), " L — ",
+                                     VERRES, " verres<extra></extra>")) %>%
+    layout(barmode = "group", xaxis = list(title = "Litres"),
+           yaxis = list(title = ""), legend = list(orientation = "h"),
+           margin = list(l = 10),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Litres par heure de service : semaine en aire, S-1 en pointillé.
+graph_conso_horaire <- function(hor) {
+  if (is.null(hor) || nrow(hor) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée horaire"))
+
+  act  <- hor %>% filter(PERIODE == "Semaine") %>% arrange(HEURE)
+  prec <- hor %>% filter(PERIODE == "S-1") %>% arrange(HEURE)
+
+  p <- plot_ly()
+  if (nrow(prec) > 0)
+    p <- p %>% add_lines(data = prec, x = ~HEURE, y = ~LITRES, name = "S-1",
+                         line = list(color = "#8d7b68", dash = "dot", width = 2),
+                         hovertemplate = ~paste0(HEURE, " (S-1)<br>",
+                                                 round(LITRES), " L<extra></extra>"))
+  p %>%
+    add_lines(data = act, x = ~HEURE, y = ~LITRES, name = "Semaine",
+              line = list(color = CONSO_BRUN, width = 3),
+              fill = "tozeroy", fillcolor = "rgba(115,44,2,0.12)",
+              hovertemplate = ~paste0(HEURE, "<br>", round(LITRES),
+                                      " L<extra></extra>")) %>%
+    layout(xaxis = list(title = "Heure de service"),
+           yaxis = list(title = "Litres"), legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Heatmap jour x heure des litres servis.
+graph_heatmap_bieres <- function(jh) {
+  if (is.null(jh) || nrow(jh) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+
+  mat <- jh %>%
+    mutate(HEURE = droplevels(HEURE)) %>%
+    pivot_wider(names_from = HEURE, values_from = LITRES, values_fill = 0) %>%
+    arrange(JOUR)
+  heures <- setdiff(names(mat), "JOUR")
+  z <- as.matrix(mat[, heures, drop = FALSE])
+
+  plot_ly(x = heures, y = as.character(mat$JOUR), z = z, type = "heatmap",
+          colorscale = list(c(0, "#f2efe6"), c(1, CONSO_BRUN)),
+          hovertemplate = "%{y} — %{x}<br>%{z:.0f} L<extra></extra>") %>%
+    layout(xaxis = list(title = "", side = "top"),
+           yaxis = list(title = "", autorange = "reversed"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Historique hebdomadaire : litres en barres, nombre de bières en ligne.
+graph_evo_conso_bieres <- function(evo, semaine = NULL) {
+  if (is.null(evo) || nrow(evo) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+
+  couleurs <- if (is.null(semaine)) CONSO_BRUN
+              else ifelse(evo$SEMAINE == as.Date(semaine), CONSO_AMBRE, CONSO_BRUN)
+
+  plot_ly(evo) %>%
+    add_bars(x = ~SEMAINE, y = ~LITRES, name = "Litres",
+             marker = list(color = couleurs),
+             hovertemplate = ~paste0("Sem. ", format(SEMAINE, "%d/%m/%y"), "<br>",
+                                     round(LITRES), " L — ", VERRES,
+                                     " verres<extra></extra>")) %>%
+    add_lines(x = ~SEMAINE, y = ~NB_BIERES, name = "Bières à la carte",
+              yaxis = "y2", line = list(color = "#5B7B5A", width = 2),
+              hovertemplate = ~paste0(NB_BIERES, " bières<extra></extra>")) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "Litres"),
+           yaxis2 = list(title = "Nb de bières", overlaying = "y", side = "right",
+                         showgrid = FALSE, rangemode = "tozero"),
+           legend = list(orientation = "h"),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Formats servis (33 cl, 50 cl, dégustation...).
+graph_formats_bieres <- function(formats) {
+  if (is.null(formats) || nrow(formats) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+  dat <- formats %>% arrange(VERRES) %>%
+    mutate(FORMAT = factor(FORMAT, levels = FORMAT))
+  plot_ly(dat) %>%
+    add_bars(y = ~FORMAT, x = ~VERRES, orientation = "h",
+             marker = list(color = CONSO_AMBRE),
+             hovertemplate = ~paste0(FORMAT, "<br>", VERRES, " verres — ",
+                                     round(LITRES), " L<extra></extra>")) %>%
+    layout(xaxis = list(title = "Verres servis"), yaxis = list(title = ""),
+           showlegend = FALSE, margin = list(l = 10),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+table_conso_bieres <- function(comp) {
+  if (is.null(comp) || nrow(comp) == 0) return(tibble(Bière = character()))
+  comp %>%
+    transmute(Bière      = BOISSON,
+              Verres     = VERRES,
+              Litres     = round(LITRES),
+              `CA`       = format_CA(CA, -1),
+              `Litres S-1` = round(LITRES_M1),
+              `Évol.`    = ifelse(is.na(EVO_PCT), "—",
+                                  paste0(ifelse(EVO_PCT >= 0, "+", ""),
+                                         EVO_PCT, " %")),
+              Statut     = STATUT)
+}
+
+
+##### Focaccias #####
+
+# Décompose un PRODUCT_FULL de focaccia en base + options.
+# Les libellés viennent de la caisse :
+#   "Focaccia du moment + Options focaccias: + SUPPL. Fromage + SUPPL. Viande
+#    + Option pikant: !! SPICY HOT !!"
+parse_focaccia <- function(pf) {
+  tibble(
+    BASE = case_when(
+      str_detect(pf, regex("brunch", ignore_case = TRUE))         ~ "Brunch",
+      str_detect(pf, regex("patates douces", ignore_case = TRUE)) ~ "Patates douces",
+      str_detect(pf, regex("du moment", ignore_case = TRUE))      ~ "Du moment",
+      TRUE                                                        ~ "Autre"),
+    FROMAGE = str_detect(pf, fixed("SUPPL. Fromage")),
+    VIANDE  = str_detect(pf, fixed("SUPPL. Viande")),
+    SPICY   = str_detect(pf, fixed("SPICY HOT"))
+  ) %>%
+    mutate(GARNITURE = case_when(FROMAGE & VIANDE ~ "Fromage + Viande",
+                                 FROMAGE          ~ "Fromage",
+                                 VIANDE           ~ "Viande",
+                                 TRUE             ~ "Nature"),
+           VARIANTE = paste0(GARNITURE, ifelse(SPICY, " + Spicy", "")))
+}
+
+ORDRE_GARNITURES <- c("Nature", "Fromage", "Viande", "Fromage + Viande")
+
+# Lignes de focaccia sur une fenêtre, décomposées en options.
+# On écarte les remises et lignes négatives, qui ne sont pas des ventes.
+conso_focaccias <- function(db_produits, d1, d2) {
+  db <- db_produits %>%
+    filter(str_detect(tolower(PRODUCT_FULL), "focaccia"),
+           !str_detect(tolower(PRODUCT_FULL), "discount|% sur produit"),
+           QUANTITE > 0, DATE >= as.Date(d1), DATE <= as.Date(d2))
+  if (nrow(db) == 0)
+    return(tibble(DATE = as.Date(character()), BASE = character(),
+                  FROMAGE = logical(), VIANDE = logical(), SPICY = logical(),
+                  GARNITURE = character(), VARIANTE = character(),
+                  QUANTITE = numeric(), CA = numeric()))
+  bind_cols(db %>% select(DATE, QUANTITE, CA = CA_HTVA),
+            parse_focaccia(db$PRODUCT_FULL)) %>%
+    mutate(GARNITURE = factor(GARNITURE, levels = ORDRE_GARNITURES))
+}
+
+# Synthèse d'une semaine, avec la semaine précédente pour comparaison.
+focaccias_semaine <- function(db_produits, semaine) {
+  semaine <- as.Date(semaine)
+  list(semaine = semaine,
+       act  = conso_focaccias(db_produits, semaine, semaine + 6),
+       prec = conso_focaccias(db_produits, semaine - 7, semaine - 1))
+}
+
+# Nombre de focaccias par jour de la semaine choisie.
+focaccias_par_jour <- function(fo, semaine) {
+  semaine <- as.Date(semaine)
+  jours <- tibble(DATE = seq(semaine, semaine + 6, by = "day")) %>%
+    mutate(JOUR = wday(DATE, label = TRUE, abbr = FALSE, week_start = 1))
+  fo %>%
+    group_by(DATE) %>%
+    summarise(QUANTITE = sum(QUANTITE), CA = sum(CA), .groups = "drop") %>%
+    right_join(jours, by = "DATE") %>%
+    mutate(across(c(QUANTITE, CA), ~replace_na(., 0))) %>%
+    arrange(DATE)
+}
+
+# Répartition par garniture x spicy.
+focaccias_variantes <- function(fo) {
+  if (nrow(fo) == 0)
+    return(tibble(GARNITURE = factor(character(), levels = ORDRE_GARNITURES),
+                  SPICY = logical(), QUANTITE = numeric()))
+  fo %>%
+    group_by(GARNITURE, SPICY) %>%
+    summarise(QUANTITE = sum(QUANTITE), .groups = "drop")
+}
+
+# Historique hebdomadaire : volumes et taux d'options.
+evo_focaccias <- function(db_produits, n_semaines = 26, fin = NULL) {
+  fin <- if (is.null(fin)) max(db_produits$DATE, na.rm = TRUE) else as.Date(fin)
+  debut <- floor_date(fin, "week", week_start = 1) - weeks(n_semaines - 1)
+  # Les quantités par option sont calculées AVANT le regroupement : dans un
+  # summarise(), `QUANTITE = sum(QUANTITE)` écrase la colonne, et un
+  # `QUANTITE[FROMAGE]` écrit ensuite indexerait le total (scalaire) au lieu
+  # des lignes — ce qui ne produit que des NA.
+  conso_focaccias(db_produits, debut, fin) %>%
+    mutate(SEMAINE   = floor_date(DATE, "week", week_start = 1),
+           Q_FROMAGE = QUANTITE * FROMAGE,
+           Q_VIANDE  = QUANTITE * VIANDE,
+           Q_SPICY   = QUANTITE * SPICY) %>%
+    group_by(SEMAINE) %>%
+    summarise(QUANTITE  = sum(QUANTITE, na.rm = TRUE),
+              CA        = sum(CA, na.rm = TRUE),
+              Q_FROMAGE = sum(Q_FROMAGE, na.rm = TRUE),
+              Q_VIANDE  = sum(Q_VIANDE, na.rm = TRUE),
+              Q_SPICY   = sum(Q_SPICY, na.rm = TRUE),
+              .groups = "drop") %>%
+    mutate(PCT_FROMAGE = ratio_pct(Q_FROMAGE, QUANTITE),
+           PCT_VIANDE  = ratio_pct(Q_VIANDE,  QUANTITE),
+           PCT_SPICY   = ratio_pct(Q_SPICY,   QUANTITE)) %>%
+    arrange(SEMAINE)
+}
+
+kpi_focaccias_tiles <- function(fs) {
+  act <- fs$act; prec <- fs$prec
+  q  <- sum(act$QUANTITE);  q_m1  <- sum(prec$QUANTITE)
+  ca <- sum(act$CA);        ca_m1 <- sum(prec$CA)
+  pct <- function(d, col) if (sum(d$QUANTITE) > 0)
+    100 * sum(d$QUANTITE[d[[col]]]) / sum(d$QUANTITE) else NA_real_
+  jours_ouverts <- n_distinct(act$DATE)
+
+  div(
+    class = "kpi-grid",
+    tuile_evolution(q, q_m1, "Focaccias vendues", "bread-slice"),
+    tuile_evolution(ca, ca_m1, "CA focaccias", "euro-sign",
+                    function(x) format_CA(x, -1)),
+    kpi_tile(if (jours_ouverts > 0) format(round(q / jours_ouverts, 1)) else "—",
+             "Par jour d'ouverture", CONSO_BRUN, "gauge-high",
+             sous_titre = paste0(jours_ouverts, " jours servis")),
+    tuile_evolution(pct(act, "FROMAGE"), pct(prec, "FROMAGE"),
+                    "Avec fromage", "cheese", function(x) format_pct(x)),
+    tuile_evolution(pct(act, "VIANDE"), pct(prec, "VIANDE"),
+                    "Avec viande", "drumstick-bite", function(x) format_pct(x)),
+    tuile_evolution(pct(act, "SPICY"), pct(prec, "SPICY"),
+                    "Spicy hot", "pepper-hot", function(x) format_pct(x))
+  )
+}
+
+# Rythme sur la semaine : quantités par jour (+ rappel de S-1 en pointillé).
+graph_focaccias_jour <- function(jour_act, jour_prec) {
+  if (is.null(jour_act) || nrow(jour_act) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune focaccia vendue"))
+
+  jours <- as.character(jour_act$JOUR)
+  p <- plot_ly() %>%
+    add_bars(x = jours, y = jour_act$QUANTITE, name = "Semaine",
+             marker = list(color = CONSO_BRUN),
+             hovertemplate = paste0(jours, "<br>", jour_act$QUANTITE,
+                                    " focaccias<extra></extra>"))
+  if (!is.null(jour_prec) && nrow(jour_prec) == nrow(jour_act))
+    p <- p %>% add_lines(x = jours, y = jour_prec$QUANTITE, name = "S-1",
+                         line = list(color = "#8d7b68", dash = "dot", width = 2),
+                         hovertemplate = paste0("S-1 : ", jour_prec$QUANTITE,
+                                                "<extra></extra>"))
+  p %>% layout(xaxis = list(title = "", categoryorder = "array",
+                            categoryarray = jours),
+               yaxis = list(title = "Focaccias"),
+               legend = list(orientation = "h"), bargap = 0.35,
+               paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Popularité des variantes : garniture en barres, part spicy empilée.
+graph_variantes_focaccias <- function(var) {
+  if (is.null(var) || nrow(var) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune focaccia vendue"))
+
+  dat <- var %>%
+    mutate(GARNITURE = factor(as.character(GARNITURE),
+                              levels = ORDRE_GARNITURES))
+  doux  <- dat %>% filter(!SPICY)
+  epice <- dat %>% filter(SPICY)
+
+  plot_ly() %>%
+    add_bars(x = as.character(doux$GARNITURE), y = doux$QUANTITE,
+             name = "Standard", marker = list(color = CONSO_AMBRE),
+             hovertemplate = paste0(doux$GARNITURE, "<br>", doux$QUANTITE,
+                                    "<extra></extra>")) %>%
+    add_bars(x = as.character(epice$GARNITURE), y = epice$QUANTITE,
+             name = "Spicy hot", marker = list(color = "#c0392b"),
+             hovertemplate = paste0(epice$GARNITURE, " (spicy)<br>",
+                                    epice$QUANTITE, "<extra></extra>")) %>%
+    layout(barmode = "stack",
+           xaxis = list(title = "", categoryorder = "array",
+                        categoryarray = ORDRE_GARNITURES),
+           yaxis = list(title = "Focaccias"),
+           legend = list(orientation = "h"), bargap = 0.35,
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Historique : volumes hebdo en barres.
+graph_evo_focaccias <- function(evo, semaine = NULL) {
+  if (is.null(evo) || nrow(evo) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+  couleurs <- if (is.null(semaine)) CONSO_BRUN
+              else ifelse(evo$SEMAINE == as.Date(semaine), CONSO_AMBRE, CONSO_BRUN)
+
+  plot_ly(evo) %>%
+    add_bars(x = ~SEMAINE, y = ~QUANTITE, name = "Focaccias",
+             marker = list(color = couleurs),
+             hovertemplate = ~paste0("Sem. ", format(SEMAINE, "%d/%m/%y"), "<br>",
+                                     QUANTITE, " focaccias — ",
+                                     format_CA(CA, -1), "<extra></extra>")) %>%
+    layout(xaxis = list(title = ""), yaxis = list(title = "Focaccias"),
+           showlegend = FALSE,
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Taux d'options dans le temps (fromage / viande / spicy).
+graph_options_focaccias <- function(evo) {
+  if (is.null(evo) || nrow(evo) == 0)
+    return(plotly_empty() %>% layout(title = "Aucune donnée"))
+
+  plot_ly(evo) %>%
+    add_lines(x = ~SEMAINE, y = ~PCT_FROMAGE, name = "Fromage",
+              line = list(color = "#d4ac0d", width = 2),
+              hovertemplate = ~paste0("Fromage %{y:.0f} %<extra></extra>")) %>%
+    add_lines(x = ~SEMAINE, y = ~PCT_VIANDE, name = "Viande",
+              line = list(color = "#8d5524", width = 2),
+              hovertemplate = ~paste0("Viande %{y:.0f} %<extra></extra>")) %>%
+    add_lines(x = ~SEMAINE, y = ~PCT_SPICY, name = "Spicy hot",
+              line = list(color = "#c0392b", width = 2),
+              hovertemplate = ~paste0("Spicy %{y:.0f} %<extra></extra>")) %>%
+    layout(xaxis = list(title = ""),
+           yaxis = list(title = "% des focaccias", ticksuffix = " %",
+                        rangemode = "tozero"),
+           legend = list(orientation = "h"), hovermode = "x unified",
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Détail par variante, avec comparaison S-1.
+table_focaccias <- function(fs) {
+  agg <- function(d) d %>% group_by(VARIANTE) %>%
+    summarise(Q = sum(QUANTITE), CA = sum(CA), .groups = "drop")
+  act <- agg(fs$act)
+  prec <- agg(fs$prec) %>% rename(Q_M1 = Q, CA_M1 = CA)
+  if (nrow(act) == 0 && nrow(prec) == 0) return(tibble(Variante = character()))
+
+  full_join(act, prec, by = "VARIANTE") %>%
+    mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
+    arrange(desc(Q)) %>%
+    mutate(PART = ifelse(sum(Q) > 0, 100 * Q / sum(Q), NA_real_),
+           EVO = ifelse(Q_M1 > 0, round(100 * (Q - Q_M1) / Q_M1, 1), NA_real_)) %>%
+    transmute(Variante   = VARIANTE,
+              Quantité   = Q,
+              `Part`     = ifelse(is.na(PART), "—", paste0(round(PART), " %")),
+              `CA`       = format_CA(CA, -1),
+              `Qté S-1`  = Q_M1,
+              `Évol.`    = ifelse(is.na(EVO), "—",
+                                  paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
+}
+
 #### Générique ####
 
 datatable_simple <- function(table){

@@ -95,9 +95,19 @@ ui_app <- function() {
       ui_annee()
     ),
     nav_panel(
+      title = "Fûts",
+      icon = icon("boxes-stacked"),
+      ui_futs()
+    ),
+    nav_panel(
       title = "Bières",
       icon = icon("beer-mug-empty"),
-      ui_bieres()
+      ui_conso_bieres()
+    ),
+    nav_panel(
+      title = "Focaccias",
+      icon = icon("bread-slice"),
+      ui_focaccias()
     ),
     nav_panel(
       title = "Simulation",
@@ -413,7 +423,9 @@ ui_simulation <- function() {
   )
 }
 
-ui_bieres <- function() {
+# Onglet "Fûts" : suivi des fûts en cours (niveaux, prédiction de fin,
+# rapport de brassin). La consommation de bières est dans l'onglet "Bières".
+ui_futs <- function() {
   tagList(
     card(
       card_header("Niveau des bières en cours"),
@@ -434,6 +446,101 @@ ui_bieres <- function() {
       selectInput("brassin_choisi", "Choisir un brassin", choices = NULL,
                   width = "340px"),
       plotOutput("brassin_report", height = "680px")
+    )
+  )
+}
+
+# Onglet "Bières" : consommation, à la semaine, comparée à S-1.
+ui_conso_bieres <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Semaine",
+      width = 280,
+      selectInput("conso_semaine", "Semaine analysée", choices = NULL),
+      hr(),
+      div(class = "small text-muted",
+          "Tout est comparé à la ", tags$b("semaine précédente"), ".",
+          tags$br(), tags$br(),
+          "Les volumes viennent des tickets (format du verre × quantité). ",
+          "Seules les catégories bières sont retenues : limonade, kéfir, cola ",
+          "et cidre ne sont pas comptés.", tags$br(), tags$br(),
+          "Les heures suivent le ", tags$b("jour de service"), " : une pinte ",
+          "servie à 1h du matin compte pour la soirée de la veille.")
+    ),
+    uiOutput("conso_kpi"),
+    layout_columns(
+      col_widths = c(7, 5),
+      card(full_screen = TRUE,
+           card_header("Top bières — litres servis vs S-1"),
+           plotlyOutput("conso_top", height = "420px")),
+      card(full_screen = TRUE,
+           card_header("Consommation par heure de service"),
+           plotlyOutput("conso_horaire", height = "420px"))
+    ),
+    layout_columns(
+      col_widths = c(8, 4),
+      card(full_screen = TRUE,
+           card_header("Quand boit-on ? (litres par jour et par heure)"),
+           plotlyOutput("conso_heatmap", height = "330px")),
+      card(full_screen = TRUE,
+           card_header("Formats servis"),
+           plotlyOutput("conso_formats", height = "330px"))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Historique hebdomadaire"),
+      plotlyOutput("conso_evo", height = "320px"),
+      div(class = "small text-muted",
+          "La semaine sélectionnée est mise en avant.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail par bière"),
+      DTOutput("conso_table")
+    )
+  )
+}
+
+# Onglet "Focaccias" : suivi du produit phare et de ses options.
+ui_focaccias <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Semaine",
+      width = 280,
+      selectInput("foca_semaine", "Semaine analysée", choices = NULL),
+      hr(),
+      div(class = "small text-muted",
+          "Chaque focaccia est décomposée en une ", tags$b("base"),
+          " (du moment, brunch, patates douces) et ses ", tags$b("options"),
+          " : supplément fromage, supplément viande, et la sauce ",
+          tags$b("spicy hot"), ".", tags$br(), tags$br(),
+          "Les remises et lignes négatives sont exclues.")
+    ),
+    uiOutput("foca_kpi"),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(full_screen = TRUE,
+           card_header("Rythme de la semaine"),
+           plotlyOutput("foca_jour", height = "360px"),
+           div(class = "small text-muted",
+               "En pointillé : la même semaine, une semaine plus tôt.")),
+      card(full_screen = TRUE,
+           card_header("Variantes les plus commandées"),
+           plotlyOutput("foca_variantes", height = "360px"))
+    ),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(full_screen = TRUE,
+           card_header("Historique hebdomadaire"),
+           plotlyOutput("foca_evo", height = "330px")),
+      card(full_screen = TRUE,
+           card_header("Taux d'options dans le temps"),
+           plotlyOutput("foca_options", height = "330px"))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail par variante"),
+      DTOutput("foca_table")
     )
   )
 }
