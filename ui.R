@@ -368,11 +368,21 @@ ui_annee <- function() {
     ),
     card(
       full_screen = TRUE,
+      card_header("Marge cumulée"),
+      plotlyOutput("annee_marge", height = "340px"),
+      div(class = "small text-muted",
+          "Marge quotidienne = CA − personnel du jour − matières de la semaine ",
+          "réparties sur 7 jours.",tags$br(),
+          "La marge est disponible que pour les dates où les coûts sont ",
+          "disponibles.")
+    ),
+    card(
+      full_screen = TRUE,
       card_header("Écart cumulé de marge vs N-1"),
       plotlyOutput("annee_ecart_marge", height = "340px"),
       div(class = "small text-muted",
-          "Marge quotidienne = CA − personnel du jour − matières de la semaine ",
-          "réparties sur 7 jours.")
+          "L'écart est disponible que pour les dates où les deux marges sont ",
+          "disponibles.")
     )
   )
 }
@@ -462,8 +472,8 @@ ui_conso_bieres <- function() {
           "Tout est comparé à la ", tags$b("semaine précédente"), ".",
           tags$br(), tags$br(),
           "Les volumes viennent des tickets (format du verre × quantité). ",
-          "Seules les catégories bières sont retenues : limonade, kéfir, cola ",
-          "et cidre ne sont pas comptés.", tags$br(), tags$br(),
+          "Certaines différences peuvent advenir par rapport aux résultats",
+          "globaux.", tags$br(), tags$br(),
           "Les heures suivent le ", tags$b("jour de service"), " : une pinte ",
           "servie à 1h du matin compte pour la soirée de la veille.")
     ),
@@ -478,7 +488,7 @@ ui_conso_bieres <- function() {
            plotlyOutput("conso_tendance", height = "420px"),
            div(class = "small text-muted",
                "Les 5 bières les plus servies cette semaine, suivies sur ",
-               "12 semaines. Le point marque la semaine analysée."))
+               "12 semaines."))
     ),
     layout_columns(
       col_widths = c(8, 4),
@@ -492,9 +502,9 @@ ui_conso_bieres <- function() {
     card(
       full_screen = TRUE,
       card_header("Historique hebdomadaire"),
-      plotlyOutput("conso_evo", height = "320px"),
-      div(class = "small text-muted",
-          "La semaine sélectionnée est mise en avant.")
+      plotlyOutput("conso_evo", height = "320px")
+      # div(class = "small text-muted",
+      #     "La semaine sélectionnée est mise en avant.")
     ),
     card(
       full_screen = TRUE,
@@ -514,9 +524,9 @@ ui_focaccias <- function() {
       hr(),
       div(class = "small text-muted",
           "Chaque focaccia est décomposée en une ", tags$b("base"),
-          " (du moment, brunch, patates douces) et ses ", tags$b("options"),
-          " : supplément fromage, supplément viande, et la sauce ",
-          tags$b("spicy hot"), ".", tags$br(), tags$br(),
+          " (du moment ou brunch) et ses ", tags$b("options"),
+          " : fromage, viande, et spicy hot.",
+          tags$br(), tags$br(),
           "Les remises et lignes négatives sont exclues.")
     ),
     uiOutput("foca_kpi"),

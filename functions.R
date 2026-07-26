@@ -575,7 +575,7 @@ agrege_compta <- function(db_kpi, db_travail, db_matiere,
   }
   
   # Se limiter aux données dispo en db_travail et en db_matiere
-  db_kpi <- db_kpi |> 
+  db_kpi <- db_kpi |>
     filter(DATE %in% db_travail$DATE,
            PREMIER_JOUR_SEMAINE %in% db_matiere$SEMAINE)
 
@@ -805,6 +805,7 @@ graph_evo_kpi_compta <- function(comptes, unite = c("semaine", "mois", "annee"))
   lbl <- label_periode(comptes$PERIODE, unite)
   ligne <- function(p, col, nom, couleur) {
     p %>% add_lines(x = ~PERIODE, y = comptes[[col]], name = nom,
+                    
                     line = list(color = couleur, width = 2),
                     hovertemplate = paste0(lbl, "<br>", nom, " %{y:.1f} %<extra></extra>"))
   }
@@ -816,7 +817,7 @@ graph_evo_kpi_compta <- function(comptes, unite = c("semaine", "mois", "annee"))
     ligne("PRIME_PCT",   "Prime Cost",     COUL_ROUGE) %>%
     ligne("MARGE_PCT",   "Marge",          COUL_VERT) %>%
     layout(xaxis = list(title = ""),
-           yaxis = list(title = "% du CA", ticksuffix = " %"),
+           yaxis = list(title = "% du CA", ticksuffix = " %", range = c(-100, 200)),
            legend = list(orientation = "h"), hovermode = "x unified",
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
@@ -983,6 +984,10 @@ serie_annuelle <- function(db_kpi, db_obj, db_travail, db_matiere,
   mat <- db_matiere %>%
     group_by(SEMAINE) %>%
     summarise(MATIERE = sum(COUT_MATIERE, na.rm = TRUE), .groups = "drop")
+  
+  # jours <- jours |> 
+  #   filter(DATE %in% trav$DATE) |> 
+  #   filter(floor_date(DATE, "week", week_start = 1) %in% mat$SEMAINE)
 
   jours %>%
     left_join(obj,  by = "DATE") %>%
@@ -991,7 +996,9 @@ serie_annuelle <- function(db_kpi, db_obj, db_travail, db_matiere,
     left_join(mat, by = "SEMAINE") %>%
     mutate(across(c(ventes, objectif, TRAVAIL, MATIERE), ~replace_na(., 0)),
            MATIERE = MATIERE / 7,
-           MARGE   = ventes - TRAVAIL - MATIERE)
+           MARGE   = ventes - TRAVAIL - MATIERE
+           # MARGE   = ifelse(TRAVAIL == 0 | MATIERE == 0,NA, ventes - TRAVAIL - MATIERE
+           )
 }
 
 # Graphe générique d'écart cumulé « à date » (aire verte au-dessus de 0, rouge en
@@ -1072,8 +1079,9 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
     left_join(prec, by = c("WEEK", "WDAY")) %>%
     arrange(DATE) %>%
     filter(DATE < today()) %>%
-    mutate(VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
-           ECART = cumsum(VAL - VAL_M1),
+    mutate(
+      # VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
+           ECART = replace_na(cumsum(VAL - VAL_M1), 0),
            LABEL = paste0(format(DATE, "%d/%m/%Y"),
                           "<br>", nom, " : ", format_CA(VAL, -1),
                           "<br>", nom, " N-1 : ", format_CA(VAL_M1, -1),

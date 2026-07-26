@@ -137,6 +137,8 @@ server <- function(input, output, session) {
   
   DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
   
+  # DB_COUTS_MATIERE <- DB_COUTS_MATIERE[0,]
+  
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
     left_join(DB_DATE |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
   
@@ -776,21 +778,22 @@ server <- function(input, output, session) {
   registre_compta_volet <- function(sfx, unite) {
     id  <- function(x) paste0("compta_", sfx, "_", x)
     src <- paste0("compta_evo_", sfx)
+    
+    # Agrégat de toutes les périodes (pour les graphiques d'évolution)
+    comptes <- reactive({
+      agrege_compta(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, unite)
+    })
 
     # Liste des périodes proposées dans les deux sélecteurs
     observe({
-      dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE, unite)
+      # dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE, unite)
+      dispo <- sort(unique(comptes()$PERIODE),decreasing = TRUE)
       req(length(dispo) > 0)
       choix <- setNames(as.character(dispo), label_periode(dispo, unite))
       updateSelectInput(session, id("a"), choices = choix,
                         selected = as.character(dispo[1]))
       updateSelectInput(session, id("b"), choices = choix,
                         selected = as.character(dispo[min(2, length(dispo))]))
-    })
-
-    # Agrégat de toutes les périodes (pour les graphiques d'évolution)
-    comptes <- reactive({
-      agrege_compta(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, unite)
     })
 
     periode_a <- reactive({ req(input[[id("a")]]); as.Date(input[[id("a")]]) })
@@ -919,6 +922,12 @@ server <- function(input, output, session) {
 
   output$annee_ecart_ym1 <- renderPlotly({
     graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "ventes")
+  })
+  
+  output$annee_marge <- renderPlotly({
+    serie_m1 <- serie_annee() |> mutate(MARGE = 0)
+    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
+                    serie = serie_annee(), serie_m1 = serie_m1)
   })
 
   output$annee_ecart_marge <- renderPlotly({
