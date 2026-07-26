@@ -84,6 +84,8 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
   # Prendre la dernière date comme date de sauvegarde
   date_jour <- max(DB_JOURS$DATE)
   drive_env_name <- paste0(prefix, date_jour, ".RData")
+  
+  rm(force_dl)
 
   save(list = ls(),
        file = file.path("outputs", drive_env_name),
@@ -115,6 +117,20 @@ server <- function(input, output, session) {
   DATES_COMPTA     <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
   DB_COUTS_TRAVAIL <- generer_couts_travail(DATES_COMPTA)
   DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA)
+  
+  DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
+    left_join(DB_DATE |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
+  
+  DB_COUTS_MATIERE_JOUR <- DB_DATE |> 
+    rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
+    left_join(DB_COUTS_MATIERE) |> 
+    group_by(SEMAINE,SECTEUR) |> 
+    mutate(COUT_MATIERE    = COUT_MATIERE / n(),
+           ACHATS          = ACHATS / n(),
+           VARIATION_STOCK = VARIATION_STOCK / n()) |> 
+    ungroup() |> 
+    select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK) |> 
+    filter(DATE < today())
 
   # Dernier jour d'ouverture (= "veille")
   date_veille <- DB_KPI_SIMPLE %>%
@@ -307,6 +323,11 @@ server <- function(input, output, session) {
     j <- selected_jour()
     if (is.null(j)) date_veille else j
   })
+  
+  semaine_detail <- reactive({
+    req(jour_detail())
+    jour_detail()-lubridate::wday(jour_detail(),week_start = 1)+1
+  })
 
   output$detail_jour_titre <- renderText({
     paste0("Journée du ", format(jour_detail(), "%A %d/%m/%Y"))
@@ -314,12 +335,12 @@ server <- function(input, output, session) {
 
   output$detail_jour_box <- renderUI({
     box_ventes_jour(UPD_KPI_SIMPLE, UPD_OBJECTIFS, jour_detail(), 0,
-                    format_date = "%d/%m")
+                    format_date = "%d/%m", width = "100%")
   })
 
   output$detail_jour_produits <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS_FULL, jour_detail(), jour_detail(), n = 20)
+      top_produits_periode(DB_PRODUITS_JOURS_FULL, jour_detail(), jour_detail(), n = 15)
     )
   })
   
@@ -328,6 +349,22 @@ server <- function(input, output, session) {
     datatable_simple(
       DB_COUTS_TRAVAIL %>%
         filter(DATE == jour_detail()) %>%
+        arrange(SECTEUR) |> 
+        transmute(Secteur = SECTEUR, Heures = round(HEURES),
+                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
+                  Personnel = format_CA(COUT_TRAVAIL, -1))
+    )
+  })
+  
+  output$detail_jour_travail_semaine <- renderDT({
+    print(semaine_detail())
+    datatable_simple(
+      DB_COUTS_TRAVAIL %>%
+        filter(PREMIER_JOUR_SEMAINE == semaine_detail()) %>%
+        group_by(SECTEUR) |> 
+        summarise(HEURES = sum(HEURES),
+                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
+                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES) |> 
         transmute(Secteur = SECTEUR, Heures = round(HEURES),
                   `Taux/h` = format_CA(TAUX_HORAIRE, 2),
                   Personnel = format_CA(COUT_TRAVAIL, -1))
@@ -378,6 +415,54 @@ server <- function(input, output, session) {
       p <- choisie()
       if (is.null(p)) debut_periode(date_veille, unite) else p
     })
+    
+    cout_travail <- reactive({
+      d1 <- periode_sel()
+      d2 <- fin_periode(d1, unite)
+      i <- interval(d1, d2)
+      
+      DB_COUTS_TRAVAIL %>%
+        filter(DATE %within% i) %>%
+        group_by(SECTEUR) |> 
+        summarise(HEURES = sum(HEURES),
+                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
+                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES)
+    })
+    
+    cout_matiere <- reactive({
+      d1 <- periode_sel()
+      d2 <- fin_periode(d1, unite)
+      i <- interval(d1, d2)
+      
+      DB_COUTS_MATIERE_JOUR %>%
+        filter(DATE %within% i) %>%
+        group_by(SECTEUR) |> 
+        summarise(ACHATS = sum(ACHATS),
+                  VARIATION_STOCK = sum(VARIATION_STOCK),
+                  COUT_MATIERE = sum(COUT_MATIERE))
+    })
+    
+    ca <- reactive({
+      d1 <- periode_sel()
+      d2 <- fin_periode(d1, unite)
+      i <- interval(d1, d2)
+      
+      UPD_KPI_SIMPLE |>  filter(DATE %within% i) |> pull(ventes) |> sum()
+    })
+    
+    apercu <- reactive({
+      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+                    periode_sel(), unite)
+    })
+    
+    output[[id("kpi")]] <- renderUI({ kpi_compta_tiles(apercu()) })
+    
+    marge <- reactive({
+      cout_matiere() |> 
+        left_join(cout_travail()) |> 
+        mutate(CA = ca()) |> 
+        select(SECTEUR,CA,COUT_TRAVAIL,COUT_MATIERE)
+    })
 
     output[[id("titre")]] <- renderText({
       d1 <- periode_sel()
@@ -397,6 +482,34 @@ server <- function(input, output, session) {
                        as.numeric(fin_periode(d1, unite) - d1),
                        titre = label_periode(d1, unite), is_semaine = TRUE)
     })
+    
+    output[[id("travail")]] <- renderDT({
+      req(cout_travail())
+      datatable_simple(
+        cout_travail() |> 
+          transmute(Secteur = SECTEUR, Heures = round(HEURES),
+                    `Taux/h` = format_CA(TAUX_HORAIRE, 2),
+                    Personnel = format_CA(COUT_TRAVAIL, -1))
+      )
+    })
+    
+    output[[id("cout")]] <- renderDT({
+      datatable_simple(
+        cout_matiere() |> 
+          transmute(Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
+                    Stock = format_CA(VARIATION_STOCK, -1),
+                    Matières = format_CA(COUT_MATIERE, -1))
+      )
+    })
+    
+    output[[id("marge")]] <- renderDT({
+      datatable_simple(
+        marge() |> 
+          transmute(Secteur = SECTEUR, "Chiffre d'affaire" = format_CA(CA, -1),
+                    Personnel = format_CA(COUT_TRAVAIL, -1),
+                    Matières = format_CA(COUT_MATIERE, -1))
+      )
+    })
 
     output[[id("produits")]] <- renderDT({
       d1 <- periode_sel()
@@ -411,9 +524,20 @@ server <- function(input, output, session) {
   registre_detail_periode("mois", "mois",    floor_date(date_veille, "month") %m-% months(12))
 
   #### Volet "Détail" — Par produit ####
+  
+  observe({
+    updateDateRangeInput(session, "detail_produit_periode",
+                         start = date_veille - weeks(8),
+                         end   = date_veille)
+  })
+  
+  periode_produit_detail <- reactive({
+    rng <- input$detail_produit_periode
+    if (is.null(rng) || any(is.na(rng))) c(date_veille - weeks(8), date_veille) else rng
+  })
 
   produits_df <- reactive({
-    p <- periode_detail()
+    p <- periode_produit_detail()
     liste_produits_periode(DB_PRODUITS_JOURS_FULL, p[1], p[2])
   })
 
@@ -423,7 +547,8 @@ server <- function(input, output, session) {
                 Quantité = Quantite,
                 `CA HTVA` = format_CA(CA, -1))
     datatable(df, selection = "single", rownames = FALSE,
-              options = list(pageLength = 12, language = list(search = "Filtrer :")))
+              options = list(pageLength = 12, dom = 'ftp', 
+                             language = list(search = "Filtrer :")))
   })
 
   produit_choisi <- reactive({
@@ -444,19 +569,34 @@ server <- function(input, output, session) {
     evolution_un_produit(DB_PRODUITS_JOURS_FULL, pr,
                          min(DB_PRODUITS_JOURS_FULL$DATE), today())
   })
+  
+  evo_produit_periode <- reactive({
+    pr <- produit_choisi()
+    req(pr)
+    evolution_un_produit(DB_PRODUITS_JOURS_FULL, pr,
+                         periode_produit_detail()[1], today())
+  })
 
   output$detail_produit_graph <- renderPlotly({
     graph_evolution_produit(evo_produit(), produit_choisi())
   })
 
   output$detail_produit_table <- renderDT({
-    datatable_simple(
-      evo_produit() %>%
-        transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
-                  Quantité = Quantite,
-                  `CA HTVA` = format_CA(CA, -1)) %>%
-        arrange(desc(Semaine))
-    )
+    
+    category <- evo_produit_periode() |> pull(CATEGORY) |> unique() |> str_to_title()
+    category_column <- paste0("Part dans '",category,"'")
+    
+    df <- evo_produit_periode() %>%
+      transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
+                Quantité = Quantite,
+                `CA HTVA` = format_CA(CA, -1),
+                `Part dans Total` = paste0(round(PC_ALL*100,0),"%"),
+                !!sym(category_column) := paste0(round(PC_CATEGORY*100,0),"%")
+                ) %>%
+      arrange(desc(Semaine))
+    
+    datatable(df, selection = "none", rownames = FALSE,
+              options = list(pageLength = 12, dom = 'tp'))
   })
 
   #### Volet "Historique" — CA par semaine / mois ####

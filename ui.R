@@ -205,7 +205,7 @@ ui_compta_volet <- function(sfx) {
     ),
     card(
       full_screen = TRUE,
-      card_header("Évolution — cliquez une barre pour analyser la période"),
+      card_header("Évolution — cliquez sur une barre pour analyser la période"),
       plotlyOutput(id("evo"), height = "330px")
     ),
     div(class = "compta-split", panneau("a"), shinyjs::hidden(panneau("b"))),
@@ -366,8 +366,10 @@ ui_detail <- function() {
         col_widths = c(2, 5, 5),
         uiOutput("detail_jour_box"),
         div(
-          h6("Coût de la semaine", class = "section-sub"),
+          h6("Coût du jour", class = "section-sub"),
           DTOutput("detail_jour_travail"),
+          h6("Coût de la semaine", class = "section-sub"),
+          DTOutput("detail_jour_travail_semaine"),
           DTOutput("detail_jour_cout")
         ),
         div(
@@ -392,6 +394,10 @@ ui_detail <- function() {
       layout_columns(
         col_widths = c(5, 7),
         div(
+          dateRangeInput("detail_produit_periode", "Période",
+                         start = NULL, end = NULL,
+                         separator = " → ", language = "fr",
+                         weekstart = 1, format = "dd/mm/yyyy"),
           h6("Produits (sélectionnez une ligne)", class = "section-sub"),
           DTOutput("detail_produit_liste")
         ),
@@ -430,9 +436,20 @@ ui_detail_periode <- function(sfx) {
     layout_columns(
       col_widths = c(7, 5),
       div(
-        h6("Répartition dans la période", class = "section-sub"),
+        h6("Répartition du CA sur la période", class = "section-sub"),
         plotlyOutput(id("repartition"), height = "260px"),
-        div(class = "mt-3", uiOutput(id("box")))
+        layout_columns(
+          col_widths = c(4, 8),
+          uiOutput(id("box")),
+          div(
+            h6("Coût de la période", class = "section-sub"),
+            DTOutput(id("travail")),
+            DTOutput(id("cout"))
+            # ,h6("Marge de la période", class = "section-sub")
+            # ,DTOutput(id("marge"))
+          )
+        ),
+        uiOutput(id("kpi"))
       ),
       div(
         h6("Top produits de la période", class = "section-sub"),

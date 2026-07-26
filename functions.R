@@ -196,11 +196,19 @@ liste_produits_periode <- function(db_produits, d1, d2) {
 # Évolution hebdomadaire d'un produit
 evolution_un_produit <- function(db_produits, produit, d1, d2) {
   db_produits %>%
-    filter(PRODUCT == produit, DATE >= d1, DATE <= d2) %>%
+    filter(DATE >= d1, DATE <= d2) |> 
     mutate(SEMAINE = floor_date(DATE, unit = "week", week_start = 1)) %>%
     group_by(SEMAINE) %>%
+    mutate(CA_TOT = sum(CA_HTVA, na.rm = TRUE)) |> 
+    group_by(SEMAINE,CATEGORY) %>%
+    mutate(CA_CATEGORY = sum(CA_HTVA, na.rm = TRUE)) |> 
+    filter(PRODUCT == produit) %>%
+    group_by(SEMAINE,CATEGORY) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+              CA = sum(CA_HTVA, na.rm = TRUE), 
+              PC_ALL = CA / mean(CA_TOT, na.rm = TRUE), 
+              PC_CATEGORY = CA / mean(CA_CATEGORY, na.rm = TRUE), 
+              .groups = "drop") %>%
     arrange(SEMAINE)
 }
 
@@ -443,8 +451,8 @@ table_predictions_fin <- function(db_predict) {
 # Ordre stable (CATEGORY puis CA décroissant) pour mapper les éditions par n° de ligne.
 prepa_simulation <- function(db_produits, d1, d2) {
   db_produits %>%
-    filter(DATE >= d1, DATE <= d2, CA_HTVA > 0, QUANTITE > 0) %>%
-    group_by(CATEGORY, PRODUCT) %>%
+    filter(DATE >= d1, DATE <= d2) %>%
+    group_by(CATEGORY, PRODUCT = PRODUCT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
     mutate(PRIX_MOYEN = round(CA / QUANTITE, 2)) %>%
@@ -861,7 +869,7 @@ table_secteurs_compta <- function(ap) {
               Matières   = format_CA(MATIERE, -1),
               Personnel  = format_CA(TRAVAIL, -1),
               Total      = format_CA(TOTAL, -1),
-              `% du CA`  = ifelse(ca > 0, paste0(round(100 * TOTAL / ca, 1), " %"), "—"))
+              `% du CA`  = paste0(round(100 * TOTAL / ca, 1), " %"))
 }
 
 
@@ -2922,7 +2930,7 @@ CDDDE
 box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
                             format_date = "%d",titre = "",
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
-                            is_objectif=TRUE){
+                            is_objectif=TRUE, width = "14%"){
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
@@ -2936,7 +2944,8 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
 
   plot_kpi <- plot_kpi %>%
     table_kpi(fl_semaine = is_semaine,fl_midi = is_midi,
-              fl_boisson = is_boisson,fl_objectif = is_objectif)
+              fl_boisson = is_boisson,fl_objectif = is_objectif,
+              width = width)
 
   return(
     div(style = "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px;",do.call(tagList, plot_kpi))

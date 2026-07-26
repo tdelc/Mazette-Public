@@ -315,16 +315,19 @@ DB_PRODUITS_JOURS <- DB_TICKET %>%
   group_by(DATE,CD_HEURE,PRODUCT_FULL,PRODUCT) %>%
   summarise(CA_TVAC = sum(PRIX_TOTAL),QUANTITE = sum(QUANTITE),.groups = "drop")
 
-# On vient ajouter le taux de TVA (supposé)
-DB_PRODUITS_JOURS <- DB_PRODUITS_JOURS %>%
-  left_join(DB_PRODUITS %>%
-              filter(PRICE > 0,TVA_RATE != 0.06,
-                     !CATEGORY %in% c("UNKNOWN (REMOVED)","BOUFFE À EMPORTER")) %>%
-              select(CATEGORY,PRODUCT_FULL,PRODUCT,TVA_RATE) %>% distinct())
+# On vient ajouter le taux de TVA 
+# Trouver le taux de TVA (supposé), en évitant les doublons
+DB_TVA <- DB_PRODUITS %>%
+  filter(PRICE > 0,TVA_RATE != 0.06,
+         !CATEGORY %in% c("UNKNOWN (REMOVED)","BOUFFE À EMPORTER")) %>%
+  count(CATEGORY,PRODUCT_FULL,PRODUCT,TVA_RATE) |> 
+  group_by(PRODUCT_FULL,PRODUCT) |> 
+  mutate(nd = n()) |> 
+  arrange(-n) |> 
+  filter(row_number() == 1) |> 
+  select(CATEGORY,PRODUCT_FULL,PRODUCT,TVA_RATE)
 
-# DB_PRODUITS_JOURS %>% filter(is.na(TVA_RATE)) %>%
-#   count(PRODUCT_FULL) %>% print(n=50)
-# Essentiellement du à emporter, ou quelques trucs qu'on peut ignorer
+DB_PRODUITS_JOURS <- DB_PRODUITS_JOURS %>% left_join(DB_TVA)
 
 DB_PRODUITS_JOURS <- DB_PRODUITS_JOURS %>%
   filter(!is.na(TVA_RATE)) %>%
