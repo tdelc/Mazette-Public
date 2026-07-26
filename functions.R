@@ -1833,11 +1833,14 @@ graph_tendance_bieres <- function(evo, semaine = NULL) {
   p <- plot_ly()
   for (b in bieres) {
     sub <- evo %>% filter(BOISSON == b) %>% arrange(SEMAINE)
+    # Le hover lit la COLONNE BOISSON, pas la variable de boucle `b` : dans une
+    # formule (~), l'expression est évaluée après la boucle, si bien que toutes
+    # les traces afficheraient le nom de la dernière bière.
     p <- p %>% add_lines(
-      data = sub, x = ~SEMAINE, y = ~LITRES, name = b,
+      data = sub, x = ~SEMAINE, y = ~LITRES, name = b, legendgroup = b,
       line = list(color = pal[[b]], width = 2.5),
-      hovertemplate = ~paste0(b, "<br>Sem. ", format(SEMAINE, "%d/%m"), "<br>",
-                              round(LITRES), " L<extra></extra>"))
+      hovertemplate = ~paste0(BOISSON, "<br>Sem. ", format(SEMAINE, "%d/%m"),
+                              "<br>", round(LITRES), " L<extra></extra>"))
     if (!is.null(semaine)) {
       pt <- sub %>% filter(SEMAINE == as.Date(semaine))
       if (nrow(pt) > 0)
@@ -1921,12 +1924,23 @@ graph_formats_bieres <- function(formats) {
 
 table_conso_bieres <- function(comp) {
   if (is.null(comp) || nrow(comp) == 0) return(tibble(Bière = character()))
+
+  # Totaux calculés hors du transmute : une condition scalaire dans un
+  # `ifelse` renverrait une valeur unique, recyclée sur toutes les lignes.
+  total    <- sum(comp$LITRES, na.rm = TRUE)
+  total_m1 <- sum(comp$LITRES_M1, na.rm = TRUE)
+
   comp %>%
+    mutate(PART    = if (total > 0) 100 * LITRES / total else NA_real_,
+           PART_M1 = if (total_m1 > 0) 100 * LITRES_M1 / total_m1 else NA_real_) %>%
     transmute(Bière      = BOISSON,
               Verres     = VERRES,
               Litres     = round(LITRES),
+              Part       = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
               `CA`       = format_CA(CA, -1),
               `Litres S-1` = round(LITRES_M1),
+              `Part S-1` = ifelse(is.na(PART_M1), "—",
+                                  paste0(round(PART_M1, 1), " %")),
               `Évol.`    = ifelse(is.na(EVO_PCT), "—",
                                   paste0(ifelse(EVO_PCT >= 0, "+", ""),
                                          EVO_PCT, " %")),
