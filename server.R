@@ -114,9 +114,20 @@ server <- function(input, output, session) {
 
   # DB fictives compta (personnel + matières), calées sur le calendrier réel.
   # 4 secteurs : Service / Transformation alimentaire / Brasserie / Support.
-  DATES_COMPTA     <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
-  DB_COUTS_TRAVAIL <- generer_couts_travail(DATES_COMPTA)
-  DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA)
+  DATES_COMPTA <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
+
+  # CA hebdomadaire réel des 12 derniers mois : sert à calibrer les volumes
+  # fictifs pour que food/work/prime cost restent des ordres de grandeur
+  # plausibles (et suivent le CA s'il évolue).
+  CA_HEBDO_REEL <- UPD_KPI_SIMPLE %>%
+    filter(ventes > 0, DATE > today() - 364) %>%
+    summarise(s = sum(ventes, na.rm = TRUE) / 52) %>%
+    pull(s)
+  if (!is.finite(CA_HEBDO_REEL) || CA_HEBDO_REEL <= 0)
+    CA_HEBDO_REEL <- CA_HEBDO_DEFAUT
+
+  DB_COUTS_TRAVAIL <- generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
+  DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
   
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
     left_join(DB_DATE |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
@@ -344,12 +355,17 @@ server <- function(input, output, session) {
     )
   })
   
-  # Personnel du jour, par secteur
+  # Personnel du jour, par secteur (le service est ventilé par créneau dans la
+  # base : on ré-agrège ici pour garder une ligne par secteur)
   output$detail_jour_travail <- renderDT({
     datatable_simple(
       DB_COUTS_TRAVAIL %>%
         filter(DATE == jour_detail()) %>%
-        arrange(SECTEUR) |> 
+        group_by(SECTEUR) |>
+        summarise(HEURES = sum(HEURES),
+                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
+                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES, .groups = "drop") |>
+        arrange(SECTEUR) |>
         transmute(Secteur = SECTEUR, Heures = round(HEURES),
                   `Taux/h` = format_CA(TAUX_HORAIRE, 2),
                   Personnel = format_CA(COUT_TRAVAIL, -1))
@@ -900,6 +916,77 @@ server <- function(input, output, session) {
   output$annee_ecart_marge <- renderPlotly({
     graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
+  })
+
+  #### Volet "Travail" ####
+
+  # Fenêtre par défaut : 12 mois glissants (une occurrence de chaque jour de
+  # semaine, comme dans l'étude de rentabilité)
+  debut_travail <- floor_date(date_veille, "month") %m-% months(12)
+  observe({
+    updateDateRangeInput(session, "trav_periode",
+                         start = debut_travail, end = date_veille)
+    updateDateRangeInput(session, "cren_periode",
+                         start = debut_travail, end = date_veille)
+  })
+
+  fenetre_travail <- function(rng) {
+    if (is.null(rng) || any(is.na(rng))) c(debut_travail, date_veille) else rng
+  }
+
+  # --- Sous-onglet "Suivi" ---
+  trav_base <- reactive({
+    p <- fenetre_travail(input$trav_periode)
+    base_travail(DB_PRODUITS_JOURS_FULL, DB_COUTS_TRAVAIL, p[1], p[2])
+  })
+
+  trav_agrege <- reactive({
+    agrege_travail(trav_base(), unite = input$trav_unite)
+  })
+
+  output$trav_kpi <- renderUI({
+    kpi_travail_tiles(trav_agrege())
+  })
+
+  output$trav_structure <- renderPlotly({
+    graph_structure_travail(trav_agrege(), unite = input$trav_unite)
+  })
+
+  output$trav_productivite <- renderPlotly({
+    graph_productivite_temps(trav_agrege(), unite = input$trav_unite)
+  })
+
+  output$trav_ca_creneaux <- renderPlotly({
+    graph_ca_creneaux_temps(
+      agrege_creneaux_periode(trav_base(), unite = input$trav_unite),
+      unite = input$trav_unite)
+  })
+
+  # --- Sous-onglet "Créneaux" ---
+  cren_stats <- reactive({
+    p <- fenetre_travail(input$cren_periode)
+    stats_creneaux(base_travail(DB_PRODUITS_JOURS_FULL, DB_COUTS_TRAVAIL,
+                                p[1], p[2]))
+  })
+
+  output$cren_heatmap <- renderPlotly({
+    graph_heatmap_creneaux(cren_stats(), var = input$cren_indicateur)
+  })
+
+  output$cren_nuage <- renderPlotly({
+    graph_nuage_creneaux(cren_stats())
+  })
+
+  output$cren_classement <- renderPlotly({
+    graph_productivite_creneaux(cren_stats())
+  })
+
+  output$cren_decomposition <- renderPlotly({
+    graph_decomposition_creneaux(cren_stats())
+  })
+
+  output$cren_table <- renderDT({
+    datatable_simple(table_creneaux(cren_stats()))
   })
 
 }

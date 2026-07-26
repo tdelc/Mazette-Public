@@ -110,9 +110,118 @@ ui_app <- function() {
       ui_compta()
     ),
     nav_panel(
+      title = "Travail",
+      icon = icon("person-running"),
+      ui_travail()
+    ),
+    nav_panel(
       title = "Comparaison",
       icon = icon("code-compare"),
       ui_comparaison()
+    )
+  )
+}
+
+# Onglet "Travail" : productivité et coût du travail, dans le temps puis
+# créneau par créneau (midi / soir / Pizzwanze).
+ui_travail <- function() {
+  navset_card_tab(
+    id = "travail_tabs",
+    nav_panel(
+      title = "Suivi",
+      icon = icon("chart-line"),
+      layout_sidebar(
+        sidebar = sidebar(
+          title = "Période",
+          width = 290,
+          dateRangeInput("trav_periode", "Fenêtre analysée",
+                         start = NULL, end = NULL,
+                         separator = " → ", language = "fr",
+                         weekstart = 1, format = "dd/mm/yyyy"),
+          radioButtons("trav_unite", "Granularité",
+                       c("Par semaine" = "semaine", "Par mois" = "mois"),
+                       selected = "mois"),
+          hr(),
+          div(class = "small text-muted",
+              tags$b("Heures de service"), " : directement liées à l'ouverture",
+              " d'un créneau.", tags$br(), tags$br(),
+              tags$b("Coûts indirects"), " : transfo, brasserie et support,",
+              " mutualisés sur la semaine puis répartis entre créneaux au",
+              " prorata du CA.", tags$br(), tags$br(),
+              tags$b("Marge après travail"), " = CA HTVA − coût de service −",
+              " coûts indirects. Reste à couvrir matières, loyer et énergie.")
+        ),
+        uiOutput("trav_kpi"),
+        card(
+          full_screen = TRUE,
+          card_header("Décomposition du CA : marge et coûts du travail"),
+          plotlyOutput("trav_structure", height = "340px")
+        ),
+        card(
+          full_screen = TRUE,
+          card_header("Productivité : heures de service et CA par heure"),
+          plotlyOutput("trav_productivite", height = "340px"),
+          div(class = "small text-muted",
+              "En pointillé : la productivité moyenne de la fenêtre.")
+        ),
+        card(
+          full_screen = TRUE,
+          card_header("CA par créneau (midi / soir / Pizzwanze)"),
+          plotlyOutput("trav_ca_creneaux", height = "320px")
+        )
+      )
+    ),
+    nav_panel(
+      title = "Créneaux",
+      icon = icon("table-cells"),
+      layout_sidebar(
+        sidebar = sidebar(
+          title = "Analyse par créneau",
+          width = 290,
+          dateRangeInput("cren_periode", "Fenêtre analysée",
+                         start = NULL, end = NULL,
+                         separator = " → ", language = "fr",
+                         weekstart = 1, format = "dd/mm/yyyy"),
+          selectInput("cren_indicateur", "Indicateur de la heatmap",
+                      c("CA moyen par ouverture" = "CA_moyen",
+                        "CA par heure de service" = "CA_PAR_HEURE",
+                        "Coût du travail / CA"    = "RATIO_TOTAL",
+                        "Marge par ouverture"     = "MARGE_moyenne"),
+                      selected = "CA_PAR_HEURE"),
+          hr(),
+          div(class = "small text-muted",
+              "Chaque créneau est ramené à une ", tags$b("ouverture type"),
+              " pour comparer les jours à armes égales.", tags$br(), tags$br(),
+              "Un mardi soir avec vente de pizza est compté comme ",
+              tags$b("Pizzwanze"), ".")
+        ),
+        layout_columns(
+          col_widths = c(5, 7),
+          card(full_screen = TRUE,
+               card_header("Vue jour × créneau"),
+               plotlyOutput("cren_heatmap", height = "380px")),
+          card(full_screen = TRUE,
+               card_header("Productivité : CA vs heures de service"),
+               plotlyOutput("cren_nuage", height = "380px"),
+               div(class = "small text-muted",
+                   "Plus un créneau est haut à gauche, plus il est efficace. ",
+                   "La taille des points reflète le CA total."))
+        ),
+        layout_columns(
+          col_widths = c(6, 6),
+          card(full_screen = TRUE,
+               card_header("Classement par productivité horaire"),
+               plotlyOutput("cren_classement", height = "400px")),
+          card(full_screen = TRUE,
+               card_header("Décomposition du CA moyen par créneau"),
+               plotlyOutput("cren_decomposition", height = "400px"))
+        ),
+        card(
+          full_screen = TRUE,
+          card_header("Détail par créneau"),
+          DTOutput("cren_table")
+        )
+      )
     )
   )
 }
