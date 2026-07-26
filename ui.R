@@ -55,6 +55,17 @@ chip_legende <- function(couleur, libelle) {
   )
 }
 
+# Légende de la convention "CA vs objectif", à poser sous les graphes en barres.
+# Reprend les couleurs de couleur_objectif() dans functions.R.
+legende_objectif <- function() {
+  div(
+    class = "d-flex gap-3 flex-wrap text-muted mt-1",
+    chip_legende("#5B7B5A", "Objectif atteint"),
+    chip_legende("#d98236", "À partir de 90 %"),
+    chip_legende("#c0392b", "En dessous de 90 %")
+  )
+}
+
 legende_couleurs <- function() {
   tagList(
     div(class = "legende-titre", "Midi / Soir"),
@@ -566,6 +577,7 @@ ui_historique <- function() {
                    c("Par semaine" = "semaine", "Par mois" = "mois"),
                    selected = "semaine", inline = TRUE),
       plotlyOutput("hist_graph", height = "330px"),
+      legende_objectif(),
       plotlyOutput("hist_evo", height = "410px")
     )
   )
@@ -589,6 +601,7 @@ ui_detail <- function() {
             "Cliquez sur une barre pour détailler la journée.")
       ),
       plotlyOutput("detail_jour_graph", height = "300px"),
+      legende_objectif(),
       hr(),
       card_header(textOutput("detail_jour_titre", inline = TRUE)),
       layout_columns(
@@ -660,6 +673,7 @@ ui_detail_periode <- function(sfx) {
           "Cliquez sur une barre pour détailler la période.")
     ),
     plotlyOutput(id("graph"), height = "300px"),
+    legende_objectif(),
     hr(),
     card_header(textOutput(id("titre"), inline = TRUE)),
     layout_columns(

@@ -1,5 +1,36 @@
 
 
+#### REFONTE — Conventions de couleurs ####
+# Palette d'appréciation, partagée par tous les volets de la refonte.
+COUL_VERT   <- "#5B7B5A"
+COUL_AMBRE  <- "#d98236"
+COUL_ROUGE  <- "#c0392b"
+COUL_NEUTRE <- "#8d7b68"
+
+# Couleur d'un CA selon l'atteinte de son objectif. Même convention que les
+# box de ventes (cf. get_color_from_gradient) :
+#   >= 100 %  -> vert    (objectif atteint)
+#   >=  90 %  -> ambre   (tout proche)
+#   <   90 %  -> rouge   (manqué)
+# Sans objectif renseigné (0 ou NA), la barre reste neutre : on ne peut rien
+# juger. Vectorisé, donc utilisable directement sur une colonne.
+couleur_objectif <- function(reel, objectif, seuil_proche = 0.9) {
+  pct <- ifelse(is.na(objectif) | objectif <= 0, NA_real_, reel / objectif)
+  case_when(
+    is.na(pct)          ~ COUL_NEUTRE,
+    pct >= 1            ~ COUL_VERT,
+    pct >= seuil_proche ~ COUL_AMBRE,
+    TRUE                ~ COUL_ROUGE
+  )
+}
+
+# Libellé "x % de l'objectif" pour les infobulles.
+label_objectif <- function(reel, objectif) {
+  ifelse(is.na(objectif) | objectif <= 0, "pas d'objectif",
+         paste0(round(100 * reel / objectif), " % de l'objectif"))
+}
+
+
 #### REFONTE — Volet "Maintenant" ####
 
 # Tronque un nom de produit trop long
@@ -101,13 +132,15 @@ graph_ca_jour <- function(db_kpi, db_obj, d1, d2, source = "detail_jour") {
     filter(DATE >= d1, DATE <= d2, ventes > 0) %>%
     arrange(DATE)
 
-  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+  couleurs <- couleur_objectif(dat$ventes, dat$objectif)
+  atteinte <- label_objectif(dat$ventes, dat$objectif)
 
   plot_ly(dat, source = source) %>%
     add_bars(x = ~DATE, y = ~ventes, name = "CA",
              marker = list(color = couleurs),
              hovertemplate = ~paste0(format(DATE, "%a %d/%m"), "<br>CA ",
-                                     format_CA(ventes, -1), "<extra></extra>")) %>%
+                                     format_CA(ventes, -1), "<br>", atteinte,
+                                     "<extra></extra>")) %>%
     add_lines(x = ~DATE, y = ~objectif, name = "Objectif",
               line = list(color = "#260b01", dash = "dot", width = 1)) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
@@ -138,13 +171,14 @@ graph_ca_periode <- function(db_kpi, db_obj, d1, d2,
     return(plotly_empty() %>% layout(title = "Aucune donnée sur la période"))
 
   lbl <- label_periode(dat$PERIODE, unite)
-  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+  couleurs <- couleur_objectif(dat$ventes, dat$objectif)
+  atteinte <- label_objectif(dat$ventes, dat$objectif)
 
   plot_ly(dat, source = source) %>%
     add_bars(x = ~PERIODE, y = ~ventes, name = "CA",
              marker = list(color = couleurs),
-             hovertemplate = ~paste0(lbl, "<br>CA ",
-                                     format_CA(ventes, -1), "<extra></extra>")) %>%
+             hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1),
+                                     "<br>", atteinte, "<extra></extra>")) %>%
     add_lines(x = ~PERIODE, y = ~objectif, name = "Objectif",
               line = list(color = "#260b01", dash = "dot", width = 1)) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
@@ -169,13 +203,15 @@ graph_repartition_periode <- function(db_kpi, db_obj, periode,
   if (nrow(dat) == 0 || sum(dat$ventes, na.rm = TRUE) == 0)
     return(plotly_empty() %>% layout(title = "Aucune vente sur la période"))
 
-  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+  couleurs <- couleur_objectif(dat$ventes, dat$objectif)
+  atteinte <- label_objectif(dat$ventes, dat$objectif)
 
   plot_ly(dat) %>%
     add_bars(x = ~DATE, y = ~ventes, name = "CA",
              marker = list(color = couleurs),
              hovertemplate = ~paste0(format(DATE, "%a %d/%m"), "<br>CA ",
-                                     format_CA(ventes, -1), "<extra></extra>")) %>%
+                                     format_CA(ventes, -1), "<br>", atteinte,
+                                     "<extra></extra>")) %>%
     add_lines(x = ~DATE, y = ~objectif, name = "Objectif",
               line = list(color = "#260b01", dash = "dot", width = 1)) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
@@ -256,7 +292,8 @@ agrege_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"),
   res
 }
 
-# Graphe historique : barres (CA réalisé, vert si >= objectif) + ligne objectif
+# Graphe historique : barres (CA réalisé, coloré selon l'atteinte de
+# l'objectif) + ligne objectif
 graph_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"), n = 12) {
   unite <- match.arg(unite)
   dat <- agrege_historique(db_kpi, db_obj, unite) %>%
@@ -265,12 +302,14 @@ graph_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"), n = 1
 
   lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
          else format(dat$PERIODE, "%B %Y")
-  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
+  couleurs <- couleur_objectif(dat$ventes, dat$objectif)
+  atteinte <- label_objectif(dat$ventes, dat$objectif)
 
   plot_ly(dat) %>%
     add_bars(x = ~PERIODE, y = ~ventes, name = "CA réalisé",
              marker = list(color = couleurs),
-             hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1), "<extra></extra>")) %>%
+             hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1),
+                                     "<br>", atteinte, "<extra></extra>")) %>%
     add_lines(x = ~PERIODE, y = ~objectif, name = "Objectif",
               line = list(color = "#260b01", dash = "dot", width = 1.5),
               hovertemplate = ~paste0("Objectif ", format_CA(objectif, -1), "<extra></extra>")) %>%
@@ -289,8 +328,8 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
   
   lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
   else format(dat$PERIODE, "%B %Y")
-  couleurs <- ifelse(dat$ventes >= dat$objectif, "#5B7B5A", "#d98236")
-  
+  # (pas de couleur par objectif ici : ce graphe trace des lignes, pas des barres)
+
   plot_ly(dat) %>%
     add_lines(x = ~PERIODE, y = ~ventes, name = "CA réalisé",
               line = list(color = "#d98236"),
@@ -506,9 +545,8 @@ COULEURS_SECTEURS <- c(
 
 COUL_MATIERE <- "#d3c0ac"   # coût matière / frais généraux
 COUL_TRAVAIL <- "#732c02"   # coût du personnel
-COUL_VERT    <- "#5B7B5A"
-COUL_AMBRE   <- "#d98236"
-COUL_ROUGE   <- "#c0392b"
+# COUL_VERT / COUL_AMBRE / COUL_ROUGE : cf. « Conventions de couleurs » en tête
+# de fichier, partagées avec les barres de CA vs objectif.
 
 ##### Périodes #####
 
@@ -922,12 +960,17 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
   lab  <- factor(label_periode(comp$PERIODE, unite),
                  levels = label_periode(comp$PERIODE, unite))
 
+  # La barre de CA prend la couleur de l'atteinte de son objectif ; l'objectif
+  # lui-même reste neutre pour ne pas brouiller la lecture.
+  atteinte <- label_objectif(comp$CA, comp$OBJECTIF)
+
   plot_ly(comp) %>%
     add_bars(x = lab, y = ~CA, name = "CA réalisé",
-             marker = list(color = "#732c02"),
-             hovertemplate = ~paste0("CA ", format_CA(CA, -1), "<extra></extra>")) %>%
+             marker = list(color = couleur_objectif(comp$CA, comp$OBJECTIF)),
+             hovertemplate = ~paste0("CA ", format_CA(CA, -1), "<br>", atteinte,
+                                     "<extra></extra>")) %>%
     add_bars(x = lab, y = ~OBJECTIF, name = "Objectif",
-             marker = list(color = "#d98236"),
+             marker = list(color = COUL_NEUTRE),
              hovertemplate = ~paste0("Objectif ", format_CA(OBJECTIF, -1), "<extra></extra>")) %>%
     add_bars(x = lab, y = ~MARGE, name = "Marge",
              marker = list(color = COUL_VERT),
