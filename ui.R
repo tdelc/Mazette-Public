@@ -672,7 +672,8 @@ ui_detail <- function() {
           DTOutput("detail_jour_travail"),
           h6("Coût de la semaine", class = "section-sub"),
           DTOutput("detail_jour_travail_semaine"),
-          DTOutput("detail_jour_cout")
+          DTOutput("detail_jour_cout"),
+          uiOutput("detail_jour_simu")
         ),
         div(
           h6("Produits du jour", class = "section-sub"),
@@ -747,7 +748,8 @@ ui_detail_periode <- function(sfx) {
           div(
             h6("Coût de la période", class = "section-sub"),
             DTOutput(id("travail")),
-            DTOutput(id("cout"))
+            DTOutput(id("cout")),
+            uiOutput(id("simu"))
             # ,h6("Marge de la période", class = "section-sub")
             # ,DTOutput(id("marge"))
           )

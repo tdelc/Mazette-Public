@@ -150,7 +150,7 @@ server <- function(input, output, session) {
            ACHATS          = ACHATS / n(),
            VARIATION_STOCK = VARIATION_STOCK / n()) |> 
     ungroup() |> 
-    select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK) |> 
+    select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK, SIMU) |> 
     filter(DATE < today())
 
   # Dernier jour d'ouverture (= "veille")
@@ -399,7 +399,7 @@ server <- function(input, output, session) {
                   Personnel = format_CA(COUT_TRAVAIL, -1))
     )
   })
-
+  
   # Matières de la semaine du jour sélectionné, par secteur
   output$detail_jour_cout <- renderDT({
     datatable_simple(
@@ -409,6 +409,29 @@ server <- function(input, output, session) {
                   Stock = format_CA(VARIATION_STOCK, -1),
                   Matières = format_CA(COUT_MATIERE, -1))
     )
+  })
+  
+  # Détection de données simulées
+  output$detail_jour_simu <- renderUI({
+    
+    if ("SIMU" %in% colnames(DB_COUTS_TRAVAIL)){
+      simu_travail <- DB_COUTS_TRAVAIL %>%
+        filter(PREMIER_JOUR_SEMAINE == semaine_detail()) |> 
+        summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
+    }else{
+      simu_travail <- 0
+    }
+    
+    if ("SIMU" %in% colnames(DB_COUTS_MATIERE)){
+      simu_matiere <- DB_COUTS_MATIERE %>%
+        filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
+        summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
+    }else{
+      simu_matiere <- 0
+    }
+    
+    bandeau_alerte(simu_travail + simu_matiere > 0,
+                   "Résulats basés sur données simulées (coût du travail et matières)")
   })
 
   #### Volet "Détail" — Par semaine / Par mois ####
@@ -469,6 +492,29 @@ server <- function(input, output, session) {
         summarise(ACHATS = sum(ACHATS),
                   VARIATION_STOCK = sum(VARIATION_STOCK),
                   COUT_MATIERE = sum(COUT_MATIERE))
+    })
+    
+    # Détection de données simulées
+    output[[id("simu")]] <- renderUI({
+      
+      if ("SIMU" %in% colnames(DB_COUTS_TRAVAIL)){
+        simu_travail <- DB_COUTS_TRAVAIL %>%
+          filter(DATE %within% i) %>%
+          summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
+      }else{
+        simu_travail <- 0
+      }
+      
+      if ("SIMU" %in% colnames(DB_COUTS_MATIERE_JOUR)){
+        simu_matiere <- DB_COUTS_MATIERE %>%
+          filter(DATE %within% i) %>%
+          summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
+      }else{
+        simu_matiere <- 0
+      }
+      
+      bandeau_alerte(simu_travail + simu_matiere > 0,
+                     "Résulats basés sur données simulées (coût du travail et matières)")
     })
     
     ca <- reactive({

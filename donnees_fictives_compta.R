@@ -208,10 +208,11 @@ generer_couts_travail <- function(dates, ca_hebdo = CA_HEBDO_DEFAUT, seed = 42) 
       HEURES = recale_volumes(
         HEURES, TAUX_HORAIRE,
         cout_cible = ca_hebdo * nb_semaines(dates) * CIBLES_COMPTA[["work"]]),
-      COUT_TRAVAIL = round(HEURES * TAUX_HORAIRE, 2)) %>%
+      COUT_TRAVAIL = round(HEURES * TAUX_HORAIRE, 2),
+      SIMU = TRUE) %>%
     dplyr::filter(HEURES > 0) %>%
     dplyr::arrange(DATE, SECTEUR, CRENEAU) %>%
-    dplyr::select(DATE, CRENEAU, SECTEUR, HEURES, TAUX_HORAIRE, COUT_TRAVAIL)
+    dplyr::select(DATE, CRENEAU, SECTEUR, HEURES, TAUX_HORAIRE, COUT_TRAVAIL, SIMU)
 }
 
 # --- Générateur 2 : coût matière / frais généraux, par semaine et par secteur -
@@ -253,7 +254,8 @@ generer_couts_matiere <- function(dates, ca_hebdo = CA_HEBDO_DEFAUT, seed = 7) {
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(STOCK_FIN    = STOCK_DEBUT - VARIATION_STOCK,
-                  COUT_MATIERE = ACHATS + VARIATION_STOCK) %>%
+                  COUT_MATIERE = ACHATS + VARIATION_STOCK,
+                  SIMU = TRUE) %>%
     dplyr::select(SEMAINE, SECTEUR, ACHATS, STOCK_DEBUT, STOCK_FIN,
-                  VARIATION_STOCK, COUT_MATIERE)
+                  VARIATION_STOCK, COUT_MATIERE, SIMU)
 }

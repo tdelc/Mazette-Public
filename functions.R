@@ -2635,6 +2635,30 @@ table_pizzwanze <- function(ps) {
 
 #### Générique ####
 
+# Bandeau d'avertissement, à utiliser dans un renderUI.
+# Ne renvoie quelque chose que si `afficher` est vrai ; sinon NULL, donc rien
+# ne s'affiche et l'espace n'est pas réservé.
+bandeau_alerte <- function(afficher, texte,
+                           titre   = "À lire attentivement",
+                           couleur = COUL_ROUGE,
+                           icone   = "triangle-exclamation") {
+  if (!isTRUE(afficher)) return(NULL)
+  
+  div(
+    class = "d-flex align-items-start gap-2", role = "alert",
+    style = paste0("background:", couleur, "1a;",
+                   "border-left:4px solid ", couleur, ";",
+                   "border-radius:0.5rem;padding:0.7rem 0.9rem;",
+                   "margin-bottom:0.9rem;"),
+    span(style = paste0("color:", couleur, ";font-size:1.15rem;line-height:1.2;"),
+         icon(icone)),
+    div(
+      div(style = paste0("font-weight:700;color:", couleur, ";"), titre),
+      div(class = "small", texte)
+    )
+  )
+}
+
 datatable_simple <- function(table){
   datatable(
     table,
