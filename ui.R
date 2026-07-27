@@ -667,10 +667,7 @@ ui_production_focaccias <- function() {
         tags$b("Crémeux"), " et ", tags$b("légume"),
         " sont comptés sur toutes les focaccias ; ",
         tags$b("fromage"), " et ", tags$b("viande"),
-        " sur celles qui portent le supplément correspondant, « full » compris.",
-        tags$br(),
-        "Laissez le stock vide s'il n'y a rien en réserve : la quantité à ",
-        "produire vaut alors la quantité nécessaire.")
+        " sur celles qui portent le supplément correspondant, « full » compris.")
   )
 }
 
@@ -690,7 +687,6 @@ ui_focaccias <- function() {
           "Les remises et lignes négatives sont exclues.")
     ),
     uiOutput("foca_kpi"),
-    ui_production_focaccias(),
     layout_columns(
       col_widths = c(6, 6),
       card(full_screen = TRUE,
@@ -715,7 +711,8 @@ ui_focaccias <- function() {
       full_screen = TRUE,
       card_header("Détail par variante"),
       DTOutput("foca_table")
-    )
+    ),
+    ui_production_focaccias()
   )
 }
 
