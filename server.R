@@ -1077,6 +1077,55 @@ server <- function(input, output, session) {
     datatable_simple(table_conso_bieres(conso_comp()))
   })
 
+  #### Volet "Pizzwanze" ####
+
+  # Dates des soirées, calculées une seule fois
+  SOIREES_PIZZWANZE <- soirees_pizzwanze(DB_PRODUITS)
+
+  observe({
+    req(length(SOIREES_PIZZWANZE) > 0)
+    choix <- rev(SOIREES_PIZZWANZE)   # la plus récente en tête
+    updateSelectInput(session, "pizz_soiree",
+                      choices = setNames(as.character(choix),
+                                         format(choix, "%a %d/%m/%Y")),
+                      selected = as.character(choix[1]))
+  })
+
+  pizz_data <- reactive({
+    req(input$pizz_soiree)
+    pizzwanze_soiree(DB_PRODUITS, as.Date(input$pizz_soiree), SOIREES_PIZZWANZE)
+  })
+
+  pizz_hist <- reactive({
+    historique_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE)
+  })
+
+  output$pizz_kpi <- renderUI({
+    kpi_pizzwanze_tiles(pizz_data())
+  })
+
+  output$pizz_soiree <- renderPlotly({
+    graph_pizzas_soiree(pizz_data())
+  })
+
+  output$pizz_heure <- renderPlotly({
+    graph_pizzas_heure(pizzas_par_heure(DB_TICKET, as.Date(input$pizz_soiree)))
+  })
+
+  output$pizz_carte <- renderPlotly({
+    n <- suppressWarnings(as.integer(input$pizz_profondeur))
+    graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE,
+                          n_soirees = if (is.na(n) || n <= 0) NULL else n)
+  })
+
+  output$pizz_evo <- renderPlotly({
+    graph_evo_pizzwanze(pizz_hist(), soiree = as.Date(input$pizz_soiree))
+  })
+
+  output$pizz_table <- renderDT({
+    datatable_simple(table_pizzwanze(pizz_data()))
+  })
+
   #### Volet "Focaccias" ####
 
   observe({

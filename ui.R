@@ -121,6 +121,11 @@ ui_app <- function() {
       ui_focaccias()
     ),
     nav_panel(
+      title = "Pizzwanze",
+      icon = icon("pizza-slice"),
+      ui_pizzwanze()
+    ),
+    nav_panel(
       title = "Simulation",
       icon = icon("sliders"),
       ui_simulation()
@@ -521,6 +526,61 @@ ui_conso_bieres <- function() {
       full_screen = TRUE,
       card_header("Détail par bière"),
       DTOutput("conso_table")
+    )
+  )
+}
+
+# Onglet "Pizzwanze" : suivi des soirées pizza, soirée par soirée.
+ui_pizzwanze <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Soirée",
+      width = 280,
+      selectInput("pizz_soiree", "Soirée analysée", choices = NULL),
+      selectInput("pizz_profondeur", "Historique de la carte",
+                  c("Toutes les soirées" = "0", "12 dernières" = "12",
+                    "24 dernières" = "24"),
+                  selected = "0"),
+      hr(),
+      div(class = "small text-muted",
+          "Tout est comparé à la ", tags$b("soirée précédente"), ".",
+          tags$br(), tags$br(),
+          "Les pizzas sont repérées par leur ", tags$b("nom"),
+          " (aucune catégorie dédiée), Khachapuri compris.", tags$br(), tags$br(),
+          "Une soirée se reconnaît à sa carte : au moins deux pizzas ",
+          "différentes. Les jours où l'on écoule une seule référence ",
+          "(parts du lendemain, slices d'événement) ne sont pas comptés.")
+    ),
+    uiOutput("pizz_kpi"),
+    layout_columns(
+      col_widths = c(6, 6),
+      card(full_screen = TRUE,
+           card_header("La carte du soir"),
+           plotlyOutput("pizz_soiree", height = "380px"),
+           div(class = "small text-muted",
+               "Couleur selon la présence historique de la pizza.")),
+      card(full_screen = TRUE,
+           card_header("Rythme de la soirée"),
+           plotlyOutput("pizz_heure", height = "380px"))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Les habituées et les passagères"),
+      plotlyOutput("pizz_carte", height = "420px"),
+      div(class = "small text-muted",
+          "Les pizzas les plus fidèles sont en haut, les passagères en bas.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Historique des soirées"),
+      plotlyOutput("pizz_evo", height = "330px"),
+      div(class = "small text-muted",
+          "Les losanges verts indiquent le nombre de nouveautés de la soirée.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail par pizza"),
+      DTOutput("pizz_table")
     )
   )
 }
