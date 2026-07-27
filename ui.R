@@ -565,7 +565,7 @@ ui_pizzwanze <- function() {
     layout_columns(
       col_widths = c(6, 6),
       card(full_screen = TRUE,
-           card_header("La carte du soir"),
+           card_header(textOutput("pizz_titre")),
            plotlyOutput("pizz_soiree", height = "380px")),
            # div(class = "small text-muted",
            #     "Couleur selon la présence historique de la pizza.")),

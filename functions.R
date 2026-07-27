@@ -2698,8 +2698,8 @@ table_pizzwanze <- function(ps) {
               Quantité   = QUANTITE,
               Part       = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
               CA         = format_CA(CA, -1),
-              Statut     = STATUT_SOIR,
-              `Soirées`  = N_SOIREES,
+              # Statut     = STATUT_SOIR,
+              # `Soirées`  = N_SOIREES,
               `Qté préc.` = Q_M1,
               `Évol.`    = ifelse(is.na(EVO), "—",
                                   paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
