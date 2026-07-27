@@ -589,23 +589,46 @@ ui_pizzwanze <- function() {
 # Les champs sont préremplis par le serveur (moyenne des dernières semaines
 # complètes) et restent entièrement modifiables ; la dernière ligne est libre.
 ui_production_focaccias <- function() {
+  # Un vrai tableau plutôt qu'une grille CSS : l'alignement des colonnes est
+  # garanti par le navigateur, sans dépendre de www/style.css (que le
+  # navigateur garde volontiers en cache). Les classes utilisées viennent de
+  # Bootstrap, livré par bslib, donc toujours à jour.
+  champ <- function(id, pas) {
+    numericInput(id, NULL, value = NA, min = 0, step = pas, width = "100%")
+  }
+
   ligne <- function(i, nom, libre = FALSE) {
-    tagList(
-      if (libre)
-        textInput(paste0("prod_nom_", i), NULL, value = "",
-                  placeholder = "Autre ingrédient")
-      else div(class = "prod-ing", nom),
-      numericInput(paste0("prod_foc_", i), NULL, value = NA, min = 0, step = 1),
-      numericInput(paste0("prod_por_", i), NULL, value = NA, min = 0, step = 5),
-      div(class = "prod-calc", textOutput(paste0("prod_nec_", i), inline = TRUE)),
-      numericInput(paste0("prod_stk_", i), NULL, value = NA, min = 0, step = 10),
-      div(class = "prod-calc", textOutput(paste0("prod_faire_", i), inline = TRUE))
+    tags$tr(
+      tags$td(
+        if (libre)
+          textInput(paste0("prod_nom_", i), NULL, value = "",
+                    placeholder = "Autre ingrédient", width = "100%")
+        else tags$span(class = "fw-semibold", nom)
+      ),
+      tags$td(champ(paste0("prod_foc_", i), 1)),
+      tags$td(champ(paste0("prod_por_", i), 5)),
+      tags$td(class = "text-end fw-bold",
+              textOutput(paste0("prod_nec_", i), inline = TRUE)),
+      tags$td(champ(paste0("prod_stk_", i), 10)),
+      tags$td(class = "text-end fw-bold",
+              textOutput(paste0("prod_faire_", i), inline = TRUE))
     )
   }
+
+  entete <- function(...) tags$th(scope = "col", ...)
 
   card(
     full_screen = TRUE,
     card_header("Production"),
+    # Feuille de style locale : embarquée dans la page, donc jamais servie
+    # depuis le cache, contrairement à un fichier externe.
+    tags$style(HTML(paste0(
+      ".prod-table th{font-size:.78rem;font-weight:700;vertical-align:bottom;",
+      "color:", MZ_BRUN, ";}",
+      ".prod-table td{vertical-align:middle;}",
+      ".prod-table .shiny-input-container{margin-bottom:0!important;}",
+      ".prod-table input.form-control{padding:.25rem .5rem;font-size:.88rem;}"
+    ))),
     div(
       class = "d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2",
       div(class = "small text-muted",
@@ -613,20 +636,31 @@ ui_production_focaccias <- function() {
       actionButton("prod_reset", "↺ Réinitialiser", class = "btn-sm")
     ),
     div(
-      class = "prod-scroll",
-      div(
-        class = "prod-grid",
-        div(class = "prod-entete", "Ingrédient"),
-        div(class = "prod-entete", "Focaccias concernées"),
-        div(class = "prod-entete", "Portion (g)"),
-        div(class = "prod-entete", "Quantité nécessaire"),
-        div(class = "prod-entete", "Stock actuel (g)"),
-        div(class = "prod-entete", "Quantité à produire"),
-        ligne(1, "Crémeux"),
-        ligne(2, "Légume"),
-        ligne(3, "Fromage"),
-        ligne(4, "Viande"),
-        ligne(5, NULL, libre = TRUE)
+      class = "table-responsive",
+      tags$table(
+        class = "table table-sm align-middle mb-0 prod-table",
+        tags$colgroup(
+          tags$col(style = "width:20%"), tags$col(style = "width:15%"),
+          tags$col(style = "width:13%"), tags$col(style = "width:17%"),
+          tags$col(style = "width:15%"), tags$col(style = "width:20%")
+        ),
+        tags$thead(
+          tags$tr(
+            entete("Ingrédient"),
+            entete("Focaccias concernées"),
+            entete("Portion (g)"),
+            entete(class = "text-end", "Quantité nécessaire"),
+            entete("Stock actuel (g)"),
+            entete(class = "text-end", "Quantité à produire")
+          )
+        ),
+        tags$tbody(
+          ligne(1, "Crémeux"),
+          ligne(2, "Légume"),
+          ligne(3, "Fromage"),
+          ligne(4, "Viande"),
+          ligne(5, NULL, libre = TRUE)
+        )
       )
     ),
     div(class = "small text-muted mt-2",
