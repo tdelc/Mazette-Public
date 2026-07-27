@@ -386,7 +386,6 @@ server <- function(input, output, session) {
   })
   
   output$detail_jour_travail_semaine <- renderDT({
-    print(semaine_detail())
     datatable_simple(
       DB_COUTS_TRAVAIL %>%
         filter(PREMIER_JOUR_SEMAINE == semaine_detail()) %>%
@@ -1260,7 +1259,7 @@ server <- function(input, output, session) {
     
     if (length(n) == 0 || n[1] == 0)
       "Aucune semaine complète disponible : les champs sont vides."
-    else paste0("Focaccias préremplies avec la moyenne des ", n[1],
+    else paste0("Focaccias préremplies avec le maximum des ", n[1],
                 " dernières semaines complètes (+10%) : ",info_sup)
   })
 

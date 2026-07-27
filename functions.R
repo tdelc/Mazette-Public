@@ -2365,22 +2365,27 @@ production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL) {
 
   sems <- semaines_completes(fo_all$DATE, n_semaines, fin)
   if (length(sems) == 0) return(base)
-
-  fo <- fo_all %>%
-    filter(floor_date(DATE, "week", week_start = 1) %in% sems)
-
-  moyenne <- function(assiette) {
-    q <- switch(assiette,
-      toutes  = sum(fo$QUANTITE, na.rm = TRUE),
-      fromage = sum(fo$QUANTITE[fo$FROMAGE], na.rm = TRUE),
-      viande  = sum(fo$QUANTITE[fo$VIANDE],  na.rm = TRUE),
-      NA_real_)
-    if (is.na(q)) NA_real_ else round(q * 1.1 / length(sems))
-  }
-
-  base %>%
-    mutate(FOCACCIAS = map_dbl(ASSIETTE, ~if (is.na(.x)) NA_real_ else moyenne(.x)),
-           SEMAINES  = length(sems))
+  
+  fo_sub <- fo_all %>%
+    mutate(SEMAINE = floor_date(DATE, "week", week_start = 1)) |> 
+    filter(SEMAINE %in% sems)
+  
+  # Max sur les trois semaines, par ingrédient
+  max_toutes <- fo_sub |> group_by(SEMAINE) |> 
+    summarise(n = sum(QUANTITE)) |> pull(n) |> max()
+  max_fromage <- fo_sub |> filter(FROMAGE) |> group_by(SEMAINE) |> 
+    summarise(n = sum(QUANTITE)) |> pull(n) |> max()
+  max_viande <- fo_sub |> filter(VIANDE) |> group_by(SEMAINE) |> 
+    summarise(n = sum(QUANTITE)) |> pull(n) |> max()
+  
+  base |> 
+    mutate(FOCACCIAS = case_when(
+      ASSIETTE == "toutes" ~ round(max_toutes * 1.1),
+      ASSIETTE == "fromage" ~ round(max_fromage * 1.1),
+      ASSIETTE == "viande" ~ round(max_viande * 1.1),
+      TRUE ~ NA_real_),
+      SEMAINES  = length(sems)
+    )
 }
 
 # Quantité en grammes, basculée en kilos quand ça devient lourd à lire.
@@ -2477,8 +2482,6 @@ pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, soirees = NULL
 
   precedente <- soirees[soirees < date_soiree]
   precedente <- if (length(precedente) == 0) NA else max(precedente)
-  
-  print(db_ticket)
   
   pic <- pizzas_par_heure(db_ticket, date_soiree) |> 
     arrange(-QUANTITE) |> filter(row_number() == 1) |> pull(HEURE)
