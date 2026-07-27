@@ -1748,6 +1748,19 @@ tuile_evolution <- function(valeur, reference, libelle, icone,
   kpi_tile(format_val(valeur), libelle, couleur, icone, sous_titre = sous)
 }
 
+tuile_ecart <- function(valeur, reference, libelle, icone,
+                        format_val = function(x) format(round(x)),
+                        sens_positif = TRUE, suffixe = "vs S-1") {
+  ecart <- if (is.na(reference) || reference == 0) NA_real_
+  else valeur - reference
+  couleur <- if (is.na(ecart)) "#8d7b68"
+  else if ((ecart >= 0) == sens_positif) COUL_VERT else COUL_ROUGE
+  sous <- if (is.na(ecart)) paste("pas de référence", suffixe)
+  else if (ecart == 0) paste0("identique ",suffixe)
+  else paste0(if (ecart >= 0) "+" else "", round(ecart, 0), " ", suffixe)
+  kpi_tile(format_val(valeur), libelle, couleur, icone, sous_titre = sous)
+}
+
 
 ##### Bières — consommation #####
 
@@ -1889,7 +1902,7 @@ kpi_bieres_tiles <- function(comp, formats, horaire = NULL) {
     tuile_evolution(verres, verres_m1, "Verres servis", "wine-glass"),
     tuile_evolution(ca, ca_m1, "CA bières", "euro-sign",
                     function(x) format_CA(x, -1)),
-    tuile_evolution(nb, nb_m1, "Bières différentes", "list-ul"),
+    tuile_ecart(nb, nb_m1, "Bières différentes", "list-ul"),
     kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,
              "boxes-stacked", sous_titre = paste0(round(litres / 7), " L / jour")),
     kpi_tile(if (is.null(pic)) "—" else as.character(pic$HEURE),
@@ -2338,6 +2351,7 @@ soirees_pizzwanze <- function(db_produits,
                               min_pizzas = PIZZWANZE_MIN_PIZZAS) {
   db_produits %>%
     filter(est_pizza(PRODUCT_FULL), QUANTITE > 0) %>%
+    filter(!str_detect(PRODUCT_FULL,"Slice")) |> 
     group_by(DATE) %>%
     summarise(PIZZAS = sum(QUANTITE, na.rm = TRUE),
               N_REF  = n_distinct(PRODUCT_FULL), .groups = "drop") %>%
@@ -2385,12 +2399,17 @@ PAL_STATUT_PIZZA <- c("Incontournable" = "#732c02", "Régulière" = "#d98236",
 # Synthèse d'une soirée : ses ventes, celles de la soirée précédente, et le
 # statut de chaque pizza. Une pizza dont la première apparition est ce soir-là
 # est marquée « Nouveauté ».
-pizzwanze_soiree <- function(db_produits, date_soiree, soirees = NULL) {
+pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, soirees = NULL) {
   date_soiree <- as.Date(date_soiree)
   if (is.null(soirees)) soirees <- soirees_pizzwanze(db_produits)
 
   precedente <- soirees[soirees < date_soiree]
   precedente <- if (length(precedente) == 0) NA else max(precedente)
+  
+  print(db_ticket)
+  
+  pic <- pizzas_par_heure(db_ticket, date_soiree) |> 
+    arrange(-QUANTITE) |> filter(row_number() == 1) |> pull(HEURE)
 
   statuts <- statut_pizzas(db_produits, soirees)
 
@@ -2407,7 +2426,7 @@ pizzwanze_soiree <- function(db_produits, date_soiree, soirees = NULL) {
        precedente = precedente,
        ecart_jours = if (is.na(precedente)) NA_real_
                      else as.numeric(date_soiree - precedente),
-       act = act, prec = prec, statuts = statuts)
+       act = act, prec = prec, statuts = statuts, pic = pic)
 }
 
 # Historique : une ligne par soirée, avec le nombre de nouveautés et l'écart
@@ -2448,7 +2467,7 @@ pizzas_par_heure <- function(db_ticket, date_soiree) {
 ##### Tuiles KPI #####
 
 kpi_pizzwanze_tiles <- function(ps) {
-  act <- ps$act; prec <- ps$prec
+  act <- ps$act; prec <- ps$prec; pic <- ps$pic
   q    <- sum(act$QUANTITE);  q_m1  <- sum(prec$QUANTITE)
   ca   <- sum(act$CA);        ca_m1 <- sum(prec$CA)
   nref <- nrow(act);          nref_m1 <- nrow(prec)
@@ -2462,21 +2481,18 @@ kpi_pizzwanze_tiles <- function(ps) {
     tuile_evolution(ca, ca_m1, "CA pizzas", "euro-sign",
                     function(x) format_CA(x, -1),
                     suffixe = "vs soirée précédente"),
-    tuile_evolution(nref, nref_m1, "Pizzas à la carte", "list-ul",
+    tuile_ecart(nref, nref_m1, "Pizzas à la carte", "list-ul",
                     suffixe = "vs soirée précédente"),
-    kpi_tile(as.character(nouv), "Nouveautés du soir",
-             if (nouv > 0) COUL_VERT else COUL_NEUTRE, "wand-magic-sparkles",
-             sous_titre = if (nouv > 0)
-               paste(str_trunc(act$PIZZA[act$NOUVEAUTE], 22), collapse = ", ")
-             else "que des habituées"),
+    kpi_tile(if (is.na(ps$ecart_jours)) "—" else paste0(round(ps$ecart_jours), " j"),
+             "Depuis la précédente", COUL_NEUTRE, "calendar-day",
+             sous_titre = if (is.na(ps$precedente)) "première soirée"
+             else format(ps$precedente, "%d/%m/%Y")),
     kpi_tile(if (is.null(vedette)) "—" else str_trunc(vedette, 18),
              "Pizza vedette", CONSO_BRUN, "trophy",
              sous_titre = if (is.null(vedette)) NULL
                           else paste0(act$QUANTITE[1], " vendues")),
-    kpi_tile(if (is.na(ps$ecart_jours)) "—" else paste0(round(ps$ecart_jours), " j"),
-             "Depuis la précédente", COUL_NEUTRE, "calendar-day",
-             sous_titre = if (is.na(ps$precedente)) "première soirée"
-                          else format(ps$precedente, "%d/%m/%Y"))
+    kpi_tile(as.character(pic), "Pic de consommation", "#8d7b68", "clock",
+             sous_titre = "")
   )
 }
 
@@ -2497,10 +2513,10 @@ graph_evo_pizzwanze <- function(hist, soiree = NULL) {
                                      PIZZAS, " pizzas — ", N_REF, " références<br>",
                                      format_CA(CA, -1),
                                      "<extra></extra>")) %>%
-    add_markers(x = ~DATE, y = ~PIZZAS, name = "Nouveautés",
-                marker = list(color = COUL_VERT, size = 8, symbol = "diamond"),
-                text = ~NOUVEAUTES,
-                hovertemplate = ~paste0(NOUVEAUTES, " nouveauté(s)<extra></extra>")) %>%
+    # add_markers(x = ~DATE, y = ~PIZZAS, name = "Nouveautés",
+    #             marker = list(color = COUL_VERT, size = 8, symbol = "diamond"),
+    #             text = ~NOUVEAUTES,
+    #             hovertemplate = ~paste0(NOUVEAUTES, " nouveauté(s)<extra></extra>")) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "Pizzas vendues"),
            legend = list(orientation = "h"),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
@@ -2529,7 +2545,9 @@ graph_pizzas_soiree <- function(ps) {
                               N_SOIREES, " fois<extra></extra>"))
   }
   p %>% layout(barmode = "stack", xaxis = list(title = "Pizzas vendues"),
-               yaxis = list(title = ""), legend = list(orientation = "h"),
+               yaxis = list(title = ""), 
+               # legend = list(orientation = "h"),
+               legend = list(yref = "container", y = 0, yanchor = "bottom"),
                margin = list(l = 10),
                paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }

@@ -1093,7 +1093,7 @@ server <- function(input, output, session) {
 
   pizz_data <- reactive({
     req(input$pizz_soiree)
-    pizzwanze_soiree(DB_PRODUITS, as.Date(input$pizz_soiree), SOIREES_PIZZWANZE)
+    pizzwanze_soiree(DB_PRODUITS, DB_TICKET, as.Date(input$pizz_soiree), SOIREES_PIZZWANZE)
   })
 
   pizz_hist <- reactive({
@@ -1113,9 +1113,8 @@ server <- function(input, output, session) {
   })
 
   output$pizz_carte <- renderPlotly({
-    n <- suppressWarnings(as.integer(input$pizz_profondeur))
-    graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE,
-                          n_soirees = if (is.na(n) || n <= 0) NULL else n)
+    # n <- suppressWarnings(as.integer(input$pizz_profondeur))
+    graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE, n_soirees = 12)
   })
 
   output$pizz_evo <- renderPlotly({
