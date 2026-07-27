@@ -1221,4 +1221,69 @@ server <- function(input, output, session) {
     datatable_simple(table_focaccias(foca_data()))
   })
 
+  #### Volet "Focaccias" — carte Production ####
+  # Le préremplissage vient des dernières semaines COMPLÈTES des données, et
+  # non de la semaine sélectionnée dans la barre latérale : on prépare la
+  # production à venir, pas celle d'une semaine consultée dans l'historique.
+
+  prod_base <- reactive({
+    production_focaccias_base(DB_PRODUITS, n_semaines = 3)
+  })
+
+  # (Ré)applique les valeurs par défaut. La ligne libre reste vide.
+  appliquer_prefill <- function() {
+    b <- prod_base()
+    for (i in b$ID) {
+      ligne <- b[b$ID == i, ]
+      updateNumericInput(session, paste0("prod_foc_", i),
+                         value = if (is.na(ligne$FOCACCIAS)) NA
+                                 else round(ligne$FOCACCIAS))
+      updateNumericInput(session, paste0("prod_por_", i), value = ligne$PORTION)
+      updateNumericInput(session, paste0("prod_stk_", i), value = NA)
+    }
+    updateTextInput(session, "prod_nom_5", value = "")
+  }
+
+  observe({ appliquer_prefill() })
+  observeEvent(input$prod_reset, { appliquer_prefill() })
+
+  output$prod_source <- renderText({
+    b <- prod_base()
+    n <- unique(b$SEMAINES)
+    if (length(n) == 0 || n[1] == 0)
+      "Aucune semaine complète disponible : les champs sont vides."
+    else paste0("Focaccias préremplies avec la moyenne des ", n[1],
+                " dernières semaines complètes. Tous les champs restent modifiables.")
+  })
+
+  # Une paire de sorties calculées par ligne : quantité nécessaire, puis
+  # quantité à produire une fois le stock déduit.
+  for (i in INGREDIENTS_FOCACCIA$ID) {
+    local({
+      idx <- i
+      qte_necessaire <- reactive({
+        foc <- input[[paste0("prod_foc_", idx)]]
+        por <- input[[paste0("prod_por_", idx)]]
+        if (is.null(foc) || is.null(por) || is.na(foc) || is.na(por)) NA_real_
+        else foc * por
+      })
+
+      output[[paste0("prod_nec_", idx)]] <- renderText({
+        format_qte_g(qte_necessaire())
+      })
+
+      output[[paste0("prod_faire_", idx)]] <- renderText({
+        nec <- qte_necessaire()
+        if (is.na(nec)) return("—")
+        stk <- input[[paste0("prod_stk_", idx)]]
+        stk <- if (is.null(stk) || is.na(stk)) 0 else stk
+        reste <- nec - stk
+        # Un stock supérieur au besoin n'est pas une production négative :
+        # on l'annonce comme un surplus.
+        if (reste <= 0) paste0("0 g (surplus ", format_qte_g(-reste), ")")
+        else format_qte_g(reste)
+      })
+    })
+  }
+
 }

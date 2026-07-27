@@ -585,6 +585,61 @@ ui_pizzwanze <- function() {
   )
 }
 
+# Carte "Production" : combien préparer de chaque ingrédient pour la semaine.
+# Les champs sont préremplis par le serveur (moyenne des dernières semaines
+# complètes) et restent entièrement modifiables ; la dernière ligne est libre.
+ui_production_focaccias <- function() {
+  ligne <- function(i, nom, libre = FALSE) {
+    tagList(
+      if (libre)
+        textInput(paste0("prod_nom_", i), NULL, value = "",
+                  placeholder = "Autre ingrédient")
+      else div(class = "prod-ing", nom),
+      numericInput(paste0("prod_foc_", i), NULL, value = NA, min = 0, step = 1),
+      numericInput(paste0("prod_por_", i), NULL, value = NA, min = 0, step = 5),
+      div(class = "prod-calc", textOutput(paste0("prod_nec_", i), inline = TRUE)),
+      numericInput(paste0("prod_stk_", i), NULL, value = NA, min = 0, step = 10),
+      div(class = "prod-calc", textOutput(paste0("prod_faire_", i), inline = TRUE))
+    )
+  }
+
+  card(
+    full_screen = TRUE,
+    card_header("Production"),
+    div(
+      class = "d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2",
+      div(class = "small text-muted",
+          textOutput("prod_source", inline = TRUE)),
+      actionButton("prod_reset", "↺ Réinitialiser", class = "btn-sm")
+    ),
+    div(
+      class = "prod-scroll",
+      div(
+        class = "prod-grid",
+        div(class = "prod-entete", "Ingrédient"),
+        div(class = "prod-entete", "Focaccias concernées"),
+        div(class = "prod-entete", "Portion (g)"),
+        div(class = "prod-entete", "Quantité nécessaire"),
+        div(class = "prod-entete", "Stock actuel (g)"),
+        div(class = "prod-entete", "Quantité à produire"),
+        ligne(1, "Crémeux"),
+        ligne(2, "Légume"),
+        ligne(3, "Fromage"),
+        ligne(4, "Viande"),
+        ligne(5, NULL, libre = TRUE)
+      )
+    ),
+    div(class = "small text-muted mt-2",
+        tags$b("Crémeux"), " et ", tags$b("légume"),
+        " sont comptés sur toutes les focaccias ; ",
+        tags$b("fromage"), " et ", tags$b("viande"),
+        " sur celles qui portent le supplément correspondant, « full » compris.",
+        tags$br(),
+        "Laissez le stock vide s'il n'y a rien en réserve : la quantité à ",
+        "produire vaut alors la quantité nécessaire.")
+  )
+}
+
 # Onglet "Focaccias" : suivi du produit phare et de ses options.
 ui_focaccias <- function() {
   layout_sidebar(
@@ -601,6 +656,7 @@ ui_focaccias <- function() {
           "Les remises et lignes négatives sont exclues.")
     ),
     uiOutput("foca_kpi"),
+    ui_production_focaccias(),
     layout_columns(
       col_widths = c(6, 6),
       card(full_screen = TRUE,

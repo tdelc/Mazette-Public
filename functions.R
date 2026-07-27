@@ -2318,6 +2318,78 @@ table_focaccias <- function(fs) {
                                   paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
 }
 
+##### Focaccias — aide à la production #####
+# Combien produire de chaque préparation pour la semaine à venir ?
+#
+# Assiette de chaque ingrédient (quelles focaccias le consomment) :
+#   Crémeux et Légume -> TOUTES les focaccias, ils sont dans la recette de base
+#   Fromage           -> celles qui portent le supplément fromage (« full »
+#                        compris, puisqu'une focaccia complète en contient)
+#   Viande            -> idem avec le supplément viande
+#   Autre             -> ligne libre, rien n'est préchargé
+#
+# NB : la caisse ne connaît pas de « supplément légume » — les seules options
+# sont Fromage, Viande et Spicy. Le légume est donc traité comme le crémeux,
+# c'est-à-dire présent dans toutes les recettes.
+
+INGREDIENTS_FOCACCIA <- tibble::tribble(
+  ~ID, ~NOM,       ~ASSIETTE,  ~PORTION,
+  1L,  "Crémeux",  "toutes",   40,
+  2L,  "Légume",   "toutes",   60,
+  3L,  "Fromage",  "fromage",  30,
+  4L,  "Viande",   "viande",   50,
+  5L,  "Autre",    NA,         NA
+)
+
+# Dernières semaines ENTIÈREMENT couvertes par les données. Une semaine
+# tronquée par la fin du jeu de données tirerait la moyenne vers le bas.
+semaines_completes <- function(dates, n = 3, fin = NULL) {
+  dates <- as.Date(dates)
+  fin <- if (is.null(fin)) max(dates, na.rm = TRUE) else as.Date(fin)
+  sems <- sort(unique(floor_date(dates, "week", week_start = 1)))
+  tail(sems[sems + 6 <= fin], n)
+}
+
+# Base de la carte production : nombre moyen de focaccias par semaine
+# concernées par chaque ingrédient, et portion par défaut.
+production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL) {
+  base <- INGREDIENTS_FOCACCIA %>% mutate(FOCACCIAS = NA_real_, SEMAINES = 0L)
+  if (is.null(db_produits) || nrow(db_produits) == 0) return(base)
+
+  fin_donnees <- if (is.null(fin)) max(db_produits$DATE, na.rm = TRUE)
+                 else as.Date(fin)
+  if (!is.finite(fin_donnees)) return(base)
+
+  fo_all <- conso_focaccias(db_produits, as.Date("1900-01-01"), fin_donnees)
+  if (nrow(fo_all) == 0) return(base)
+
+  sems <- semaines_completes(fo_all$DATE, n_semaines, fin)
+  if (length(sems) == 0) return(base)
+
+  fo <- fo_all %>%
+    filter(floor_date(DATE, "week", week_start = 1) %in% sems)
+
+  moyenne <- function(assiette) {
+    q <- switch(assiette,
+      toutes  = sum(fo$QUANTITE, na.rm = TRUE),
+      fromage = sum(fo$QUANTITE[fo$FROMAGE], na.rm = TRUE),
+      viande  = sum(fo$QUANTITE[fo$VIANDE],  na.rm = TRUE),
+      NA_real_)
+    if (is.na(q)) NA_real_ else round(q / length(sems))
+  }
+
+  base %>%
+    mutate(FOCACCIAS = map_dbl(ASSIETTE, ~if (is.na(.x)) NA_real_ else moyenne(.x)),
+           SEMAINES  = length(sems))
+}
+
+# Quantité en grammes, basculée en kilos quand ça devient lourd à lire.
+format_qte_g <- function(x) {
+  if (length(x) == 0 || is.na(x)) return("—")
+  if (abs(x) >= 1000) paste0(format(round(x / 1000, 2), nsmall = 2), " kg")
+  else paste0(round(x), " g")
+}
+
 #### REFONTE — Volet "Pizzwanze" ####
 # La Pizzwanze est une soirée pizza qui revient toutes les trois à quatre
 # semaines, le mardi soir. Quelques pizzas sont là à chaque fois, le reste
