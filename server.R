@@ -195,7 +195,8 @@ server <- function(input, output, session) {
 
   #### Volet "Maintenant" — Veille ####
   output$titre_veille <- renderText({
-    paste0("Veille — ", format(date_veille, "%A %d/%m/%Y"))
+    # paste0("Veille — ", format(date_veille, "%A %d/%m/%Y"))
+    "Semaine en cours"
   })
 
   output$box_veille <- renderUI({
