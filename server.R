@@ -219,21 +219,10 @@ server <- function(input, output, session) {
                      titre = "Total semaine", is_semaine = TRUE)
   })
   
-  output$box_semaine_avant <- renderUI({
-    1:5 %>% map(~{
-      box_ventes_jour(UPD_KPI_SIMPLE,UPD_OBJECTIFS,
-                      date_debut_semaine - 7*.x,6,
-                      is_midi=FALSE,is_boisson=FALSE,is_objectif=FALSE)
-    })
-  })
-  
-  output$box_semaine_total_avant <- renderUI({
-    1:5 %>% map(~{
-      box_ventes_total(UPD_KPI_SIMPLE,UPD_OBJECTIFS,
-                       date_debut_semaine - 7*.x,6,titre="Total",
-                       is_semaine=FALSE,is_midi=FALSE,is_boisson=FALSE,
-                       is_objectif=FALSE)
-    })
+  # Les 5 semaines qui précèdent la semaine en cours, en une seule matrice
+  output$recap_semaines <- renderUI({
+    tableau_semaines(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+                     date_debut_semaine - 7, n_semaines = 5)
   })
  
   

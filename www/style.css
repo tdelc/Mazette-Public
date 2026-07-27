@@ -251,3 +251,38 @@ table.dataTable td, table.dataTable th {
   white-space: nowrap;
 }
 .ventes-legende { font-size: 0.68rem; color: #8d7b68; line-height: 1.1; }
+
+/* ----- Récapitulatif compact des dernières semaines ----- */
+.rs-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  font-size: 0.82rem;
+}
+.rs-table th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mz-brun, #732c02);
+  text-align: center;
+  padding: 0.1rem 0.3rem 0.25rem;
+}
+.rs-table th.rs-sem, .rs-table td.rs-sem { text-align: left; }
+.rs-table td {
+  text-align: center;
+  padding: 0.32rem 0.35rem;
+  border-radius: 0.35rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rs-table td.rs-sem {
+  font-weight: 700;
+  color: var(--mz-noir, #260b01);
+  background: transparent;
+  padding-left: 0;
+}
+.rs-table td.rs-vide {
+  color: #cbc0b3;
+  background: transparent;
+  font-weight: 400;
+}
+.rs-table td.rs-total { font-weight: 800; }

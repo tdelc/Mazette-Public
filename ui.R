@@ -886,15 +886,14 @@ ui_maintenant <- function() {
         uiOutput("box_semaine_total")
       )
     ),
-    # --- Derniers jours ---
+    # --- Semaines précédentes ---
+    # Vue condensée : le CA de chaque jour, coloré selon son objectif. Le
+    # détail complet est en infobulle, ce qui évite d'empiler cinq grilles.
     card(
       full_screen = TRUE,
       card_header("5 dernières semaines"),
-      layout_columns(
-        col_widths = breakpoints(sm = 12, lg = c(10, 2)),
-        uiOutput("box_semaine_avant"),
-        uiOutput("box_semaine_total_avant")
-      )
+      div(class = "table-responsive", uiOutput("recap_semaines")),
+      legende_objectif()
     ),
     # --- Semaine en cours ---
     # card(

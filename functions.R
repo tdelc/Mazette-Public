@@ -4714,6 +4714,71 @@ caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
   )
 }
 
+# Récapitulatif compact des dernières semaines : une ligne par semaine, une
+# colonne par jour, le CA coloré selon l'atteinte de son objectif. Remplace
+# une pile de cartes qui occupait beaucoup de place pour la seule valeur du
+# jour. Le détail (date complète, objectif, pourcentage) est en infobulle.
+tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5) {
+  fin <- floor_date(as.Date(fin_semaine), "week", week_start = 1)
+  debut <- fin - weeks(n_semaines - 1)
+
+  dat <- db_kpi %>%
+    select(DATE, ventes) %>%
+    left_join(db_obj %>% select(DATE, objectif = ventes), by = "DATE") %>%
+    filter(DATE >= debut, DATE <= fin + 6) %>%
+    mutate(objectif = replace_na(objectif, 0),
+           ventes   = replace_na(ventes, 0),
+           SEMAINE  = floor_date(DATE, "week", week_start = 1),
+           JOUR     = as.integer(wday(DATE, week_start = 1)))
+
+  if (nrow(dat) == 0)
+    return(div(class = "text-muted small", "Aucune donnée sur la période."))
+
+  jours_court <- c("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+
+  cellule <- function(ca, obj, date, total = FALSE) {
+    classe <- if (total) "rs-total" else NULL
+    if (is.na(ca) || ca <= 0)
+      return(tags$td(class = paste(c(classe, "rs-vide"), collapse = " "), "—"))
+    coul <- couleur_objectif(ca, obj)
+    tags$td(
+      class = classe,
+      # 1f = ~12 % d'opacité : un fond teinté qui reste lisible
+      style = paste0("color:", coul, ";background:", coul, "1f;"),
+      title = paste0(date, " — ", label_objectif(ca, obj)),
+      format_CA(ca, -1)
+    )
+  }
+
+  ligne <- function(sem) {
+    jours <- dat %>% filter(SEMAINE == sem)
+    cells <- lapply(1:7, function(j) {
+      d <- jours %>% filter(JOUR == j)
+      if (nrow(d) == 0) tags$td(class = "rs-vide", "—")
+      else cellule(d$ventes[1], d$objectif[1],
+                   format(d$DATE[1], "%A %d/%m/%Y"))
+    })
+    tags$tr(
+      tags$td(class = "rs-sem", paste0("Sem. ", format(sem, "%d/%m"))),
+      cells,
+      cellule(sum(jours$ventes), sum(jours$objectif),
+              paste0("semaine du ", format(sem, "%d/%m/%Y")), total = TRUE)
+    )
+  }
+
+  semaines <- sort(unique(dat$SEMAINE), decreasing = TRUE)
+
+  tags$table(
+    class = "rs-table",
+    tags$thead(tags$tr(
+      tags$th(class = "rs-sem", "Semaine"),
+      lapply(jours_court, function(j) tags$th(j)),
+      tags$th("Total")
+    )),
+    tags$tbody(lapply(semaines, ligne))
+  )
+}
+
 box_ventes_mois <- function(db_kpi,db_obj,debut_mois,fin_mois,
                             titre = paste(format(DATE,format = "%d/%m"),"->",
                                           format(ceiling_date(DATE, unit = "month")-1,
