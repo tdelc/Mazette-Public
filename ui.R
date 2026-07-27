@@ -30,6 +30,14 @@ theme_mazette_ui <- bs_theme(
 #### Constructeurs d'interface ####
 # (les constructeurs sont définis d'abord ; `ui` est assemblé tout en bas)
 
+# Ajoute un numéro de version à une feuille de style, tiré de sa date de
+# modification. Sans cela le navigateur ressert indéfiniment sa copie en
+# cache et les retouches de style passent inaperçues.
+feuille_versionnee <- function(fichier, dossier = "www") {
+  v <- suppressWarnings(as.integer(file.mtime(file.path(dossier, fichier))))
+  if (is.na(v)) fichier else paste0(fichier, "?v=", v)
+}
+
 ui_login <- function() {
   div(
     class = "login-wrap",
@@ -867,18 +875,15 @@ ui_maintenant <- function() {
                 theme = value_box_theme(bg = "#efe7d8", fg = MZ_BRUN))
     ),
     # --- Veille ---
+    # Sur petit écran, le total passe sous la semaine plutôt que d'être
+    # comprimé dans une colonne de 2/12.
     card(
       full_screen = TRUE,
       card_header(textOutput("titre_veille", inline = TRUE)),
       layout_columns(
-        col_widths = c(10, 2),
-        # uiOutput("box_veille"),
+        col_widths = breakpoints(sm = 12, lg = c(10, 2)),
         uiOutput("box_semaine"),
         uiOutput("box_semaine_total")
-        # div(
-        #   h6("Top produits du jour", class = "section-sub"),
-        #   DTOutput("top_veille")
-        # )
       )
     ),
     # --- Derniers jours ---
@@ -886,11 +891,10 @@ ui_maintenant <- function() {
       full_screen = TRUE,
       card_header("5 dernières semaines"),
       layout_columns(
-        col_widths = c(10, 2),
+        col_widths = breakpoints(sm = 12, lg = c(10, 2)),
         uiOutput("box_semaine_avant"),
         uiOutput("box_semaine_total_avant")
-      ),
-      
+      )
     ),
     # --- Semaine en cours ---
     # card(
@@ -908,7 +912,7 @@ ui_maintenant <- function() {
       ),
       layout_columns(
         fill = FALSE,
-        col_widths = c(10, 2),
+        col_widths = breakpoints(sm = 12, lg = c(10, 2)),
         plotlyOutput("prog_graph", height = "330px"),
         uiOutput("box_mois_total")
       )
@@ -932,7 +936,8 @@ ui_maintenant <- function() {
 ui <- page_fluid(
   useShinyjs(),
   theme = theme_mazette_ui,
-  tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "style.css")),
+  tags$head(tags$link(rel = "stylesheet", type = "text/css",
+                      href = feuille_versionnee("style.css"))),
   div(id = "login_screen", ui_login()),
   shinyjs::hidden(div(id = "app_screen", ui_app()))
 )

@@ -4576,7 +4576,7 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
               width = width)
 
   return(
-    div(style = "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px;",do.call(tagList, plot_kpi))
+    div(class = "ventes-grid", do.call(tagList, plot_kpi))
   )
 }
 
@@ -4600,7 +4600,7 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
               fl_boisson = is_boisson,fl_objectif = is_objectif, width = "100%")
 
   return(
-    div(style = "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px;",do.call(tagList, plot_kpi))
+    div(class = "ventes-grid", do.call(tagList, plot_kpi))
   )
 }
 
@@ -4616,7 +4616,9 @@ table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
     title <- ligne$title
     ca <- ligne$ventes
     objectif <- ligne$ventes_obj
-    couleur <- get_color_from_gradient(ca,ligne$ventes_obj)
+    # Même convention que les barres de CA du reste du tableau de bord :
+    # vert atteint, ambre à partir de 90 %, rouge en dessous.
+    couleur <- couleur_objectif(ca, ligne$ventes_obj)
     percent_midi <- round(100 * ligne$Jour / (ligne$Jour+ligne$Soir))
     percent_soir <- 100 - percent_midi
     percent_boisson <- round(100 * ligne$Boisson / (ligne$Boisson+ligne$Nourriture))
@@ -4651,75 +4653,64 @@ table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
 
 # Fonction pour générer une infoBox avec une info-bulle
 
+# Barre de répartition en deux segments. La mise en forme vit dans style.css
+# (.ventes-barre), pour que la barre s'adapte à la largeur de sa carte.
 generate_bar <- function(percent1, percent2, color1, color2, title) {
-  if (percent1 + percent2 > 0) {
+  if (is.na(percent1) || is.na(percent2) || percent1 + percent2 <= 0) return(NULL)
+
+  # On n'inscrit le pourcentage que si le segment est assez large : en dessous,
+  # le texte était rogné et illisible (« 7% » dans un filet de 10 px).
+  etiquette <- function(p) if (p >= 18) paste0(p, "%") else ""
+
+  div(
     div(
-      style = "margin-top: 10px; margin-bottom: 10px;",
-      div(
-        style = "width: 100%; height: 15px; background-color: #f5f5f5; border-radius: 4px; overflow: hidden; display: flex; position: relative;",
-        div(
-          style = paste0("flex: ", percent1, "; background-color: ", color1, "; text-align: center; color: white; font-size: 10px; line-height: 15px;"),
-          if (percent1 > 0) paste0(percent1, "%") else ""
-        ),
-        div(
-          style = paste0("flex: ", percent2, "; background-color: ", color2, "; text-align: center; color: white; font-size: 10px; line-height: 15px;"),
-          if (percent2 > 0) paste0(percent2, "%") else ""
-        )
-      ),
-      p(title, style = "font-size: 12px; margin: 5px 0; color: #666;")
-    )
-  } else {
-    NULL
-  }
+      class = "ventes-barre",
+      span(style = paste0("flex:", percent1, ";background:", color1, ";"),
+           etiquette(percent1)),
+      span(style = paste0("flex:", percent2, ";background:", color2, ";"),
+           etiquette(percent2))
+    ),
+    div(class = "ventes-legende", title)
+  )
 }
 
-caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson, percent_nourriture, percent_semaine, percent_weekend, width = "300px", ca_color = "#007bff", objectif = NULL) {
+# Carte de ventes d'une journée (ou d'un total) : CA, atteinte de l'objectif
+# et barres de répartition.
+# `width` n'est plus utilisé : la largeur est pilotée par la grille responsive
+# qui contient les cartes (.ventes-grid). L'argument reste pour ne pas casser
+# les appels existants.
+caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
+                      percent_nourriture, percent_semaine, percent_weekend,
+                      width = NULL, ca_color = NULL, objectif = NULL) {
 
-  # Contenu des barres (affiché uniquement si le CA est > 0)
-  bar_content <- if (ca > 5) {
-    tagList(
-      generate_bar(
-        percent1 = percent_midi, percent2 = percent_soir,
-        color1 = "#e67e22", color2 = "#9b59b6",
-        title = "Midi / Soir"
-      ),
-      generate_bar(
-        percent1 = percent_boisson, percent2 = percent_nourriture,
-        color1 = "#d4ac0d", color2 = "#27ae60",
-        title = "Boisson / Nourriture"
-      ),
-      generate_bar(
-        percent1 = percent_semaine, percent2 = percent_weekend,
-        color1 = "#2980b9", color2 = "#c0392b",
-        title = "Semaine / Week-end"
-      )
+  couleur <- if (is.null(ca_color)) couleur_objectif(ca, objectif) else ca_color
+
+  # Les barres n'ont pas de sens sur une journée sans activité
+  barres <- if (!is.na(ca) && ca > 5) {
+    div(
+      class = "ventes-barres",
+      generate_bar(percent_midi, percent_soir,
+                   "#e67e22", "#9b59b6", "Midi / Soir"),
+      generate_bar(percent_boisson, percent_nourriture,
+                   "#d4ac0d", "#27ae60", "Boisson / Nourriture"),
+      generate_bar(percent_semaine, percent_weekend,
+                   "#2980b9", "#c0392b", "Semaine / Week-end")
     )
-  } else {
-    NULL
-  }
+  } else NULL
 
-  obj_content <- if (!is.null(objectif) && objectif > 0){
-    paste0("(objectif : ",format_CA(objectif,-1),")")
-  }else{
-    " "
-  }
+  objectif_ligne <- if (!is.null(objectif) && !is.na(objectif) && objectif > 0) {
+    div(class = "ventes-obj",
+        "objectif ", format_CA(objectif, -1), " · ",
+        tags$b(paste0(round(100 * ca / objectif), " %")))
+  } else NULL
 
-  # Structure principale
   div(
-    class = "info-box",
-    style = paste0("border: 1px solid #dcdcdc; border-radius: 8px; padding: 10px; margin-bottom: 20px; text-align: center; width: ", width, ";"),
-    h4(title, style = "margin-bottom: 15px; font-weight: bold;"),
-    div(
-      style = paste0("font-size: 30px; font-weight: bold; color: ", ca_color, ";"),
-      `data-bs-placement` = "top",
-      format_CA(ca,-1)
-    ),
-    div(
-      style = paste0("font-size: 12px; color: #666;"),
-      `data-bs-placement` = "top",
-      obj_content
-    ),
-    bar_content
+    class = "ventes-card",
+    div(class = "ventes-jour", title),
+    div(class = "ventes-ca", style = paste0("color:", couleur, ";"),
+        format_CA(ca, -1)),
+    objectif_ligne,
+    barres
   )
 }
 
@@ -4741,7 +4732,7 @@ box_ventes_mois <- function(db_kpi,db_obj,debut_mois,fin_mois,
     mutate(title=titre) %>%
     table_kpi(width="100%")
 
-  div(style = "display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px;",do.call(tagList, ventes))
+  div(class = "ventes-grid", do.call(tagList, ventes))
 }
 
 #### Gauges ####
