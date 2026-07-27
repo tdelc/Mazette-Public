@@ -648,7 +648,9 @@ server <- function(input, output, session) {
   })
 
   output$bieres_niveaux <- renderPlotly({
-    graph_niveaux_bieres(niveau_bieres_actuel())
+    # La prédiction est déjà calculée pour les autres sorties : on la réutilise
+    # pour afficher l'échéance sous chaque jauge.
+    graph_niveaux_bieres(niveau_bieres_actuel(), db_predict_bieres())
   })
 
   output$bieres_evo <- renderPlotly({

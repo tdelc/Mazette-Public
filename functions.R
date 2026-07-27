@@ -374,11 +374,56 @@ niveau_bieres_actuel <- function(max_date = today()) {
     arrange(PCT)
 }
 
-# Grille de jauges plotly (un indicateur par bière, vert/ambre/rouge selon niveau)
-graph_niveaux_bieres <- function(niveaux) {
+# Date de fin prévue par brassin (tôt / estimée / tard), à partir de la table
+# de prédiction HoltWinters. Une ligne par ID_BRASSIN.
+predictions_par_brassin <- function(db_predict) {
+  vide <- tibble(ID_BRASSIN = character(), FIN_TOT = as.Date(character()),
+                 FIN_EST = as.Date(character()), FIN_TARD = as.Date(character()))
+  if (is.null(db_predict) || nrow(db_predict) == 0) return(vide)
+
+  as_date <- function(x) as.Date(x, origin = "1970-01-01")
+  unique(db_predict$ID_BRASSIN) %>%
+    map_df(function(id) {
+      fin <- predict_fin_brassin(db_predict, id)
+      tibble(ID_BRASSIN = id, FIN_TOT = as_date(fin[1]),
+             FIN_EST = as_date(fin[2]), FIN_TARD = as_date(fin[3]))
+    })
+}
+
+# Libellé + couleur de l'échéance d'un fût, selon le nombre de jours restants.
+# Sert de code couleur d'urgence sous la jauge.
+etiquette_fin_fut <- function(fin_est, aujourdhui = today()) {
+  if (is.null(fin_est) || length(fin_est) == 0 || is.na(fin_est))
+    return(list(texte = "fin non prévisible", couleur = "#8d7b68"))
+
+  jours <- as.numeric(as.Date(fin_est) - aujourdhui)
+  # Une échéance déjà passée alors que le fût est toujours ouvert signale un
+  # retard de saisie ou une consommation plus lente que prévu : on le dit,
+  # plutôt que d'annoncer « aujourd'hui ».
+  quand <- if (jours < 0) "échéance dépassée"
+           else if (jours == 0) "aujourd'hui"
+           else if (jours == 1) "demain"
+           else paste0("dans ", jours, " j")
+  couleur <- if (jours <= 3) COUL_ROUGE
+             else if (jours <= 7) COUL_AMBRE
+             else COUL_VERT
+  list(texte = paste0("fin ~ ", format(as.Date(fin_est), "%a %d/%m"),
+                      " (", quand, ")"),
+       couleur = couleur)
+}
+
+# Grille de jauges plotly : une par bière en cours, avec son niveau et — si la
+# table de prédiction est fournie — la date de fin prévue juste en dessous du
+# nom. On voit ainsi d'un coup d'œil la bière, son niveau et son échéance.
+graph_niveaux_bieres <- function(niveaux, db_predict = NULL) {
   n <- nrow(niveaux)
   if (n == 0)
     return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
+
+  if (!is.null(db_predict) && nrow(db_predict) > 0)
+    niveaux <- niveaux %>%
+      left_join(predictions_par_brassin(db_predict), by = "ID_BRASSIN")
+  if (!"FIN_EST" %in% names(niveaux)) niveaux$FIN_EST <- as.Date(NA)
 
   ncol <- min(n, 5)
   nlig <- ceiling(n / ncol)
@@ -388,15 +433,24 @@ graph_niveaux_bieres <- function(niveaux) {
     lig <- (i - 1) %/% ncol
     col <- (i - 1) %% ncol
     pct <- niveaux$PCT[i]
-    couleur <- if (pct < 20) "#c0392b" else if (pct < 40) "#d98236" else "#5B7B5A"
-    titre <- paste0(niveaux$BOISSON[i],
-                    "<br><span style='font-size:0.7em;color:#888'>",
-                    round(niveaux$VOLUME_RESTANT[i]), " / ",
-                    round(niveaux$VOLUME_TOTAL[i]), " L</span>")
+    couleur <- if (pct < 20) COUL_ROUGE else if (pct < 40) COUL_AMBRE else COUL_VERT
+    ech <- etiquette_fin_fut(niveaux$FIN_EST[i])
+
+    titre <- paste0(
+      "<b>", niveaux$BOISSON[i], "</b>",
+      "<br><span style='font-size:0.72em;color:#888'>",
+      round(niveaux$VOLUME_RESTANT[i]), " / ",
+      round(niveaux$VOLUME_TOTAL[i]), " L</span>",
+      "<br><span style='font-size:0.72em;color:", ech$couleur, "'>",
+      ech$texte, "</span>")
+
     p <- p %>% add_trace(
       type = "indicator", mode = "gauge+number",
-      value = pct, number = list(suffix = " %"),
-      title = list(text = titre, font = list(size = 15)),
+      value = pct,
+      # Le nombre était plus imposant que le nom de la bière : on le ramène à
+      # une taille proche de celle du titre.
+      number = list(suffix = " %", font = list(size = 22)),
+      title = list(text = titre, font = list(size = 14)),
       gauge = list(axis = list(range = list(0, 100), ticksuffix = "%"),
                    bar = list(color = couleur),
                    bordercolor = "rgba(0,0,0,0.10)"),
@@ -404,7 +458,8 @@ graph_niveaux_bieres <- function(niveaux) {
     )
   }
   p %>% layout(grid = list(rows = nlig, columns = ncol, pattern = "independent"),
-               margin = list(t = 50, b = 10),
+               # trois lignes de titre : il faut plus d'air en haut
+               margin = list(t = 90, b = 10),
                paper_bgcolor = "rgba(0,0,0,0)")
 }
 
