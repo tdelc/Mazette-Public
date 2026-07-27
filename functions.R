@@ -2375,7 +2375,7 @@ production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL) {
       fromage = sum(fo$QUANTITE[fo$FROMAGE], na.rm = TRUE),
       viande  = sum(fo$QUANTITE[fo$VIANDE],  na.rm = TRUE),
       NA_real_)
-    if (is.na(q)) NA_real_ else round(q / length(sems))
+    if (is.na(q)) NA_real_ else round(q * 1.1 / length(sems))
   }
 
   base %>%

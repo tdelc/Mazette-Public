@@ -1250,10 +1250,18 @@ server <- function(input, output, session) {
   output$prod_source <- renderText({
     b <- prod_base()
     n <- unique(b$SEMAINES)
+    
+    n_base <- pull(b[b$NOM == "Légume","FOCACCIAS"])
+    n_fromage <- pull(b[b$NOM == "Fromage","FOCACCIAS"])
+    n_viande <- pull(b[b$NOM == "Viande","FOCACCIAS"])
+    
+    info_sup <- paste0(n_base," bases, ",n_fromage," fromages, ",
+                       n_viande," viandes.")
+    
     if (length(n) == 0 || n[1] == 0)
       "Aucune semaine complète disponible : les champs sont vides."
     else paste0("Focaccias préremplies avec la moyenne des ", n[1],
-                " dernières semaines complètes. Tous les champs restent modifiables.")
+                " dernières semaines complètes (+10%) : ",info_sup)
   })
 
   # Une paire de sorties calculées par ligne : quantité nécessaire, puis
