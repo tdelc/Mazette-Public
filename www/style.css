@@ -286,3 +286,64 @@ table.dataTable td, table.dataTable th {
   font-weight: 400;
 }
 .rs-table td.rs-total { font-weight: 800; }
+
+/* ----- Niveaux des fûts (onglet Fûts) ----- */
+/* Grille responsive : le nombre de colonnes suit la largeur disponible,
+   là où la grille plotly imposait 5 colonnes même sur téléphone. */
+.fut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.7rem;
+}
+.fut-carte {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: #ffffff;
+  border: 1px solid rgba(115, 44, 2, 0.10);
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  box-shadow: 0 2px 8px rgba(38, 11, 1, 0.05);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.fut-carte:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(38, 11, 1, 0.11);
+}
+/* Jauge en anneau : un dégradé conique rempli jusqu'à --pct, masqué en son
+   centre par un disque blanc. */
+.fut-jauge {
+  flex: 0 0 auto;
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background: conic-gradient(var(--coul) calc(var(--pct) * 1%),
+                             #efe9e0 calc(var(--pct) * 1%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fut-jauge-trou {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fut-pct {
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.fut-infos { min-width: 0; }
+.fut-nom {
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--mz-noir, #260b01);
+  overflow-wrap: anywhere;
+}
+.fut-vol { font-size: 0.78rem; color: #8d7b68; margin-top: 0.1rem; }
+.fut-fin { font-size: 0.75rem; margin-top: 0.15rem; overflow-wrap: anywhere; }

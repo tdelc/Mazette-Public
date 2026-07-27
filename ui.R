@@ -463,7 +463,9 @@ ui_futs <- function() {
   tagList(
     card(
       card_header("Niveau des bières en cours"),
-      plotlyOutput("bieres_niveaux", height = "500px")
+      # Cartes HTML plutôt qu'une grille plotly : la hauteur suit le nombre de
+      # fûts et les colonnes s'adaptent à la largeur de l'écran.
+      uiOutput("bieres_niveaux")
     ),
     card(
       full_screen = TRUE,

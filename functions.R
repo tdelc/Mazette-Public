@@ -412,55 +412,52 @@ etiquette_fin_fut <- function(fin_est, aujourdhui = today()) {
        couleur = couleur)
 }
 
-# Grille de jauges plotly : une par bière en cours, avec son niveau et — si la
-# table de prédiction est fournie — la date de fin prévue juste en dessous du
-# nom. On voit ainsi d'un coup d'œil la bière, son niveau et son échéance.
-graph_niveaux_bieres <- function(niveaux, db_predict = NULL) {
-  n <- nrow(niveaux)
-  if (n == 0)
-    return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
+# Cartes de niveau des fûts : une par bière en cours, avec sa jauge, son
+# volume restant et — si la table de prédiction est fournie — sa date de fin
+# prévue. On voit ainsi d'un coup d'œil la bière, son niveau et son échéance.
+#
+# La jauge est dessinée en CSS (dégradé conique) plutôt qu'en plotly : la
+# grille plotly impose un nombre de colonnes fixe au moment du rendu, si bien
+# que sur un téléphone les jauges se retrouvaient réduites à quelques dizaines
+# de pixels. Ici, c'est la grille CSS qui décide du nombre de colonnes selon
+# la largeur réellement disponible.
+cartes_niveaux_bieres <- function(niveaux, db_predict = NULL) {
+  if (is.null(niveaux) || nrow(niveaux) == 0)
+    return(div(class = "text-muted small", "Aucune bière en cours."))
 
   if (!is.null(db_predict) && nrow(db_predict) > 0)
     niveaux <- niveaux %>%
       left_join(predictions_par_brassin(db_predict), by = "ID_BRASSIN")
   if (!"FIN_EST" %in% names(niveaux)) niveaux$FIN_EST <- as.Date(NA)
 
-  ncol <- min(n, 5)
-  nlig <- ceiling(n / ncol)
-
-  p <- plot_ly()
-  for (i in seq_len(n)) {
-    lig <- (i - 1) %/% ncol
-    col <- (i - 1) %% ncol
-    pct <- niveaux$PCT[i]
+  carte <- function(i) {
+    pct <- max(0, min(100, round(niveaux$PCT[i])))
     couleur <- if (pct < 20) COUL_ROUGE else if (pct < 40) COUL_AMBRE else COUL_VERT
     ech <- etiquette_fin_fut(niveaux$FIN_EST[i])
 
-    titre <- paste0(
-      "<b>", niveaux$BOISSON[i], "</b>",
-      "<br><span style='font-size:0.72em;color:#888'>",
-      round(niveaux$VOLUME_RESTANT[i]), " / ",
-      round(niveaux$VOLUME_TOTAL[i]), " L</span>",
-      "<br><span style='font-size:0.72em;color:", ech$couleur, "'>",
-      ech$texte, "</span>")
-
-    p <- p %>% add_trace(
-      type = "indicator", mode = "gauge+number",
-      value = pct,
-      # Le nombre était plus imposant que le nom de la bière : on le ramène à
-      # une taille proche de celle du titre.
-      number = list(suffix = " %", font = list(size = 22)),
-      title = list(text = titre, font = list(size = 14)),
-      gauge = list(axis = list(range = list(0, 100), ticksuffix = "%"),
-                   bar = list(color = couleur),
-                   bordercolor = "rgba(0,0,0,0.10)"),
-      domain = list(row = lig, column = col)
+    div(
+      class = "fut-carte",
+      # Les deux variables CSS pilotent le dégradé conique de la jauge
+      div(
+        class = "fut-jauge",
+        style = paste0("--pct:", pct, ";--coul:", couleur, ";"),
+        div(class = "fut-jauge-trou",
+            span(class = "fut-pct", style = paste0("color:", couleur, ";"),
+                 paste0(pct, " %")))
+      ),
+      div(
+        class = "fut-infos",
+        div(class = "fut-nom", niveaux$BOISSON[i]),
+        div(class = "fut-vol",
+            round(niveaux$VOLUME_RESTANT[i]), " / ",
+            round(niveaux$VOLUME_TOTAL[i]), " L"),
+        div(class = "fut-fin", style = paste0("color:", ech$couleur, ";"),
+            ech$texte)
+      )
     )
   }
-  p %>% layout(grid = list(rows = nlig, columns = ncol, pattern = "independent"),
-               # trois lignes de titre : il faut plus d'air en haut
-               margin = list(t = 90, b = 10),
-               paper_bgcolor = "rgba(0,0,0,0)")
+
+  div(class = "fut-grid", lapply(seq_len(nrow(niveaux)), carte))
 }
 
 # Évolution + prédiction du volume restant (version plotly de graph_evo_brassin)

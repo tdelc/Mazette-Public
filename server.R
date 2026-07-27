@@ -682,10 +682,10 @@ server <- function(input, output, session) {
     table_evo_brassins(today())
   })
 
-  output$bieres_niveaux <- renderPlotly({
+  output$bieres_niveaux <- renderUI({
     # La prédiction est déjà calculée pour les autres sorties : on la réutilise
     # pour afficher l'échéance sous chaque jauge.
-    graph_niveaux_bieres(niveau_bieres_actuel(), db_predict_bieres())
+    cartes_niveaux_bieres(niveau_bieres_actuel(), db_predict_bieres())
   })
 
   output$bieres_evo <- renderPlotly({
