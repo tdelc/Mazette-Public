@@ -582,6 +582,13 @@ server <- function(input, output, session) {
     # Détection de données simulées
     output[[id("simu")]] <- renderUI({
       
+      d1 <- periode_sel()
+      d2 <- fin_periode(d1, unite)
+      i <- interval(d1, d2)
+      s1 <- floor_date(d1, unit = "week", week_start = 1)
+      s2 <- floor_date(d2, unit = "week", week_start = 1)
+      i_s <- interval(s1, s2)
+      
       if ("SIMU" %in% colnames(DB_COUTS_TRAVAIL)){
         simu_travail <- DB_COUTS_TRAVAIL %>%
           filter(DATE %within% i) %>%
@@ -592,7 +599,7 @@ server <- function(input, output, session) {
       
       if ("SIMU" %in% colnames(DB_COUTS_MATIERE_JOUR)){
         simu_matiere <- DB_COUTS_MATIERE %>%
-          filter(DATE %within% i) %>%
+          filter(SEMAINE %within% i_s) %>%
           summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
       }else{
         simu_matiere <- 0
