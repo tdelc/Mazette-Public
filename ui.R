@@ -641,9 +641,14 @@ ui_production_focaccias <- function() {
     ))),
     div(
       class = "d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2",
-      div(class = "small text-muted",
-          textOutput("prod_source", inline = TRUE)),
-      actionButton("prod_reset", "↺ Réinitialiser", class = "btn-sm")
+      div(class = "small text-muted", textOutput("prod_source", inline = TRUE)),
+      div(
+        class = "d-flex align-items-center gap-2 prod-barre",
+        tags$label("Marge", `for` = "prod_multi", class = "small text-muted mb-0"),
+        numericInputIcon("prod_multi", label = NULL, value = 10, step = 5,
+                         icon = list(NULL, "%"), size = "sm", width = "120px"),
+        actionButton("prod_reset", "↺ Réinitialiser", class = "btn-sm")
+      )
     ),
     div(
       class = "table-responsive",

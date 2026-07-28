@@ -1323,7 +1323,7 @@ server <- function(input, output, session) {
   # production à venir, pas celle d'une semaine consultée dans l'historique.
 
   prod_base <- reactive({
-    production_focaccias_base(DB_PRODUITS, n_semaines = 3)
+    production_focaccias_base(DB_PRODUITS, n_semaines = 3, marge = 1+input$prod_multi/100)
   })
 
   # (Ré)applique les valeurs par défaut. La ligne libre reste vide.
@@ -1356,8 +1356,8 @@ server <- function(input, output, session) {
     
     if (length(n) == 0 || n[1] == 0)
       "Aucune semaine complète disponible : les champs sont vides."
-    else paste0("Focaccias préremplies avec le maximum des ", n[1],
-                " dernières semaines complètes (+10%) : ",info_sup)
+    else paste0("Pré-rempli avec maximum des ", n[1],
+                " dernières semaines (+",input$prod_multi,"%) : ",info_sup)
   })
 
   # Une paire de sorties calculées par ligne : quantité nécessaire, puis

@@ -2349,7 +2349,8 @@ semaines_completes <- function(dates, n = 3, fin = NULL) {
 
 # Base de la carte production : nombre moyen de focaccias par semaine
 # concernées par chaque ingrédient, et portion par défaut.
-production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL) {
+production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL,
+                                      marge = 1.1) {
   base <- INGREDIENTS_FOCACCIA %>% mutate(FOCACCIAS = NA_real_, SEMAINES = 0L)
   if (is.null(db_produits) || nrow(db_produits) == 0) return(base)
 
@@ -2377,9 +2378,9 @@ production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL) {
   
   base |> 
     mutate(FOCACCIAS = case_when(
-      ASSIETTE == "toutes" ~ round(max_toutes * 1.1),
-      ASSIETTE == "fromage" ~ round(max_fromage * 1.1),
-      ASSIETTE == "viande" ~ round(max_viande * 1.1),
+      ASSIETTE == "toutes" ~ round(max_toutes * marge),
+      ASSIETTE == "fromage" ~ round(max_fromage * marge),
+      ASSIETTE == "viande" ~ round(max_viande * marge),
       TRUE ~ NA_real_),
       SEMAINES  = length(sems)
     )
