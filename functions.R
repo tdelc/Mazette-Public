@@ -237,13 +237,13 @@ evolution_un_produit <- function(db_produits, produit, d1, d2) {
     group_by(SEMAINE) %>%
     mutate(CA_TOT = sum(CA_HTVA, na.rm = TRUE)) |> 
     group_by(SEMAINE,CATEGORIE) %>%
-    mutate(CA_CATEGORIE = sum(CA_HTVA, na.rm = TRUE)) |> 
+    mutate(CA_CATEGORY = sum(CA_HTVA, na.rm = TRUE)) |> 
     filter(PRODUCT == produit) %>%
     group_by(SEMAINE,CATEGORIE) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), 
               PC_ALL = CA / mean(CA_TOT, na.rm = TRUE), 
-              PC_CATEGORIE = CA / mean(CA_CATEGORIE, na.rm = TRUE), 
+              PC_CATEGORY = CA / mean(CA_CATEGORY, na.rm = TRUE), 
               .groups = "drop") %>%
     arrange(SEMAINE)
 }
@@ -361,7 +361,7 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
 # Niveau actuel de chaque bière en cours (dernière mesure connue)
 niveau_bieres_actuel <- function(max_date = today()) {
   DB_BIERES %>%
-    filter(!FL_FINI, DATE <= max_date, DATE >= max_date - 30) %>%
+    filter(!BIERE_FINIE, DATE <= max_date, DATE >= max_date - 30) %>%
     group_by(ID_BRASSIN, BOISSON) %>%
     arrange(DATE) %>%
     slice_tail(n = 1) %>%
@@ -3287,7 +3287,7 @@ table_evo_brassins <- function(max_date=today(),
 
   if (FL_ONLY_FINI){
     vec_brassins_en_cours <- DB_BIERES %>%
-      filter(!FL_FINI & DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
+      filter(!BIERE_FINIE & DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
   }else{
     vec_brassins_en_cours <- DB_BIERES %>%
       filter(DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
@@ -5332,7 +5332,7 @@ graph_cluster_bieres <- function(){
     filter(VOLUME_BRASSIN > 0 & NB_JOURS_VENTES > 0) %>%
     group_by(ID_BRASSIN) %>%
     arrange(DATE) %>% filter(row_number() == n()) %>% ungroup() %>%
-    group_by(FL_FINI,BOISSON,PRICE_33CL) %>%
+    group_by(BIERE_FINIE,BOISSON,PRIX_33CL) %>%
     summarise(CA_HTVA_TOT = sum(CA_HTVA_TOT),
               NB_JOURS_VENTES = sum(NB_JOURS_VENTES),
               VOLUME_TOT = sum(VOLUME_TOT),
@@ -5342,10 +5342,10 @@ graph_cluster_bieres <- function(){
            VOLUME_JOUR = VOLUME_TOT / NB_JOURS_VENTES,
            PCT = VOLUME_TOT/VOLUME_BRASSIN) %>%
     filter(PCT < 1.5) %>%
-    select(BOISSON,VOLUME_JOUR,CA_HTVA_JOUR,PRICE_33CL,PCT,FL_FINI)
+    select(BOISSON,VOLUME_JOUR,CA_HTVA_JOUR,PRIX_33CL,PCT,BIERE_FINIE)
 
-  donnees_fini <- donnees %>% filter(FL_FINI)
-  donnees_actu <- donnees %>% filter(!FL_FINI)
+  donnees_fini <- donnees %>% filter(BIERE_FINIE)
+  donnees_actu <- donnees %>% filter(!BIERE_FINIE)
 
   donnees_normalisees <- scale(donnees_fini %>% select_if(is.numeric))
 
@@ -5359,7 +5359,7 @@ graph_cluster_bieres <- function(){
 
   donnees <- donnees_fini %>% add_row(donnees_actu)
 
-  ggplot(donnees, aes(x=PRICE_33CL, y=VOLUME_JOUR, label=BOISSON,
+  ggplot(donnees, aes(x=PRIX_33CL, y=VOLUME_JOUR, label=BOISSON,
                       color=cluster)) +
     geom_point(alpha=0.7) +
     geom_text(nudge_y = 0.5)+

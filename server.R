@@ -61,6 +61,8 @@ if (!force_dl) {
   drive_mazette <- try({ERROR}, silent = TRUE)
 }
 
+# force_dl <- TRUE
+
 # Chargement via environnement google
 if (force_dl | class(drive_mazette)[1] == "try-error") {
   drive_mazette <- try({
@@ -73,12 +75,14 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
   }, silent = TRUE)
 }
 
+# force_dl <- TRUE
+
 # Chargement via google sheets (reconstruction complète)
 if (force_dl | class(drive_mazette)[1] == "try-error") {
   print("Aucune données encore, il faut les charger une par une.")
-  print(system.time({source("functions.R", local = TRUE)}))
-  print(system.time({source("import.R", local = TRUE)}))
-  print(system.time({source("nettoyage_ajout.R", local = TRUE)}))
+  # print(system.time({source("fonctions.R", local = TRUE)}))
+  print(system.time({source("import_sql.R", local = TRUE)}))
+  # print(system.time({source("nettoyage_ajout.R", local = TRUE)}))
 
   # Prendre la dernière date comme date de sauvegarde
   date_jour <- max(DB_JOURS$DATE)
@@ -98,6 +102,7 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
 }
 
 # Générateurs de DB fictives pour l'onglet Compta (+ tutoriel d'intégration)
+source("functions.R", local = TRUE)
 source("donnees_fictives_compta.R", local = TRUE)
 
 #### Temporaire : le temps du dev ####
@@ -299,7 +304,7 @@ server <- function(input, output, session) {
 
   output$top_veille <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS_FULL, date_veille, date_veille, n = 10)
+      top_produits_periode(DB_PRODUITS_JOURS, date_veille, date_veille, n = 10)
     )
   })
 
@@ -380,21 +385,21 @@ server <- function(input, output, session) {
   #### Volet "Maintenant" — Produits de la semaine ####
   output$top_semaine <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS_FULL,
+      top_produits_periode(DB_PRODUITS_JOURS,
                            date_debut_semaine, date_debut_semaine + 6, n = 10)
     )
   })
 
   output$hausse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_PRODUITS_JOURS_FULL, date_debut_semaine,
+      evolution_produits_semaine(DB_PRODUITS_JOURS, date_debut_semaine,
                                  sens = "hausse")
     )
   })
 
   output$baisse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_PRODUITS_JOURS_FULL, date_debut_semaine,
+      evolution_produits_semaine(DB_PRODUITS_JOURS, date_debut_semaine,
                                  sens = "baisse")
     )
   })
@@ -447,7 +452,7 @@ server <- function(input, output, session) {
 
   output$detail_jour_produits <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS_FULL, jour_detail(), jour_detail(), n = 15)
+      top_produits_periode(DB_PRODUITS_JOURS, jour_detail(), jour_detail(), n = 15)
     )
   })
   
@@ -678,7 +683,7 @@ server <- function(input, output, session) {
     output[[id("produits")]] <- renderDT({
       d1 <- periode_sel()
       datatable_simple(
-        top_produits_periode(DB_PRODUITS_JOURS_FULL, d1,
+        top_produits_periode(DB_PRODUITS_JOURS, d1,
                              fin_periode(d1, unite), n = 20)
       )
     })
@@ -702,7 +707,7 @@ server <- function(input, output, session) {
 
   produits_df <- reactive({
     p <- periode_produit_detail()
-    liste_produits_periode(DB_PRODUITS_JOURS_FULL, p[1], p[2])
+    liste_produits_periode(DB_PRODUITS_JOURS, p[1], p[2])
   })
 
   output$detail_produit_liste <- renderDT({
@@ -730,14 +735,14 @@ server <- function(input, output, session) {
   evo_produit <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS_JOURS_FULL, pr,
-                         min(DB_PRODUITS_JOURS_FULL$DATE), today())
+    evolution_un_produit(DB_PRODUITS_JOURS, pr,
+                         min(DB_PRODUITS_JOURS$DATE), today())
   })
   
   evo_produit_periode <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS_JOURS_FULL, pr,
+    evolution_un_produit(DB_PRODUITS_JOURS, pr,
                          periode_produit_detail()[1], today())
   })
 
@@ -747,7 +752,7 @@ server <- function(input, output, session) {
 
   output$detail_produit_table <- renderDT({
     
-    category <- evo_produit_periode() |> pull(CATEGORY) |> unique() |> str_to_title()
+    category <- evo_produit_periode() |> pull(CATEGORIE) |> unique() |> str_to_title()
     category_column <- paste0("Part dans '",category,"'")
     
     df <- evo_produit_periode() %>%
@@ -825,7 +830,7 @@ server <- function(input, output, session) {
   # Base figée par période (ordre stable) + prix simulés (vecteur par n° de ligne)
   sim_base <- reactive({
     p <- sim_periode_val()
-    prepa_simulation(DB_PRODUITS_JOURS_FULL, p[1], p[2])
+    prepa_simulation(DB_PRODUITS_JOURS, p[1], p[2])
   })
 
   sim_prix <- reactiveVal(NULL)
@@ -834,7 +839,7 @@ server <- function(input, output, session) {
   observeEvent(sim_base(), {
     sim_prix(sim_base()$PRIX_MOYEN)
     updateSelectInput(session, "sim_categorie",
-                      choices = sort(unique(sim_base()$CATEGORY)))
+                      choices = sort(unique(sim_base()$CATEGORIE)))
   })
 
   # Appliquer une variation % à toute une catégorie
@@ -842,7 +847,7 @@ server <- function(input, output, session) {
     base <- sim_base()
     cur  <- sim_prix()
     if (is.null(cur) || length(cur) != nrow(base)) cur <- base$PRIX_MOYEN
-    idx <- base$CATEGORY == input$sim_categorie
+    idx <- base$CATEGORIE == input$sim_categorie
     cur[idx] <- round(cur[idx] * (1 + input$sim_pct / 100), 2)
     sim_prix(cur)
   })
@@ -1094,7 +1099,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Suivi" ---
   trav_base <- reactive({
     p <- fenetre_travail(input$trav_periode)
-    base_travail(DB_PRODUITS_JOURS_FULL, DB_COUTS_TRAVAIL, p[1], p[2])
+    base_travail(DB_PRODUITS_JOURS, DB_COUTS_TRAVAIL, p[1], p[2])
   })
 
   trav_agrege <- reactive({
@@ -1122,7 +1127,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Créneaux" ---
   cren_stats <- reactive({
     p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(DB_PRODUITS_JOURS_FULL, DB_COUTS_TRAVAIL,
+    stats_creneaux(base_travail(DB_PRODUITS_JOURS, DB_COUTS_TRAVAIL,
                                 p[1], p[2]))
   })
 
