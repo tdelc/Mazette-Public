@@ -56,7 +56,6 @@ if (!force_dl) {
     env_vec <- list.files("outputs/", pattern = drive_env_name)
     env_name <- sort(env_vec)[length(env_vec)]
     load(paste0("outputs/", env_name))
-    print(system.time({source("functions.R", local = TRUE)}))
   }, silent = TRUE)
 } else {
   drive_mazette <- try({ERROR}, silent = TRUE)
@@ -71,7 +70,6 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
                    path = file.path("outputs", drive_info$name),
                    overwrite = TRUE)
     load(paste0("outputs/", drive_env_name))
-    print(system.time({source("functions.R", local = TRUE)}))
   }, silent = TRUE)
 }
 
@@ -99,7 +97,6 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
                             overwrite = TRUE)
 }
 
-source("functions.R", local = TRUE)
 # Générateurs de DB fictives pour l'onglet Compta (+ tutoriel d'intégration)
 source("donnees_fictives_compta.R", local = TRUE)
 
