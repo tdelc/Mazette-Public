@@ -21,3 +21,12 @@ creer_db_date <- function(date_min = ymd("2023-01-01"),
       PREMIER_JOUR_MOIS = DATE-mday(DATE)+1
     )
 }
+
+prepa_db <- function(DB,var_tva){
+  creer_db_date() %>%
+    left_join(DB) %>%
+    mutate_if(is.numeric,replace_na,0) %>%
+    mutate_if(is.character,replace_na,"") %>%
+    rename(ventes = var_tva)
+}
+

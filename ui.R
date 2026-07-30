@@ -68,23 +68,9 @@ chip_legende <- function(couleur, libelle) {
 legende_objectif <- function() {
   div(
     class = "d-flex gap-3 flex-wrap text-muted mt-1",
-    chip_legende("#5B7B5A", "Objectif atteint"),
-    chip_legende("#d98236", "À partir de 90 %"),
-    chip_legende("#c0392b", "En dessous de 90 %")
-  )
-}
-
-legende_couleurs <- function() {
-  tagList(
-    div(class = "legende-titre", "Midi / Soir"),
-    chip_legende("#e67e22", "Midi (< 17h)"),
-    chip_legende("#9b59b6", "Soir (≥ 17h)"),
-    div(class = "legende-titre", "Boisson / Nourriture"),
-    chip_legende("#d4ac0d", "Boisson"),
-    chip_legende("#27ae60", "Nourriture"),
-    div(class = "legende-titre", "Semaine / Week-end"),
-    chip_legende("#2980b9", "Semaine"),
-    chip_legende("#c0392b", "Week-end")
+    chip_legende(COUL_VERT, "Objectif atteint"),
+    chip_legende(COUL_AMBRE, "À partir de 90 %"),
+    chip_legende(COUL_ROUGE, "En dessous de 90 %")
   )
 }
 

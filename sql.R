@@ -1,5 +1,4 @@
 library(googledrive)
-library(googlesheets4)
 library(readxl)
 library(tidyverse)
 
@@ -153,7 +152,6 @@ path_drive <- Sys.getenv("PATH_DRIVE")
 
 download.file(link_json, destfile = "connect.json")
 drive_auth(path = "connect.json")
-gs4_auth(path = "connect.json")
 
 #### Import de toute la DB actuelle ####
 

@@ -181,8 +181,8 @@ server <- function(input, output, session) {
     }
     
     div(class = "d-flex gap-2 flex-wrap align-items-center",
-        badge("Réalisé", format_CA(reel, -1), "#732c02"),
-        badge("Objectif", format_CA(obj, -1), "#d98236"),
+        badge("Réalisé", format_CA(reel, -1), COUL_BRUN),
+        badge("Objectif", format_CA(obj, -1), COUL_AMBRE),
         # Même convention que les barres de CA : vert atteint, ambre à partir
         # de 90 %, rouge en dessous.
         badge("Atteint", if (is.na(pct)) "—" else paste0(pct, " %"),
