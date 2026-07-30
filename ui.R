@@ -38,6 +38,33 @@ feuille_versionnee <- function(fichier, dossier = "www") {
   if (is.na(v)) fichier else paste0(fichier, "?v=", v)
 }
 
+# En-tête « application installable ». Deux choses distinctes s'y jouent :
+#
+#   - le manifest, qu'Android lit pour fabriquer le raccourci. Sans lui (ou avec
+#     des icônes de moins de 192 px) Chrome dessine une tuile avec la première
+#     lettre du nom d'hôte — d'où le « P » de Posit ;
+#   - apple-touch-icon, qu'iOS utilise à la place : Safari ignore le manifest.
+#
+# Tous les chemins sont RELATIFS. Posit Connect sert l'app sous /content/<id>/ :
+# un "/icone-192.png" pointerait à la racine du serveur, et un start_url absolu
+# sortirait du scope, ce qui fait échouer l'installation sans message d'erreur.
+entete_application <- function() {
+  tags$head(
+    tags$link(rel = "manifest", href = feuille_versionnee("manifest.webmanifest")),
+    tags$link(rel = "icon", type = "image/png", sizes = "192x192",
+              href = feuille_versionnee("icone-192.png")),
+    tags$link(rel = "apple-touch-icon", href = feuille_versionnee("apple-touch-icon.png")),
+    tags$meta(name = "theme-color", content = "#732c02"),
+    tags$meta(name = "apple-mobile-web-app-capable", content = "yes"),
+    # "default" et non "black-translucent" : ce dernier fait passer le contenu
+    # SOUS la barre d'état de l'iPhone, ce qui masque le haut de la navbar tant
+    # qu'on n'a pas ajouté de padding env(safe-area-inset-top) en CSS.
+    tags$meta(name = "apple-mobile-web-app-status-bar-style", content = "default"),
+    tags$meta(name = "apple-mobile-web-app-title", content = "Mazette"),
+    tags$meta(name = "viewport", content = "width=device-width, initial-scale=1")
+  )
+}
+
 ui_login <- function() {
   div(
     class = "login-wrap",
@@ -933,6 +960,7 @@ ui_maintenant <- function() {
 ui <- page_fluid(
   useShinyjs(),
   theme = theme_mazette_ui,
+  entete_application(),
   tags$head(tags$link(rel = "stylesheet", type = "text/css",
                       href = feuille_versionnee("style.css"))),
   div(id = "login_screen", ui_login()),
