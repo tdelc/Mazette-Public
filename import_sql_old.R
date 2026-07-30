@@ -8,36 +8,42 @@ source("fonctions_import_sql.R")
 
 #### Import de toutes les DB de sqlite
 
-d1_select_format <- function(sql){
-  db <- d1_select(sql)
-  colnames(db) <- toupper(colnames(db))
-  if ("DATE" %in% colnames(db)) db$DATE <- ymd(db$DATE)
-  return(db)
-}
+DB_JOURS                     <- d1_select("SELECT * FROM db_jours")
+IMPORT_BIERES_CORRESPONDANCE <- d1_select("SELECT * FROM import_bieres_correspondance")
+IMPORT_BRASSINS              <- d1_select("SELECT * FROM import_brassins")
+IMPORT_CAISSE                <- d1_select("SELECT * FROM import_caisse")
+IMPORT_LIGHTSPEED            <- d1_select("SELECT * FROM import_lightspeed")
+IMPORT_OBJECTIFS             <- d1_select("SELECT * FROM import_objectifs")
+IMPORT_TICKET                <- d1_select("SELECT * FROM import_ticket")
+CORRESP_PRODUIT              <- d1_select("SELECT * FROM corresp_produit")
 
-DB_JOURS       <- d1_select_format("SELECT * FROM jours")
-NOMEN_PRODUITS <- d1_select_format("SELECT * FROM nomen_produits")
-NOMEN_BIERES   <- d1_select_format("SELECT * FROM nomen_bieres")
-BRASSINS       <- d1_select_format("SELECT * FROM brassins")
-CAISSE         <- d1_select_format("SELECT * FROM caisse")
-PRODUITS       <- d1_select_format("SELECT * FROM produits")
-OBJECTIFS      <- d1_select_format("SELECT * FROM objectifs")
-IM_TICKET      <- d1_select_format("SELECT * FROM tickets")
+colnames(DB_JOURS)                     <- toupper(colnames(DB_JOURS))
+colnames(IMPORT_BIERES_CORRESPONDANCE) <- toupper(colnames(IMPORT_BIERES_CORRESPONDANCE))
+colnames(IMPORT_BRASSINS)              <- toupper(colnames(IMPORT_BRASSINS))
+colnames(IMPORT_TICKET)                <- toupper(colnames(IMPORT_TICKET))
+colnames(IMPORT_CAISSE)                <- toupper(colnames(IMPORT_CAISSE))
+colnames(IMPORT_LIGHTSPEED)            <- toupper(colnames(IMPORT_LIGHTSPEED))
+colnames(IMPORT_OBJECTIFS)             <- toupper(colnames(IMPORT_OBJECTIFS))
+colnames(CORRESP_PRODUIT)              <- toupper(colnames(CORRESP_PRODUIT))
 
-OBJECTIFS$DATE_DEBUT      <- ymd(OBJECTIFS$DATE_DEBUT)
-OBJECTIFS$DATE_FIN        <- ymd(OBJECTIFS$DATE_FIN)
-OBJECTIFS$DATE_FIN        <- ymd(OBJECTIFS$DATE_FIN)
-BRASSINS$DATE_BRASSIN     <- ymd(BRASSINS$DATE_BRASSIN)
-BRASSINS$DATE_CONDI       <- ymd(BRASSINS$DATE_CONDI)
-BRASSINS$DATE_FIN         <- ymd(BRASSINS$DATE_FIN)
-BRASSINS$DATE_DECLARATION <- ymd(BRASSINS$DATE_DECLARATION)
+DB_JOURS$DATE                    <- ymd(DB_JOURS$DATE)
+IMPORT_CAISSE$DATE               <- ymd(IMPORT_CAISSE$DATE)
+IMPORT_LIGHTSPEED$DATE           <- ymd(IMPORT_LIGHTSPEED$DATE)
+IMPORT_TICKET$DATE               <- ymd(IMPORT_TICKET$DATE)
+IMPORT_OBJECTIFS$DATE_DEBUT      <- ymd(IMPORT_OBJECTIFS$DATE_DEBUT)
+IMPORT_OBJECTIFS$DATE_FIN        <- ymd(IMPORT_OBJECTIFS$DATE_FIN)
+IMPORT_OBJECTIFS$DATE_FIN        <- ymd(IMPORT_OBJECTIFS$DATE_FIN)
+IMPORT_BRASSINS$DATE_BRASSIN     <- ymd(IMPORT_BRASSINS$DATE_BRASSIN)
+IMPORT_BRASSINS$DATE_CONDI       <- ymd(IMPORT_BRASSINS$DATE_CONDI)
+IMPORT_BRASSINS$DATE_FIN         <- ymd(IMPORT_BRASSINS$DATE_FIN)
+IMPORT_BRASSINS$DATE_DECLARATION <- ymd(IMPORT_BRASSINS$DATE_DECLARATION)
 
 #### Paramètre de la journée
 
-date_actuelle        <- Sys.Date()
+date_actuelle <- Sys.Date()
 premier_jour_semaine <- date_actuelle - as.POSIXlt(date_actuelle)$wday + 1
-jours_semaine        <- seq(from = premier_jour_semaine, by = "days", length.out = 7)
-vecteur_jours_LOCAL  <- weekdays(jours_semaine)
+jours_semaine <- seq(from = premier_jour_semaine, by = "days", length.out = 7)
+vecteur_jours_LOCAL <- weekdays(jours_semaine)
 
 #### DB_DATE ####
 
@@ -58,41 +64,130 @@ DB_DATE <- tibble(
     PREMIER_JOUR_MOIS = DATE-mday(DATE)+1
   )
 
-#### DB_PRODUITS_JOURS ####
+#### DB_TICKET ####
 
-# D'abord, pour chaque produit et chaque date d'ouverture de Mazette, le CA et le nombre vendu
-
-DB_TICKET <- IM_TICKET |> 
-  left_join(NOMEN_PRODUITS) |> 
+DB_TICKET <- IMPORT_TICKET %>%
   mutate(
-    CD_HEURE = ifelse(hour(TIMESTAMP) < 17,"Midi (<17h)","Soir (>=17h)"),
-    CD_SECTEUR = ifelse(TAUX_TVA == 0.12,"Nourriture","Boisson"),
+    TIMESTAMP = ifelse(nchar(TIMESTAMP) == 19,TIMESTAMP,paste(substr(TIMESTAMP,1,10),"00:00:00")),
+    TIMESTAMP = ymd_hms(TIMESTAMP),
     CD_PERIODE_JOUR = if_else(hour(TIMESTAMP) %in% c(8:16),"Jour","Soir"),
     CD_PERIODE_SEMAINE = if_else(
       wday(TIMESTAMP,week_start = 1) %in% c(6,7)
       | (wday(TIMESTAMP,week_start = 1) == 5 &
            CD_PERIODE_JOUR == "Soir"),"Week-end","Semaine"
     )
-  )
+  ) %>%
+  left_join(CORRESP_PRODUIT) |> 
+  mutate(PRODUIT = case_when(
+    PRODUIT == "Cola maison" ~ "Cola maison 33cL",
+    PRODUIT == "Dik effiloché de porc crémeux de carottes 1/2" ~ "Dik effiloché de porc crémeux de carottes",
+    PRODUIT == "Sombre Despote" ~ "Sombre Despote 33cL",
+    TRUE ~ PRODUIT)) %>%
+  rename(PRODUCT = PRODUIT) |> 
+  mutate(PRODUCT = ifelse(PRODUCT == "Cola maison","Cola maison 33cL",PRODUCT)) %>%
+  from_product_to_boisson()
 
-TICKETS_HEURES <- DB_TICKET %>%
+
+#### DB_PRODUITS ####
+
+DB_PRODUITS <- IMPORT_LIGHTSPEED
+colnames(DB_PRODUITS) <- toupper(colnames(DB_PRODUITS))
+
+DB_PRODUITS <- DB_PRODUITS %>%
+  rename(PRODUCT = PRODUIT) |> 
+  mutate(
+    QUANTITE = case_when(
+      substr(PRODUCT,1,4) == "Dikk" & PRIX < 6 ~ QUANTITE/4,
+      substr(PRODUCT,1,4) == "Dikk" & PRIX < 10 ~ QUANTITE/3,
+      TRUE ~ QUANTITE)
+  ) %>%
+  from_product_to_boisson()
+
+vec_sale <- DB_PRODUITS %>% filter(CATEGORIE == "SALÉ") %>%
+  pull(PRODUCT_FULL) %>% unique()
+
+vec_sucre <- DB_PRODUITS %>% filter(CATEGORIE == "SUCRÉ") %>%
+  pull(PRODUCT_FULL) %>% unique()
+
+DB_PRODUITS[DB_PRODUITS$PRODUCT_FULL %in% vec_sale,"CATEGORIE"] <- "SALÉ"
+DB_PRODUITS[DB_PRODUITS$PRODUCT_FULL %in% vec_sucre,"CATEGORIE"] <- "SUCRÉ"
+
+DB_PRODUITS_REF <- DB_PRODUITS %>%
+  filter(PRIX > 0) %>%
+  mutate(TVA_RATE = if_else(
+    PRODUCT_FULL == "Pain à emporter",0.06,TVA_RATE)) %>%
+  select(PRODUCT_FULL,TVA_RATE) %>%
+  distinct() %>%
+  add_row(PRODUCT_FULL = "TVUG 50 cl",TVA_RATE = 0.21) %>%
+  add_row(PRODUCT_FULL = "TVUG 33cl",TVA_RATE = 0.21) %>%
+  add_row(PRODUCT_FULL = "Pizza",TVA_RATE = 0.12) %>%
+  add_row(PRODUCT_FULL = "Dikke",TVA_RATE = 0.12) %>%
+  add_row(PRODUCT_FULL = "Verrine",TVA_RATE = 0.12) %>%
+  add_row(PRODUCT_FULL = "Thé",TVA_RATE = 0.21) %>%
+  group_by(PRODUCT_FULL) %>% arrange(-TVA_RATE) %>%
+  filter(row_number() == 1) %>% ungroup()
+
+DB_TICKET_PRODUITS <- DB_TICKET %>%
+  mutate(PRODUCT_FULL = case_when(
+    str_detect(PRODUCT_FULL,"Capuccino") ~ "Capuccino",
+    str_detect(PRODUCT_FULL,"Café") ~ "Café",
+    str_detect(PRODUCT_FULL,"Espresso") ~ "Espresso",
+    str_detect(PRODUCT_FULL,"Pizza") ~ "Pizza",
+    str_detect(PRODUCT_FULL,"Verrine") ~ "Verrine",
+    str_detect(PRODUCT_FULL,"Dikke") ~ "Dikke",
+    str_detect(PRODUCT_FULL,"Thé") ~ "Thé",
+    TRUE ~ PRODUCT_FULL
+  )) %>%
+  full_join(DB_PRODUITS_REF) %>%
+  mutate(NEW_TVA_RATE = as.numeric(
+    str_extract(PRODUCT_FULL,".*\\(Tax: ([0-9]+)%\\).*",group=1)),
+    NEW_TVA_RATE = if_else(NEW_TVA_RATE %in% c(0,6,12,21),
+                           NEW_TVA_RATE/100,NA_real_),
+    TVA_RATE = if_else(is.na(TVA_RATE),NEW_TVA_RATE,TVA_RATE)) %>%
+  mutate(CD_SECTEUR = if_else(TVA_RATE == 0.21,"Boisson","Nourriture"),
+         CA_TVAC = PRIX_TOTAL, CA_HTVA = CA_TVAC/(1+TVA_RATE))
+
+#### DB_PRODUITS_JOURS ####
+
+# D'abord, pour chaque produit et chaque date d'ouverture de Mazette, le CA et le nombre vendu
+DB_PRODUITS_JOURS <- DB_TICKET %>%
   filter(PRIX_TOTAL > 0) %>%
-  group_by(DATE,CD_HEURE,CD_SECTEUR,
-           CD_PERIODE_JOUR,CD_PERIODE_SEMAINE,
-           PRODUIT_FULL,PRODUIT,CATEGORIE,TAUX_TVA) %>%
-  summarise(CA_TVAC = sum(PRIX_TOTAL),QUANTITE = sum(QUANTITE),.groups = "drop") |> 
-  mutate(CA_HTVA = CA_TVAC / (1+TAUX_TVA))
+  mutate(CD_HEURE = ifelse(hour(TIMESTAMP) < 17,
+                           "Midi (<17h)","Soir (>=17h)")) %>%
+  group_by(DATE,CD_HEURE,PRODUCT_FULL,PRODUCT) %>%
+  summarise(CA_TVAC = sum(PRIX_TOTAL),QUANTITE = sum(QUANTITE),.groups = "drop")
+
+DB_PRODUITS_JOURS <- d1_select("SELECT * FROM db_produits_jours")
+colnames(DB_PRODUITS_JOURS) <- toupper(colnames(DB_PRODUITS_JOURS))
+
+# On vient ajouter le taux de TVA 
+# Trouver le taux de TVA (supposé), en évitant les doublons
+DB_TVA <- DB_PRODUITS %>%
+  filter(PRIX > 0,TVA_RATE != 0.06,
+         !CATEGORIE %in% c("UNKNOWN (REMOVED)","BOUFFE À EMPORTER")) %>%
+  count(CATEGORIE,PRODUCT_FULL,PRODUCT,TVA_RATE) |> 
+  group_by(PRODUCT_FULL,PRODUCT) |> mutate(nd = n()) |> 
+  arrange(-n) |> filter(row_number() == 1) |> ungroup() |> 
+  select(CATEGORIE,PRODUCT_FULL,PRODUCT,TVA_RATE)
+
+DB_PRODUITS_JOURS <- DB_PRODUITS_JOURS %>% 
+  left_join(DB_TVA) |> 
+  filter(!is.na(TVA_RATE)) %>%
+  mutate(CA_HTVA = CA_TVAC / (1+TVA_RATE),
+         SECTEUR = ifelse(TVA_RATE == 0.12,"Nourriture","Boisson"))
 
 # Synthèse par catégorie
-DB_CATEGORIES_JOURS <- TICKETS_HEURES %>%
+DB_CATEGORIES_JOURS <- DB_PRODUITS_JOURS %>%
   group_by(DATE,CD_HEURE,CATEGORIE) %>%
   summarise(CA_HTVA = sum(CA_HTVA),QUANTITE = sum(QUANTITE),.groups = "drop") |> 
   complete(DATE, CD_HEURE, CATEGORIE,
            fill = list(CA_HTVA = 0, QUANTITE = 0))
 
+
+
 #### DB_KPI ####
 
-DB_KPI <- TICKETS_HEURES %>%
+DB_KPI <- DB_TICKET_PRODUITS %>%
   filter(!is.na(CD_SECTEUR)) %>%
   group_by(DATE,CD_PERIODE_JOUR,CD_PERIODE_SEMAINE,CD_SECTEUR) %>%
   summarise(CA_HTVA = sum(CA_HTVA),CA_TVAC = sum(CA_TVAC),.groups = "drop") %>%
@@ -121,6 +216,8 @@ DB_KPI_SECTEUR <- DB_KPI %>%
   pivot_wider(names_from = CD_SECTEUR,
               values_from = CA_HTVA,values_fill = 0)
 
+colnames(DB_JOURS) <- toupper(colnames(DB_JOURS))
+
 DB_KPI_SIMPLE <- DB_JOURS %>% 
   select(DATE,CA_HTVA,CA_TVAC) %>%
   left_join(DB_KPI_JOUR) %>%
@@ -141,28 +238,28 @@ DB_KPI_SIMPLE <- DB_KPI_SIMPLE %>%
 #### Import Objectifs #####
 
 DB_OBJECTIFS <- bind_rows(
-  lapply(1:nrow(OBJECTIFS), function(i) {
-    with(OBJECTIFS[i, ],
+  lapply(1:nrow(IMPORT_OBJECTIFS), function(i) {
+    with(IMPORT_OBJECTIFS[i, ],
          calculer_objectifs_journaliers(ANNEE, MOIS, CA_HTVA, CA_TVAC))
   })
 )
 
 #### Import Brassins ####
 
-DB_BRASSINS <- BRASSINS %>% 
+DB_BRASSINS <- IMPORT_BRASSINS %>% 
   mutate(
     DT_BRASSIN = DATE_BRASSIN,
     DT_CONDI = DATE_CONDI,
     DT_FIN = DATE_FIN,
     DT_DECLA = DATE_DECLARATION
   ) |> 
-  left_join(NOMEN_BIERES) |> 
+  left_join(IMPORT_BIERES_CORRESPONDANCE) |> 
   rename(BOISSON = NOM_BIERE)
 
 # Une ligne par date*brassin, afin de déterminer quel brassin pour quel jour
 # S'il y a des doublons, je prends le nouveau brassin
 DB_BRASSINS_EXP <- DB_BRASSINS %>%
-  filter(!is.na(DATE_CONDI)) %>%
+  filter(!is.na(DT_CONDI)) %>%
   mutate(DT_FIN = if_else(DT_FIN < DT_CONDI,DT_CONDI+1,DT_FIN)) %>%
   mutate(DATE = map2(DT_CONDI, DT_FIN, seq, by = "day")) %>%
   unnest(DATE) %>%
@@ -177,10 +274,14 @@ DB_BRASSINS_EXP <- DB_BRASSINS %>%
   select(-NB,-ID_DOUBLON)
 
 # ADD BRASSINS
-DB_PRODUITS <- PRODUITS %>%
+DB_PRODUITS <- DB_PRODUITS %>%
   left_join(DB_BRASSINS_EXP) %>%
-  left_join(DB_BRASSINS) %>%
+  left_join(DB_BRASSINS)
+
+# Ajuster le vrai volume de brassin selon les bières finies
+DB_PRODUITS <- DB_PRODUITS %>%
   mutate(VOLUME_BRASSIN_AJUST = VOLUME_BRASSIN*0.75)
+
 
 PRIX_BIERES <- DB_PRODUITS %>%
   filter(CATEGORIE ==  "BIÈRES" & !is.na(ID_BRASSIN) & VOLUME_CL == 33) %>%
@@ -200,7 +301,7 @@ DB_BIERES <- DB_PRODUITS %>%
            VOLUME_BRASSIN,VOLUME_BRASSIN_AJUST,PRIX_33CL) %>%
   summarise(CA_HTVA = sum(CA_HTVA),
             CA_TVAC = sum(CA_TVAC),
-            VOLUME_JOUR = sum(QUANTITE*VOLUME_CL/100),.groups = "drop") %>%
+            VOLUME_JOUR = sum(VOLUME_TOT_L),.groups = "drop") %>%
   arrange(ID_BRASSIN,BOISSON,DATE) %>%
   group_by(BOISSON,ID_BRASSIN) %>%
   mutate(VOLUME_TOT = cumsum(VOLUME_JOUR),
@@ -320,7 +421,8 @@ DB_COUTS_TRAVAIL <- prepa_heures(id_sheet_heures) |>
     .groups = "drop"
   )
 
-rm(IMPORT_BRASSINS, IMPORT_CAISSE,
+rm(IMPORT_BIERES_CORRESPONDANCE, IMPORT_BRASSINS, IMPORT_CAISSE,
    IMPORT_LIGHTSPEED, IMPORT_OBJECTIFS, IMPORT_TICKET, DB_TICKET_PRODUITS)
+
 
 

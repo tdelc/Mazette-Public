@@ -45,7 +45,7 @@ date_fin_8_semaines <- today()
 
 force_dl <- FALSE
 
-prefix <- "R_env_"
+prefix <- "R_sql_env_"
 date_jour <- format(now() - days(1), format = "%Y-%m-%d")
 drive_env_name <- paste0(prefix, date_jour, ".RData")
 
@@ -102,104 +102,8 @@ if (force_dl | class(drive_mazette)[1] == "try-error") {
 }
 
 # Générateurs de DB fictives pour l'onglet Compta (+ tutoriel d'intégration)
-source("functions.R", local = TRUE)
+# source("functions.R", local = TRUE)
 source("donnees_fictives_compta.R", local = TRUE)
-
-#### Temporaire : le temps du dev ####
-
-prepa_heures <- function(id_drive){
-  
-  drive_mazette <- drive_download(drive_get(id =id_drive),overwrite = TRUE)
-  DB_HEURES <- read_excel(drive_mazette$local_path,sheet = "Rapport",skip = 1)
-  DB_HEURES <- DB_HEURES %>% 
-    filter(!is.na(Jour),Jour != "Jour",Jour != "Nom") %>% 
-    mutate(DATE = as.Date(as.numeric(Jour), origin = "1899-12-30")) %>% 
-    mutate(HEURE_DEB = substr(Temps,1,5),
-           HEURE_FIN = substr(Temps,9,13)) %>% 
-    rename(CONTRAT = `Type de contrat`,
-           DEPARTEMENT = `Nom de l’équipe`,
-           HEURES_PAUSE = Pauses)
-  
-  # Nettoyage
-  DB_HEURES <- DB_HEURES %>% filter(Temps != "12:08 - 12:06")
-  
-  DB_HEURES <- DB_HEURES %>%
-    mutate(
-      debut_h = hour(hm(HEURE_DEB)) + minute(hm(HEURE_DEB))/60,
-      fin_h   = hour(hm(HEURE_FIN))   + minute(hm(HEURE_FIN))/60,
-      HEURE_MIDI = case_when(
-        debut_h == 0 & fin_h == 0 ~ 0,
-        debut_h >= 17 ~ 0,
-        fin_h <= 17 & fin_h > 7 ~ fin_h - debut_h,
-        TRUE ~ 17 - debut_h
-        # fin_h > 7 ~ pmin(fin_h, 17) - pmin(debut_h, 17),
-        # TRUE ~ 24 - (debut_h + fin_h)
-      ),
-      HEURE_SOIR = case_when(
-        debut_h == 0 & fin_h == 0 ~ 0,
-        fin_h > 7 & fin_h <= 17 ~ 0,
-        # fin_h > 17 ~ pmax(fin_h, 17) - pmax(debut_h, 17),
-        fin_h >= 17 ~ fin_h - 17,
-        debut_h >= 17 ~ 24 - debut_h + fin_h,
-        # TRUE ~ 7 + fin_h
-        TRUE ~ 7 + fin_h
-      )
-    ) %>%
-    mutate(HEURES = as.numeric(`Heures travaillées`)) %>% 
-    filter(HEURES > 0) %>% 
-    # Correction des heures en imputant les heures travaillées selon la clé
-    # Heures midi et heures soir
-    mutate(
-      PC_MIDI = HEURE_MIDI / (HEURE_MIDI + HEURE_SOIR),
-      PC_SOIR = HEURE_SOIR / (HEURE_MIDI + HEURE_SOIR),
-      HEURE_MIDI = HEURES * PC_MIDI,
-      HEURE_SOIR = HEURES * PC_SOIR
-    ) %>% 
-    # filter(HEURES - (HEURE_SOIR + HEURE_MIDI) < 0.2) %>%
-    select(DATE,CONTRAT,DEPARTEMENT,HEURE_MIDI,HEURE_SOIR,
-           HEURE_DEB,HEURE_FIN,debut_h,fin_h,HEURES,HEURES_PAUSE) %>%
-    pivot_longer(cols = c(HEURE_MIDI,HEURE_SOIR), names_to = "CD_HEURE",values_to = "NB_HEURES") %>% 
-    group_by(DATE,CONTRAT,DEPARTEMENT,CD_HEURE) %>% 
-    summarise(NB_HEURES = sum(NB_HEURES)) %>% 
-    left_join(DB_DATE %>% select(DATE,JOUR_SEMAINE)) %>% 
-    mutate(CD_HEURE = ifelse(CD_HEURE == "HEURE_MIDI","Midi (<17h)","Soir (>=17h)")) %>% 
-    mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "mardi","Soir (>=17h)", CD_HEURE)) %>% 
-    mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "dimanche","Midi (<17h)", CD_HEURE)) %>% 
-    ungroup()
-  
-  df_cout <- read_excel(drive_mazette$local_path,sheet = "Cout")
-  colnames(df_cout) <- c("CONTRAT","COUT_HEURE")
-  
-  DB_HEURES <- DB_HEURES %>% left_join(df_cout) %>% 
-    mutate(COUT = COUT_HEURE * NB_HEURES)
-  
-  return(DB_HEURES)
-}
-
-DB_COUTS_TRAVAIL <- prepa_heures(id_sheet_heures) |> 
-  mutate(
-    SECTEUR = case_when(
-      DEPARTEMENT == "Transfo alimentaire" ~ "Transformation alimentaire",
-      DEPARTEMENT == "Fabrik de boissons" ~ "Brasserie",
-      DEPARTEMENT == "Support" ~ "Support",
-      DEPARTEMENT == "Service" ~ "Service",
-      TRUE ~ "Secteur inconnu"
-    ),
-    CRENEAU = case_when(
-      SECTEUR != "Service" ~ "Journée",
-      CD_HEURE == "Soir (>=17h)" ~ "Soir",
-      CD_HEURE == "Midi (<17h)" ~ "Midi",
-      TRUE ~ "Créneau inconnu"
-    ),
-  ) |> 
-  group_by(DATE,SECTEUR,CRENEAU) |> 
-  summarise(
-    HEURES = sum(NB_HEURES),
-    COUT_TRAVAIL = sum(COUT),
-    TAUX_HORAIRE = COUT_TRAVAIL / HEURES,
-    .groups = "drop"
-  )
-
 
 #### Serveur ####
 
@@ -304,7 +208,7 @@ server <- function(input, output, session) {
 
   output$top_veille <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS, date_veille, date_veille, n = 10)
+      top_produits_periode(DB_CATEGORIES_JOURS, date_veille, date_veille, n = 10)
     )
   })
 
@@ -385,21 +289,21 @@ server <- function(input, output, session) {
   #### Volet "Maintenant" — Produits de la semaine ####
   output$top_semaine <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS,
+      top_produits_periode(DB_CATEGORIES_JOURS,
                            date_debut_semaine, date_debut_semaine + 6, n = 10)
     )
   })
 
   output$hausse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_PRODUITS_JOURS, date_debut_semaine,
+      evolution_produits_semaine(DB_CATEGORIES_JOURS, date_debut_semaine,
                                  sens = "hausse")
     )
   })
 
   output$baisse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_PRODUITS_JOURS, date_debut_semaine,
+      evolution_produits_semaine(DB_CATEGORIES_JOURS, date_debut_semaine,
                                  sens = "baisse")
     )
   })
@@ -452,7 +356,7 @@ server <- function(input, output, session) {
 
   output$detail_jour_produits <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS_JOURS, jour_detail(), jour_detail(), n = 15)
+      top_produits_periode(DB_CATEGORIES_JOURS, jour_detail(), jour_detail(), n = 15)
     )
   })
   
@@ -683,7 +587,7 @@ server <- function(input, output, session) {
     output[[id("produits")]] <- renderDT({
       d1 <- periode_sel()
       datatable_simple(
-        top_produits_periode(DB_PRODUITS_JOURS, d1,
+        top_produits_periode(DB_CATEGORIES_JOURS, d1,
                              fin_periode(d1, unite), n = 20)
       )
     })
@@ -707,7 +611,7 @@ server <- function(input, output, session) {
 
   produits_df <- reactive({
     p <- periode_produit_detail()
-    liste_produits_periode(DB_PRODUITS_JOURS, p[1], p[2])
+    liste_produits_periode(DB_CATEGORIES_JOURS, p[1], p[2])
   })
 
   output$detail_produit_liste <- renderDT({
@@ -735,14 +639,14 @@ server <- function(input, output, session) {
   evo_produit <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS_JOURS, pr,
-                         min(DB_PRODUITS_JOURS$DATE), today())
+    evolution_un_produit(DB_CATEGORIES_JOURS, pr,
+                         min(DB_CATEGORIES_JOURS$DATE), today())
   })
   
   evo_produit_periode <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS_JOURS, pr,
+    evolution_un_produit(DB_CATEGORIES_JOURS, pr,
                          periode_produit_detail()[1], today())
   })
 
@@ -830,7 +734,7 @@ server <- function(input, output, session) {
   # Base figée par période (ordre stable) + prix simulés (vecteur par n° de ligne)
   sim_base <- reactive({
     p <- sim_periode_val()
-    prepa_simulation(DB_PRODUITS_JOURS, p[1], p[2])
+    prepa_simulation(DB_PRODUITS, p[1], p[2])
   })
 
   sim_prix <- reactiveVal(NULL)
@@ -1099,7 +1003,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Suivi" ---
   trav_base <- reactive({
     p <- fenetre_travail(input$trav_periode)
-    base_travail(DB_PRODUITS_JOURS, DB_COUTS_TRAVAIL, p[1], p[2])
+    base_travail(DB_CATEGORIES_JOURS, DB_COUTS_TRAVAIL, p[1], p[2])
   })
 
   trav_agrege <- reactive({
@@ -1127,7 +1031,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Créneaux" ---
   cren_stats <- reactive({
     p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(DB_PRODUITS_JOURS, DB_COUTS_TRAVAIL,
+    stats_creneaux(base_travail(DB_CATEGORIES_JOURS, DB_COUTS_TRAVAIL,
                                 p[1], p[2]))
   })
 
@@ -1158,7 +1062,7 @@ server <- function(input, output, session) {
 
   # Semaines proposées (la semaine en cours, partielle, est exclue)
   observe({
-    sems <- semaines_dispo(DB_TICKET)
+    sems <- semaines_dispo(DB_JOURS)
     req(length(sems) > 0)
     updateSelectInput(session, "conso_semaine",
                       choices = setNames(as.character(sems),

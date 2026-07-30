@@ -47,12 +47,12 @@ est_biere <- function(category) {
 top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10) {
   db_produits %>%
     filter(DATE >= date_debut, DATE <= date_fin) %>%
-    group_by(PRODUCT) %>%
+    group_by(PRODUIT) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
     arrange(desc(CA)) %>%
     slice_head(n = n) %>%
-    transmute(Produit = tronque_nom(PRODUCT),
+    transmute(Produit = tronque_nom(PRODUIT),
               Quantité = Quantite,
               `CA HTVA` = format_CA(CA, -1))
 }
@@ -65,7 +65,7 @@ evolution_produits_semaine <- function(db_produits, date_debut_semaine, n = 10,
   agrege <- function(d1, d2) {
     db_produits %>%
       filter(DATE >= d1, DATE <= d2, !est_biere(CATEGORIE)) %>%
-      group_by(PRODUCT) %>%
+      group_by(PRODUIT) %>%
       summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE), .groups = "drop")
   }
 
@@ -73,14 +73,14 @@ evolution_produits_semaine <- function(db_produits, date_debut_semaine, n = 10,
   sem_m1 <- agrege(date_debut_semaine - 7, date_debut_semaine - 1) %>%
     rename(QUANTITE_m1 = QUANTITE)
 
-  evo <- inner_join(sem, sem_m1, by = "PRODUCT") %>%
+  evo <- inner_join(sem, sem_m1, by = "PRODUIT") %>%
     mutate(delta = QUANTITE - QUANTITE_m1)
 
   evo <- if (sens == "hausse") arrange(evo, desc(delta)) else arrange(evo, delta)
 
   evo %>%
     slice_head(n = n) %>%
-    transmute(Produit = tronque_nom(PRODUCT),
+    transmute(Produit = tronque_nom(PRODUIT),
               `Cette sem.` = QUANTITE,
               `Sem. -1` = QUANTITE_m1,
               `Δ` = delta)
@@ -223,7 +223,7 @@ graph_repartition_periode <- function(db_kpi, db_obj, periode,
 liste_produits_periode <- function(db_produits, d1, d2) {
   db_produits %>%
     filter(DATE >= d1, DATE <= d2) %>%
-    group_by(Produit = PRODUCT) %>%
+    group_by(Produit = PRODUIT) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
     arrange(desc(CA))
@@ -238,7 +238,7 @@ evolution_un_produit <- function(db_produits, produit, d1, d2) {
     mutate(CA_TOT = sum(CA_HTVA, na.rm = TRUE)) |> 
     group_by(SEMAINE,CATEGORIE) %>%
     mutate(CA_CATEGORIE = sum(CA_HTVA, na.rm = TRUE)) |> 
-    filter(PRODUCT == produit) %>%
+    filter(PRODUIT == produit) %>%
     group_by(SEMAINE,CATEGORIE) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), 
@@ -361,7 +361,7 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
 # Niveau actuel de chaque bière en cours (dernière mesure connue)
 niveau_bieres_actuel <- function(max_date = today()) {
   DB_BIERES %>%
-    filter(!FL_FINI, DATE <= max_date, DATE >= max_date - 30) %>%
+    filter(!BIERE_FINIE, DATE <= max_date, DATE >= max_date - 30) %>%
     group_by(ID_BRASSIN, BOISSON) %>%
     arrange(DATE) %>%
     slice_tail(n = 1) %>%
@@ -543,7 +543,7 @@ table_predictions_fin <- function(db_predict) {
 prepa_simulation <- function(db_produits, d1, d2) {
   db_produits %>%
     filter(DATE >= d1, DATE <= d2) %>%
-    group_by(CATEGORIE, PRODUCT = PRODUCT_FULL) %>%
+    group_by(CATEGORIE, PRODUIT = PRODUIT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
     mutate(PRIX_MOYEN = round(CA / QUANTITE, 2)) %>%
@@ -566,7 +566,7 @@ calc_simulation <- function(base, prix_simu) {
 table_simulation_aff <- function(sim) {
   sim %>%
     transmute(Catégorie = CATEGORIE,
-              Produit = tronque_nom(PRODUCT),
+              Produit = tronque_nom(PRODUIT),
               Quantité = QUANTITE,
               `Prix moyen` = PRIX_MOYEN,
               `Prix simulé` = round(PRIX_SIMU, 2),
@@ -1246,7 +1246,7 @@ PAL_CRENEAU <- c("Midi" = "#e67e22", "Soir" = "#9b59b6", "Pizzwanze" = "#c0392b"
 # Jours de Pizzwanze : mardi soir où l'on a vendu des pizzas.
 jours_pizzwanze <- function(db_produits) {
   db_produits %>%
-    filter(str_detect(toupper(PRODUCT), "PIZZ"),
+    filter(str_detect(toupper(PRODUIT), "PIZZ"),
            CD_HEURE == "Soir (>=17h)",
            wday(DATE, week_start = 1) == 2,
            CA_HTVA > 0) %>%
@@ -1700,7 +1700,7 @@ table_creneaux <- function(stats) {
 #                 BOISSON et VOLUME_TOT_L -> analyse horaire et en litres.
 #                 Attention : DATE est le JOUR DE SERVICE (une vente à 1h du
 #                 matin est rattachée à la soirée de la veille).
-#   DB_PRODUITS : une ligne par (jour, produit) avec PRODUCT_FULL complet,
+#   DB_PRODUITS : une ligne par (jour, produit) avec PRODUIT_FULL complet,
 #                 options comprises -> seule source qui porte les suppléments
 #                 des focaccias. Peut contenir plusieurs lignes par jour et
 #                 produit : toujours agréger.
@@ -2066,7 +2066,7 @@ table_conso_bieres <- function(comp) {
 
 ##### Focaccias #####
 
-# Décompose un PRODUCT_FULL de focaccia en base + options.
+# Décompose un PRODUIT_FULL de focaccia en base + options.
 # Les libellés viennent de la caisse :
 #   "Focaccia du moment + Options focaccias: + SUPPL. Fromage + SUPPL. Viande
 #    + Option pikant: !! SPICY HOT !!"
@@ -2094,8 +2094,8 @@ ORDRE_GARNITURES <- c("Nature", "Fromage", "Viande", "Fromage + Viande")
 # On écarte les remises et lignes négatives, qui ne sont pas des ventes.
 conso_focaccias <- function(db_produits, d1, d2) {
   db <- db_produits %>%
-    filter(str_detect(tolower(PRODUCT_FULL), "focaccia"),
-           !str_detect(tolower(PRODUCT_FULL), "discount|% sur produit"),
+    filter(str_detect(tolower(PRODUIT_FULL), "focaccia"),
+           !str_detect(tolower(PRODUIT_FULL), "discount|% sur produit"),
            QUANTITE > 0, DATE >= as.Date(d1), DATE <= as.Date(d2))
   if (nrow(db) == 0)
     return(tibble(DATE = as.Date(character()), BASE = character(),
@@ -2103,7 +2103,7 @@ conso_focaccias <- function(db_produits, d1, d2) {
                   GARNITURE = character(), VARIANTE = character(),
                   QUANTITE = numeric(), CA = numeric()))
   bind_cols(db %>% select(DATE, QUANTITE, CA = CA_HTVA),
-            parse_focaccia(db$PRODUCT_FULL)) %>%
+            parse_focaccia(db$PRODUIT_FULL)) %>%
     mutate(GARNITURE = factor(GARNITURE, levels = ORDRE_GARNITURES))
 }
 
@@ -2425,11 +2425,11 @@ soirees_pizzwanze <- function(db_produits,
                               min_refs = PIZZWANZE_MIN_REFS,
                               min_pizzas = PIZZWANZE_MIN_PIZZAS) {
   db_produits %>%
-    filter(est_pizza(PRODUCT_FULL), QUANTITE > 0) %>%
-    filter(!str_detect(PRODUCT_FULL,"Slice")) |> 
+    filter(est_pizza(PRODUIT_FULL), QUANTITE > 0) %>%
+    filter(!str_detect(PRODUIT_FULL,"Slice")) |> 
     group_by(DATE) %>%
     summarise(PIZZAS = sum(QUANTITE, na.rm = TRUE),
-              N_REF  = n_distinct(PRODUCT_FULL), .groups = "drop") %>%
+              N_REF  = n_distinct(PRODUIT_FULL), .groups = "drop") %>%
     filter(N_REF >= min_refs, PIZZAS >= min_pizzas) %>%
     arrange(DATE) %>%
     pull(DATE)
@@ -2439,8 +2439,8 @@ soirees_pizzwanze <- function(db_produits,
 conso_pizzas <- function(db_produits, dates) {
   dates <- as.Date(dates)
   db_produits %>%
-    filter(est_pizza(PRODUCT_FULL), QUANTITE > 0, DATE %in% dates) %>%
-    group_by(DATE, PIZZA = PRODUCT_FULL) %>%
+    filter(est_pizza(PRODUIT_FULL), QUANTITE > 0, DATE %in% dates) %>%
+    group_by(DATE, PIZZA = PRODUIT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA       = sum(CA_HTVA, na.rm = TRUE), .groups = "drop")
 }
@@ -2530,7 +2530,7 @@ historique_pizzwanze <- function(db_produits, soirees = NULL) {
 pizzas_par_heure <- function(db_ticket, date_soiree) {
   date_soiree <- as.Date(date_soiree)
   db_ticket %>%
-    filter(est_pizza(PRODUCT_FULL), DATE == date_soiree, QUANTITE > 0) %>%
+    filter(est_pizza(PRODUIT_FULL), DATE == date_soiree, QUANTITE > 0) %>%
     mutate(HEURE = heure_service(TIMESTAMP)) %>%
     group_by(HEURE) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE), .groups = "drop") %>%
@@ -3002,11 +3002,11 @@ table_ventes <- function(DB_JOURS,DB_OBJECTIFS,date_debut,date_fin){
 table_produits_mois <- function(db,debut_mois){
   DB <- DB_DATE %>% left_join(db) %>%
     filter(PREMIER_JOUR_MOIS == debut_mois) %>%
-    group_by(PRODUCT) %>%
+    group_by(PRODUIT) %>%
     summarise(CA = sum(CA_HTVA),.groups = "drop") %>% arrange(-CA) %>%
     mutate(CA = format_CA(CA,-1)) %>%
-    mutate(PRODUCT = ifelse(nchar(PRODUCT) > 40,
-                            paste0(substr(PRODUCT,1,40),"..."),PRODUCT)) %>%
+    mutate(PRODUIT = ifelse(nchar(PRODUIT) > 40,
+                            paste0(substr(PRODUIT,1,40),"..."),PRODUIT)) %>%
     rename(`CA HTVA` = CA)
 
   DB
@@ -3287,7 +3287,7 @@ table_evo_brassins <- function(max_date=today(),
 
   if (FL_ONLY_FINI){
     vec_brassins_en_cours <- DB_BIERES %>%
-      filter(!FL_FINI & DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
+      filter(!BIERE_FINIE & DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
   }else{
     vec_brassins_en_cours <- DB_BIERES %>%
       filter(DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
@@ -5332,7 +5332,7 @@ graph_cluster_bieres <- function(){
     filter(VOLUME_BRASSIN > 0 & NB_JOURS_VENTES > 0) %>%
     group_by(ID_BRASSIN) %>%
     arrange(DATE) %>% filter(row_number() == n()) %>% ungroup() %>%
-    group_by(FL_FINI,BOISSON,PRICE_33CL) %>%
+    group_by(BIERE_FINIE,BOISSON,PRICE_33CL) %>%
     summarise(CA_HTVA_TOT = sum(CA_HTVA_TOT),
               NB_JOURS_VENTES = sum(NB_JOURS_VENTES),
               VOLUME_TOT = sum(VOLUME_TOT),
@@ -5342,10 +5342,10 @@ graph_cluster_bieres <- function(){
            VOLUME_JOUR = VOLUME_TOT / NB_JOURS_VENTES,
            PCT = VOLUME_TOT/VOLUME_BRASSIN) %>%
     filter(PCT < 1.5) %>%
-    select(BOISSON,VOLUME_JOUR,CA_HTVA_JOUR,PRICE_33CL,PCT,FL_FINI)
+    select(BOISSON,VOLUME_JOUR,CA_HTVA_JOUR,PRICE_33CL,PCT,BIERE_FINIE)
 
-  donnees_fini <- donnees %>% filter(FL_FINI)
-  donnees_actu <- donnees %>% filter(!FL_FINI)
+  donnees_fini <- donnees %>% filter(BIERE_FINIE)
+  donnees_actu <- donnees %>% filter(!BIERE_FINIE)
 
   donnees_normalisees <- scale(donnees_fini %>% select_if(is.numeric))
 

@@ -56,6 +56,9 @@ calculer_objectifs_journaliers <- function(annee, mois, ca_htva, ca_tvac) {
     SEMAINE_DU_MOIS = semaine_du_mois,
     JOUR_SEMAINE = lubridate::wday(jours_dans_mois,week_start = 1)
   )
+  
+  INFO_OBJECTIFS <- tibble(JOUR_SEMAINE = 1:7,
+                           OBJECTIF_PCT = c(0,0.065,0.1,0.125,0.21,0.29,0.21))
 
   # Joindre avec les objectifs journaliers en %
   jours_data <- left_join(jours_data, INFO_OBJECTIFS, by = c("JOUR_SEMAINE" = "JOUR_SEMAINE")) %>%
