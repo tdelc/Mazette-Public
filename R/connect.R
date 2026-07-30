@@ -1,3 +1,27 @@
+# Contrat entre l'import et le dashboard : les seules tables que le tableau de
+# bord consomme, et donc les seules que l'on sauvegarde.
+#
+# Tout le reste (IMPORT_*, DB_sheets, NOMEN_*, les vecteurs de travail, les
+# fonctions) n'existe que le temps de la reconstruction. `save(list = ls(envir))`
+# les embarquait tous : 71 objets pour 8,6 Mo, dont 3,9 Mo rien qu'en fonctions
+# — une closure emporte son environnement de définition, donc chaque fonction
+# définie dans sql.R / import_sql.R sérialisait une copie complète des données.
+#
+# Ajouter une table ici est délibéré. Si le dashboard réclame un objet absent de
+# cette liste, il faut l'y inscrire plutôt que d'élargir le filet.
+TABLES_DASHBOARD <- c(
+  "DB_JOURS",         # CA par jour, base des objectifs
+  "DB_KPI_SIMPLE",    # CA jour x (midi/soir, semaine/week-end, boisson/nourriture)
+  "DB_OBJECTIFS",     # objectifs journaliers calculés
+  "DB_PRODUITS",      # ventes par jour x produit (+ brassin rattaché)
+  "DB_TICKET",        # grain ticket, forme réduite (cf. R/donnees.R)
+  "REF_PRODUITS",     # ID_PRODUIT -> nom, catégorie, TVA, volume
+  "DB_BIERES",        # suivi des fûts : volumes cumulés par brassin
+  "DB_BRASSINS",      # référentiel des brassins
+  "DB_COUTS_TRAVAIL", # heures et coûts par jour x secteur x créneau
+  "IMPORT_PASS"       # mots de passe valides par période
+)
+
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
                                   envir = parent.frame()){
   if (!force_dl) {
@@ -18,6 +42,10 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
   if (force_dl | class(drive_mazette)[1] == "try-error") {
     drive_mazette <- try({
       cli::cli_h1("Chargement du rds à partir de drive")
+      link_json <- Sys.getenv("LINK_JSON")
+      download.file(link_json, destfile = "connect.json")
+      drive_auth(path = "connect.json")
+      
       drive_info <- drive_get(path = drive_env_name)
       drive_download(drive_info,
                      path = file.path("outputs", drive_info$name),
@@ -41,9 +69,16 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
     drive_env_name <- paste0(prefix, date_jour, ".RData")
     
     cli::cli_h2("Sauvegarder le rds en local")
-    save(list = ls(envir), envir = envir,
+    # On échoue tôt et clairement plutôt que de sauver un fichier incomplet.
+    absents <- setdiff(TABLES_DASHBOARD, ls(envir))
+    if (length(absents))
+      stop("L'import n'a pas produit ces tables attendues par le dashboard : ",
+           paste(absents, collapse = ", "))
+
+    save(list = TABLES_DASHBOARD, envir = envir,
          file = file.path("outputs", drive_env_name),
          compress = "xz", compression_level = 9)
+    cli::cli_alert_info("{length(TABLES_DASHBOARD)} tables, {round(file.size(file.path('outputs', drive_env_name))/1024^2, 2)} Mo")
     
     cli::cli_h2("Sauvegarder le rds sur drive")
     googledrive::drive_upload(file.path("outputs", drive_env_name),
@@ -51,5 +86,11 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
                               path = as_id(Sys.getenv("PATH_DRIVE")),
                               overwrite = TRUE)
   }
+  # Quel que soit le chemin suivi, DB_TICKET est ici sous sa forme réduite : on
+  # reconstruit la forme complète et TICKETS_HEURES. Idempotent, donc sans effet
+  # sur un .RData antérieur à la normalisation.
+  if (hydrate_dans(envir))
+    cli::cli_alert_success("DB_TICKET reconstruit ({nrow(get('DB_TICKET', envir = envir))} lignes)")
+
   invisible(drive_env_name)
 }

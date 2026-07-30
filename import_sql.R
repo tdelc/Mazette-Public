@@ -8,22 +8,21 @@ source("R/sql.R")
 
 #### Import de toutes les DB de sqlite
 
-d1_select_format <- function(sql){
+sql_select_format <- function(sql){
   db <- sql_select(sql)
   colnames(db) <- toupper(colnames(db))
   if ("DATE" %in% colnames(db)) db$DATE <- ymd(db$DATE)
   return(db)
 }
 
-DB_JOURS       <- d1_select_format("SELECT * FROM jours")
-NOMEN_PRODUITS <- d1_select_format("SELECT * FROM nomen_produits")
-NOMEN_BIERES   <- d1_select_format("SELECT * FROM nomen_bieres")
-BRASSINS       <- d1_select_format("SELECT * FROM brassins")
-# CAISSE         <- d1_select_format("SELECT * FROM caisse")
-PRODUITS       <- d1_select_format("SELECT * FROM produits")
-OBJECTIFS      <- d1_select_format("SELECT * FROM objectifs")
-IM_TICKET      <- d1_select_format("SELECT * FROM tickets")
-IMPORT_PASS    <- d1_select_format("SELECT * FROM password")
+DB_JOURS       <- sql_select_format("SELECT * FROM jours")
+NOMEN_PRODUITS <- sql_select_format("SELECT * FROM nomen_produits")
+NOMEN_BIERES   <- sql_select_format("SELECT * FROM nomen_bieres")
+BRASSINS       <- sql_select_format("SELECT * FROM brassins")
+PRODUITS       <- sql_select_format("SELECT * FROM produits")
+OBJECTIFS      <- sql_select_format("SELECT * FROM objectifs")
+IM_TICKET      <- sql_select_format("SELECT * FROM tickets")
+IMPORT_PASS    <- sql_select_format("SELECT * FROM password")
 
 OBJECTIFS$DATE_DEBUT      <- ymd(OBJECTIFS$DATE_DEBUT)
 OBJECTIFS$DATE_FIN        <- ymd(OBJECTIFS$DATE_FIN)
@@ -50,27 +49,19 @@ DB_DATE <- creer_db_date()
 
 # D'abord, pour chaque produit et chaque date d'ouverture de Mazette, le CA et le nombre vendu
 
-DB_TICKET <- IM_TICKET |> 
-  left_join(NOMEN_PRODUITS) |> 
-  mutate(
-    CD_HEURE = ifelse(hour(TIMESTAMP) < 17,"Midi (<17h)","Soir (>=17h)"),
-    CD_SECTEUR = ifelse(TAUX_TVA == 0.12,"Nourriture","Boisson"),
-    CD_PERIODE_JOUR = if_else(hour(TIMESTAMP) %in% c(8:16),"Jour","Soir"),
-    CD_PERIODE_SEMAINE = if_else(
-      wday(TIMESTAMP,week_start = 1) %in% c(6,7)
-      | (wday(TIMESTAMP,week_start = 1) == 5 &
-           CD_PERIODE_JOUR == "Soir"),"Week-end","Semaine"
-    ),
-    VOLUME_TOT_L = QUANTITE*VOLUME_CL/100
-  )
+# On construit la forme réduite (celle qui sera stockée), puis on l'hydrate.
+# Passer par hydrate_donnees() garantit que la reconstruction complète est
+# définie à un seul endroit — cf. R/donnees.R — donc identique après un import
+# et après un simple chargement du .RData.
+normalise <- normalise_tickets(IM_TICKET |> left_join(NOMEN_PRODUITS))
+DB_TICKET    <- normalise$DB_TICKET
+REF_PRODUITS <- normalise$REF_PRODUITS
+rm(normalise)
 
-TICKETS_HEURES <- DB_TICKET %>%
-  filter(PRIX_TOTAL > 0) %>%
-  group_by(DATE,CD_HEURE,CD_SECTEUR,
-           CD_PERIODE_JOUR,CD_PERIODE_SEMAINE,
-           PRODUIT_FULL,PRODUIT,CATEGORIE,TAUX_TVA) %>%
-  summarise(CA_TVAC = sum(PRIX_TOTAL),QUANTITE = sum(QUANTITE),.groups = "drop") |> 
-  mutate(CA_HTVA = CA_TVAC / (1+TAUX_TVA))
+# DB_TICKET reste sous sa forme réduite — c'est elle qu'on sauvegarde. Seul
+# TICKETS_HEURES est nécessaire à la suite de ce fichier ; le DB_TICKET complet
+# sera reconstruit au chargement par hydrate_dans().
+TICKETS_HEURES <- hydrate_donnees(DB_TICKET, REF_PRODUITS)$TICKETS_HEURES
 
 # Synthèse par catégorie
 DB_CATEGORIES_JOURS <- TICKETS_HEURES %>%

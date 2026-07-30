@@ -207,7 +207,7 @@ cli::cli_h3("Import de la DB CAISSE")
 
 caisse <- IMPORT_CAISSE %>%
   transmute(
-    date     = format(DATE, "%Y-%m-%d"),
+    DATE     = format(DATE, "%Y-%m-%d"),
     method   = METHOD,
     detail   = replace_na(DETAIL, ""),
     category = CATEGORY,
@@ -215,24 +215,30 @@ caisse <- IMPORT_CAISSE %>%
     montant  = MONTANT, tips = TIPS, total = TOTAL
   )
 
-paquets <- df_to_paquets(caisse)
+# Pour éviter de charger tous les tickets
+caisse_date_actu <- pull(sql_select("SELECT DISTINCT date FROM caisse"))
+caisse <- caisse |> filter(!DATE %in% caisse_date_actu)
 
-vec_sql <- vapply(paquets, function(p) paste0(
-  "INSERT OR REPLACE INTO caisse ",
-  "(date, method, detail, category, n, montant, tips, total) VALUES\n",
-  paste(p, collapse = ",\n"), ";"), character(1))
-
-map(vec_sql, sql_req)
+if (nrow(caisse) > 0){
+  paquets <- df_to_paquets(caisse)
+  vec_sql <- vapply(paquets, function(p) paste0(
+    "INSERT OR REPLACE INTO caisse ",
+    "(date, method, detail, category, n, montant, tips, total) VALUES\n",
+    paste(p, collapse = ",\n"), ";"), character(1))
+  
+  map(vec_sql, sql_req)
+}else{
+  cli::cli_alert_success("caisse déjà à jour")
+}
 
 ##### IMPORT DB JOURS ####
 
 cli::cli_h3("Import de la DB JOURS")
 
-
 jours <- IMPORT_DB_JOURS  |>
   filter(!is.na(DATEVALUE)) |> 
   transmute(
-    date     = format(DATEVALUE, "%Y-%m-%d"),
+    DATE     = format(DATEVALUE, "%Y-%m-%d"),
     cartes   = CARTES,
     cash     = CASH,
     giftcard = GIFTCARD,
@@ -241,14 +247,22 @@ jours <- IMPORT_DB_JOURS  |>
     ca_tvac  = `CA TVAC`
   )
 
-paquets <- df_to_paquets(jours)
+# Pour éviter de charger tous les tickets
+jours_date_actu <- pull(sql_select("SELECT DISTINCT date FROM jours"))
+jours <- jours |> filter(!DATE %in% jours_date_actu)
 
-vec_sql <- vapply(paquets, function(p) paste0(
-  "INSERT OR REPLACE INTO jours ",
-  "(date, cartes, cash, giftcard, virement, ca_htva, ca_tvac) VALUES\n",
-  paste(p, collapse = ",\n"), ";"), character(1))
-
-r <- map(vec_sql, sql_req)
+if (nrow(jours) > 0){
+  paquets <- df_to_paquets(jours)
+  
+  vec_sql <- vapply(paquets, function(p) paste0(
+    "INSERT OR REPLACE INTO jours ",
+    "(date, cartes, cash, giftcard, virement, ca_htva, ca_tvac) VALUES\n",
+    paste(p, collapse = ",\n"), ";"), character(1))
+  
+  r <- map(vec_sql, sql_req)
+}else{
+  cli::cli_alert_success("jours déjà à jour")
+}
 
 ##### IMPORT IMPORT BRASSINS ####
 
@@ -331,16 +345,23 @@ produits <- IMPORT_LIGHTSPEED  |>
 # Check qualité
 stopifnot(unique(produits$TVA_RATE) %in% c(0,0.06,0.12,0.21))
 
-paquets <- df_to_paquets(produits)
+# Pour éviter de charger tous les tickets
+produits_date_actu <- pull(sql_select("SELECT DISTINCT date FROM produits"))
+new_produits <- produits |> filter(!DATE %in% produits_date_actu)
 
-vec_sql <- vapply(paquets, function(p) paste0(
-  "INSERT OR REPLACE INTO produits ",
-  "(date, categorie, produit_full, produit, boisson, volume_cl, prix, 
+if (nrow(new_produits) > 0){
+  paquets <- df_to_paquets(new_produits)
+  
+  vec_sql <- vapply(paquets, function(p) paste0(
+    "INSERT OR REPLACE INTO produits ",
+    "(date, categorie, produit_full, produit, boisson, volume_cl, prix, 
   quantite, ca_tvac, ca_htva, tva_rate) VALUES\n",
-  paste(p, collapse = ",\n"), ";"), character(1))
-
-r <- map(vec_sql, sql_req)
-
+    paste(p, collapse = ",\n"), ";"), character(1))
+  
+  r <- map(vec_sql, sql_req)  
+}else{
+  cli::cli_alert_success("produits déjà à jour")
+}
 
 ##### IMPORT IMPORT TICKET ####
 
@@ -370,18 +391,25 @@ tickets <- IMPORT_TICKET %>%
     WEEK_END
   )
 
-# Attention, ici, pour économiser, on retire le nom du produit
+# Pour éviter de charger tous les tickets
+tickets_date_actu <- pull(sql_select("SELECT DISTINCT date FROM tickets"))
+new_tickets <- tickets |> filter(!DATE %in% tickets_date_actu)
 
-paquets <- df_to_paquets(tickets |> select(-PRODUCT))
-
-vec_sql <- vapply(paquets, function(p) paste0(
-  "INSERT OR REPLACE INTO tickets ",
-  "(date, timestamp, id_ticket, id_produit, 
-  nb_clients, prix_unite, quantite, prix_total, midi,
-  week_end) VALUES\n",
-  paste(p, collapse = ",\n"), ";"), character(1))
-
-r <- map(vec_sql, sql_req)
+if (nrow(new_tickets) > 0){
+  # Attention, ici, pour économiser, on retire le nom du produit
+  paquets <- df_to_paquets(new_tickets |> select(-PRODUCT))
+  
+  vec_sql <- vapply(paquets, function(p) paste0(
+    "INSERT OR REPLACE INTO tickets ",
+    "(date, timestamp, id_ticket, id_produit, 
+    nb_clients, prix_unite, quantite, prix_total, midi,
+    week_end) VALUES\n",
+    paste(p, collapse = ",\n"), ";"), character(1))
+  
+  r <- map(vec_sql, sql_req)
+}else{
+  cli::cli_alert_success("tickets déjà à jour")
+}
 
 ##### Nomenclature Produits ######
 

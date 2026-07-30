@@ -124,16 +124,16 @@ ui_app <- function() {
       icon = icon("sliders"),
       ui_simulation()
     ),
-    nav_panel(
-      title = "Compta",
-      icon = icon("calculator"),
-      ui_compta()
-    ),
-    nav_panel(
-      title = "Travail",
-      icon = icon("person-running"),
-      ui_travail()
-    ),
+    # nav_panel(
+    #   title = "Compta",
+    #   icon = icon("calculator"),
+    #   ui_compta()
+    # ),
+    # nav_panel(
+    #   title = "Travail",
+    #   icon = icon("person-running"),
+    #   ui_travail()
+    # ),
     nav_panel(
       title = "Comparaison",
       icon = icon("code-compare"),
