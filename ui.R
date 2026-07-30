@@ -43,7 +43,10 @@ ui_login <- function() {
     class = "login-wrap",
     card(
       class = "login-card",
-      card_header(span(class = "brand-title", "MAZETTE")),
+      card_header(span(class = "brand-title", 
+                       img(src = "mazette.png", height = 30, width = 30),
+                       
+                       "MAZETTE")),
       card_body(
         p("Tableau de bord", class = "text-muted mb-3"),
         div(textOutput("text_log"), style = "color:#c0392b; min-height: 1.2em;"),
@@ -76,7 +79,9 @@ legende_objectif <- function() {
 
 ui_app <- function() {
   navset_bar(
-    title = span(class = "brand-title", "MAZETTE"),
+    title = span(class = "brand-title", 
+                 img(src = "mazette.png", height = 30, width = 30),
+                 "MAZETTE"),
     id = "nav",
     fillable = FALSE,
     nav_panel(
