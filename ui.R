@@ -412,6 +412,7 @@ ui_annee <- function() {
       full_screen = TRUE,
       card_header("Marge cumulée"),
       plotlyOutput("annee_marge", height = "340px"),
+      uiOutput("annee_simu"),
       div(class = "small text-muted",
           "Marge quotidienne = CA − personnel du jour − matières de la semaine ",
           "réparties sur 7 jours.",tags$br(),
@@ -422,6 +423,7 @@ ui_annee <- function() {
       full_screen = TRUE,
       card_header("Écart cumulé de marge vs N-1"),
       plotlyOutput("annee_ecart_marge", height = "340px"),
+      uiOutput("annee_simu2"),
       div(class = "small text-muted",
           "L'écart est disponible que pour les dates où les deux marges sont ",
           "disponibles.")

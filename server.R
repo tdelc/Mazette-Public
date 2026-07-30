@@ -885,6 +885,15 @@ server <- function(input, output, session) {
     graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
+  
+  # Détection de données simulées
+  output$annee_simu <- renderUI({
+    bandeau_alerte(TRUE, "Marges fictives basées sur données simulées (coût du travail et matières)")
+  })
+  
+  output$annee_simu2 <- renderUI({
+    bandeau_alerte(TRUE, "Marges fictives basées sur données simulées (coût du travail et matières)")
+  })
 
   #### Volet "Travail" ####
 
