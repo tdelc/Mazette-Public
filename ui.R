@@ -892,9 +892,9 @@ ui_maintenant <- function() {
     layout_columns(
       fill = FALSE,
       col_widths = c(4, 4, 4),
-      value_box("CA de la veille", textOutput("vb_ca_veille"),
+      value_box("CA HTVA de la veille", textOutput("vb_ca_veille"),
                 showcase = icon("calendar-day"), theme = "primary"),
-      value_box("CA de la semaine", textOutput("vb_ca_semaine"),
+      value_box("CA HTVA de la semaine", textOutput("vb_ca_semaine"),
                 showcase = icon("calendar-week"),
                 theme = value_box_theme(bg = MZ_AMBRE, fg = "#ffffff")),
       value_box("Objectif de la semaine", textOutput("vb_pct_semaine"),
