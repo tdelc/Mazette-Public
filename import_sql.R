@@ -4,12 +4,12 @@ library(tidyverse)
 
 #### Fonctions
 
-source("fonctions_import_sql.R")
+source("R/sql.R")
 
 #### Import de toutes les DB de sqlite
 
 d1_select_format <- function(sql){
-  db <- d1_select(sql)
+  db <- sql_select(sql)
   colnames(db) <- toupper(colnames(db))
   if ("DATE" %in% colnames(db)) db$DATE <- ymd(db$DATE)
   return(db)
@@ -19,10 +19,11 @@ DB_JOURS       <- d1_select_format("SELECT * FROM jours")
 NOMEN_PRODUITS <- d1_select_format("SELECT * FROM nomen_produits")
 NOMEN_BIERES   <- d1_select_format("SELECT * FROM nomen_bieres")
 BRASSINS       <- d1_select_format("SELECT * FROM brassins")
-CAISSE         <- d1_select_format("SELECT * FROM caisse")
+# CAISSE         <- d1_select_format("SELECT * FROM caisse")
 PRODUITS       <- d1_select_format("SELECT * FROM produits")
 OBJECTIFS      <- d1_select_format("SELECT * FROM objectifs")
 IM_TICKET      <- d1_select_format("SELECT * FROM tickets")
+IMPORT_PASS    <- d1_select_format("SELECT * FROM password")
 
 OBJECTIFS$DATE_DEBUT      <- ymd(OBJECTIFS$DATE_DEBUT)
 OBJECTIFS$DATE_FIN        <- ymd(OBJECTIFS$DATE_FIN)
@@ -43,20 +44,7 @@ vecteur_jours_LOCAL  <- weekdays(jours_semaine)
 
 # Faire une DB date pour avoir toutes les dates, de 2023 à today()
 
-DB_DATE <- tibble(
-  DATE = list(seq.Date(min(DB_JOURS$DATE), 
-                       ceiling_date(today(), "year")-1,by= "1 day"))) |> 
-  unnest(cols = c(DATE)) |> 
-  mutate(
-    JOUR_SEMAINE = lubridate::wday(DATE,week_start = 1),
-    JOUR_SEMAINE = factor(vecteur_jours[JOUR_SEMAINE],
-                          levels = vecteur_jours),
-    ANNEE_MOIS = paste0(year(DATE),"-",month(DATE)),
-    ANNEE_SEMAINE = paste0(year(DATE),"-",isoweek(DATE)),
-    ANNEE_TRIM = paste0(year(DATE),"-",quarters(DATE)),
-    PREMIER_JOUR_SEMAINE = DATE-lubridate::wday(DATE,week_start = 1)+1,
-    PREMIER_JOUR_MOIS = DATE-mday(DATE)+1
-  )
+DB_DATE <- creer_db_date()
 
 #### DB_PRODUITS_JOURS ####
 
@@ -72,7 +60,8 @@ DB_TICKET <- IM_TICKET |>
       wday(TIMESTAMP,week_start = 1) %in% c(6,7)
       | (wday(TIMESTAMP,week_start = 1) == 5 &
            CD_PERIODE_JOUR == "Soir"),"Week-end","Semaine"
-    )
+    ),
+    VOLUME_TOT_L = QUANTITE*VOLUME_CL/100
   )
 
 TICKETS_HEURES <- DB_TICKET %>%
@@ -196,11 +185,12 @@ DB_BIERES <- DB_PRODUITS %>%
   filter(CATEGORIE ==  "BIÈRES" & !is.na(ID_BRASSIN)) %>%
   left_join(PRIX_BIERES) %>%
   right_join(DB_DATE) %>%
+  mutate(VOLUME_TOT_L = QUANTITE*VOLUME_CL/100) |> 
   group_by(CATEGORIE,BOISSON,ID_BRASSIN,BIERE_FINIE,DATE,
            VOLUME_BRASSIN,VOLUME_BRASSIN_AJUST,PRIX_33CL) %>%
   summarise(CA_HTVA = sum(CA_HTVA),
             CA_TVAC = sum(CA_TVAC),
-            VOLUME_JOUR = sum(QUANTITE*VOLUME_CL/100),.groups = "drop") %>%
+            VOLUME_JOUR = sum(VOLUME_TOT_L),.groups = "drop") %>%
   arrange(ID_BRASSIN,BOISSON,DATE) %>%
   group_by(BOISSON,ID_BRASSIN) %>%
   mutate(VOLUME_TOT = cumsum(VOLUME_JOUR),
@@ -296,7 +286,7 @@ prepa_heures <- function(id_drive){
   return(DB_HEURES)
 }
 
-DB_COUTS_TRAVAIL <- prepa_heures(id_sheet_heures) |> 
+DB_COUTS_TRAVAIL <- prepa_heures(Sys.getenv("ID_DRIVE_HEURES")) |> 
   mutate(
     SECTEUR = case_when(
       DEPARTEMENT == "Transfo alimentaire" ~ "Transformation alimentaire",
@@ -320,7 +310,8 @@ DB_COUTS_TRAVAIL <- prepa_heures(id_sheet_heures) |>
     .groups = "drop"
   )
 
-rm(IMPORT_BRASSINS, IMPORT_CAISSE,
-   IMPORT_LIGHTSPEED, IMPORT_OBJECTIFS, IMPORT_TICKET, DB_TICKET_PRODUITS)
-
-
+# TICKETS_HEURES est conservé : c'est la seule table au grain
+# DATE x CD_HEURE x PRODUIT, dont l'onglet Travail a besoin pour distinguer
+# les créneaux midi / soir (la table SQL `produits` est agrégée à la journée).
+rm(DB_DATE, vec_brassin_bug, PRIX_BIERES, DB_BRASSINS_EXP, BRASSINS,
+   PRODUITS, DB_KPI, IM_TICKET, OBJECTIFS)

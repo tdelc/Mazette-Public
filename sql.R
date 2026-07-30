@@ -3,124 +3,6 @@ library(googlesheets4)
 library(readxl)
 library(tidyverse)
 
-#### Fonctions pour traitement complexe en R ####
-
-transmute_objectifs <- function(import){
-  for (i_col in 1:ncol(import)){
-    if (all(is.na(import[,i_col]))){
-      db <- import[,1:(i_col-1)]
-      break
-    }
-  }
-  for (i_row in 1:nrow(db)){
-    if (all(is.na(db[i_row,]))){
-      db <- db[1:(i_row-1),]
-      break
-    }
-  }
-  
-  debut_mois <- floor_date(ymd(as.Date(as.numeric(colnames(db)[3:14]), origin=as.Date("1900-01-01"))),"month")
-  fin_mois <- ceiling_date(debut_mois, "month")-1
-  
-  db <- tibble(data.frame(t(db))) %>%
-    filter(row_number() != 1)
-  
-  colnames(db) <- db[1,]
-  db <- db[-1,]
-  
-  db <- db %>%
-    rename(
-      CA_HTVA = `Chiffres d'affaires`,
-      CA_HTVA_NOURRITURE_6 = `Ventes nourriture à emporter 6%`,
-      CA_HTVA_NOURRITURE_12 = `Ventes nourriture sur place 12%`,
-      CA_HTVA_BOISSON_21 = `Ventes boissons sur place 21%`
-      # CA_HTVA_BOISSON_EXPORT_21 = `Ventes boissons à emporter 21%`,
-      # CA_HTVA_TRAITEUR_EXPORT = `Ventes traiteur à emporter`,
-      # CA_HTVA_TRAITEUR = `Ventes traiteur sur place`,
-      # CA_HTVA_ATELIER = `Ateliers`
-    ) %>%
-    select(starts_with("CA_HTVA")) %>%
-    mutate_all(as.numeric)
-  
-  db[is.na(db)] <- 0
-  
-  db$DATE_DEBUT <- debut_mois
-  db$DATE_FIN <- fin_mois
-  
-  db <- db %>%
-    # mutate(CA_TVAC = 1.21 * (CA_HTVA_BOISSON_21 + CA_HTVA_BOISSON_EXPORT_21) +
-    mutate(CA_TVAC = 1.21 * (CA_HTVA_BOISSON_21) +
-             1.12 * (CA_HTVA_NOURRITURE_12) +
-             1.06 * CA_HTVA_NOURRITURE_6,
-           MOIS = month(DATE_DEBUT),
-           ANNEE = year(DATE_DEBUT))
-  db
-}
-
-from_product_to_boisson <- function(DB){
-  DB %>%
-    mutate(PRODUCT_VIDE = str_remove(PRODUCT," *[0-9]+ *[cC][lL]"),
-           PRODUCT_VIDE = str_remove(PRODUCT_VIDE," verre"),
-           PRODUCT_VIDE = str_remove(PRODUCT_VIDE," 1L"),
-           VOLUME_CL = case_when(
-             PRODUCT %in% c("Pépin blanc verre",
-                            "Pépin rouge verre",
-                            "Hurluberlu rouge verre") ~ 12.5,
-             PRODUCT %in% c("Cidre Rhuys","Kefir") ~ 25,
-             PRODUCT %in% c("Rhum Brussels") ~ 3,
-             str_detect(PRODUCT,"1L") ~ 100,
-             TRUE ~ as.numeric(str_extract(PRODUCT," *([0-9]+) *[cC]*[lL]",group= 1))
-           ),
-           BOISSON = case_when(
-             is.na(VOLUME_CL) ~ "",
-             TRUE ~ PRODUCT_VIDE
-           )
-    ) %>%
-    rename(PRODUCT_FULL = PRODUCT,
-           PRODUCT = PRODUCT_VIDE)
-}
-
-#### Fonctions pour sql ####
-
-sql_val <- function(x) {
-  if (is.character(x)) ifelse(is.na(x), "NULL",
-                              paste0("'", gsub("'", "''", x), "'"))
-  else ifelse(is.na(x), "NULL", as.character(x))
-}
-
-sql_req <- function(sql, 
-                    account_id = Sys.getenv("CF_ACCOUNT_ID"),
-                    db_id = Sys.getenv("CF_D1_ID"),
-                    api_token = Sys.getenv("CF_API_TOKEN")) {
-  r <- httr::POST(
-    sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query",
-            account_id, db_id),
-    httr::add_headers(Authorization = paste("Bearer", api_token)),
-    body = list(sql = sql), encode = "json")
-  
-  res <- httr::content(r)
-  if (!isTRUE(res$success))
-    stop("D1 a refusé la requête : ",
-         paste(vapply(res$errors, `[[`, "", "message"), collapse = " | "))
-  invisible(res)
-}
-
-df_to_paquets <- function(db, taille = 200){
-  lignes <- paste0("(", db %>% 
-                     mutate(across(everything(), sql_val)) %>%
-                     apply(1, paste, collapse = ", "), ")")
-  
-  # On insère par paquets : un INSERT géant dépasserait les limites de D1.
-  split(lignes, ceiling(seq_along(lignes) / 200))
-}
-
-correct_date <- function(x){
-  if (class(x)[1] == "character") 
-    janitor::excel_numeric_to_date(as.numeric(x))
-  else
-    x
-}
-
 #### Création des DB SQlite #### 
 
 ##### JOURS #####
@@ -144,8 +26,8 @@ sql_req("
 CREATE TABLE IF NOT EXISTS produits (
   date         TEXT    NOT NULL,
   categorie    TEXT    NOT NULL DEFAULT '',
+  produit_full TEXT    NOT NULL DEFAULT '',
   produit      TEXT    NOT NULL DEFAULT '',
-  produit_full TEXT    DEFAULT '',
   boisson      TEXT    DEFAULT '',
   volume_cl    INTEGER DEFAULT 0,
   prix      REAL    NOT NULL DEFAULT 0,
@@ -153,7 +35,7 @@ CREATE TABLE IF NOT EXISTS produits (
   ca_tvac   REAL    NOT NULL DEFAULT 0,
   ca_htva   REAL    NOT NULL DEFAULT 0,
   tva_rate  REAL    NOT NULL DEFAULT 0,
-  PRIMARY KEY (date,categorie,produit)
+  PRIMARY KEY (date,categorie,produit_full)
 );
 
 CREATE INDEX IF NOT EXISTS idx_produits ON produits(date);")
@@ -244,6 +126,15 @@ CREATE TABLE IF NOT EXISTS objectifs (
 
 CREATE INDEX IF NOT EXISTS idx_objectifs ON objectifs(annee);")
 
+##### MOT_DE_PASSE #####
+
+sql_req("
+CREATE TABLE IF NOT EXISTS password (
+  date_debut   TEXT    NOT NULL DEFAULT '',
+  date_fin     TEXT    NOT NULL DEFAULT '',
+  pass         TEXT    NOT NULL DEFAULT ''
+);")
+
 
 ##### NOMEN_BIERES #####
 
@@ -277,7 +168,8 @@ vec_sheets <- c("DB JOURS","IMPORT BRASSINS",
                 "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
                 "IMPORT OBJECTIFS 2026","IMPORT PASS")
 
-read_mazette <- function(sheet_name) read_excel(path_mazette,sheet = sheet_name)
+read_mazette <- function(sheet_name) suppressWarnings(
+  read_excel(path_mazette, sheet = sheet_name, .name_repair = "unique_quiet"))
 
 DB_sheets <- sapply(vec_sheets, read_mazette)
 
@@ -293,25 +185,27 @@ IMPORT_PASS          <- DB_sheets$`IMPORT PASS`
 
 # Old Mazette 
 
-drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2023")),overwrite = TRUE)
-load("IMPORT 2023-2024.RData")
-
-IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
-
-drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2025")),overwrite = TRUE)
-load("IMPORT 2025.RData")
-
-IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
+# drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2023")),overwrite = TRUE)
+# load("IMPORT 2023-2024.RData")
+# 
+# IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
+# IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
+# IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
+# IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
+# 
+# drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2025")),overwrite = TRUE)
+# load("IMPORT 2025.RData")
+# 
+# IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
+# IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
+# IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
+# IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
 
 #### Traitement et transfert des DB ####
 
 ##### IMPORT CAISSE ####
+
+cli::cli_h3("Import de la DB CAISSE")
 
 caisse <- IMPORT_CAISSE %>%
   transmute(
@@ -333,6 +227,9 @@ vec_sql <- vapply(paquets, function(p) paste0(
 map(vec_sql, sql_req)
 
 ##### IMPORT DB JOURS ####
+
+cli::cli_h3("Import de la DB JOURS")
+
 
 jours <- IMPORT_DB_JOURS  |>
   filter(!is.na(DATEVALUE)) |> 
@@ -356,6 +253,8 @@ vec_sql <- vapply(paquets, function(p) paste0(
 r <- map(vec_sql, sql_req)
 
 ##### IMPORT IMPORT BRASSINS ####
+
+cli::cli_h3("Import de la DB BRASSINS")
 
 brassins <- IMPORT_BRASSINS  |>
   filter(!is.na(`Numéro de brassin`) & !is.na(`Nom commercial`)) %>%
@@ -404,6 +303,8 @@ r <- map(vec_sql, sql_req)
 
 ##### IMPORT PRODUITS ####
 
+cli::cli_h3("Import de la DB PRODUITS")
+
 produits <- IMPORT_LIGHTSPEED  |>
   filter(!is.na(PRODUCT)) |> 
   transmute(
@@ -426,7 +327,7 @@ produits <- IMPORT_LIGHTSPEED  |>
       TRUE ~ QUANTITE)
   ) %>%
   from_product_to_boisson() |> 
-  select(DATE,CATEGORY,PRODUCT,PRODUCT_FULL,BOISSON,VOLUME_CL,
+  select(DATE,CATEGORY,PRODUCT_FULL,PRODUCT,BOISSON,VOLUME_CL,
          PRICE,QUANTITE,CA_TVAC,CA_HTVA,TVA_RATE)
 
 # Check qualité
@@ -436,7 +337,7 @@ paquets <- df_to_paquets(produits)
 
 vec_sql <- vapply(paquets, function(p) paste0(
   "INSERT OR REPLACE INTO produits ",
-  "(date, categorie, produit, produit_full, boisson, volume_cl, prix, 
+  "(date, categorie, produit_full, produit, boisson, volume_cl, prix, 
   quantite, ca_tvac, ca_htva, tva_rate) VALUES\n",
   paste(p, collapse = ",\n"), ";"), character(1))
 
@@ -444,6 +345,8 @@ r <- map(vec_sql, sql_req)
 
 
 ##### IMPORT IMPORT TICKET ####
+
+cli::cli_h3("Import de la DB TICKETS")
 
 tickets <- IMPORT_TICKET %>%
   mutate(
@@ -482,7 +385,9 @@ vec_sql <- vapply(paquets, function(p) paste0(
 
 r <- map(vec_sql, sql_req)
 
-##### Nomenclature ######
+##### Nomenclature Produits ######
+
+cli::cli_h3("Import de la DB NOMENCLATURE PRODUITS")
 
 # Correction faite ici : les product sont identifié par leur ID, et le PRODUCT
 # n'est qu'un nom sur le ticket. Ne stockons que l'ID, et créons une DB correspondance
@@ -535,6 +440,8 @@ r <- map(vec_sql, sql_req)
 
 ##### IMPORT IMPORT OBJECTIFS ####
 
+cli::cli_h3("Import de la DB OBJECTIFS")
+
 objectifs <- transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS`) |> 
   add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2025`)) %>%
   add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2026`)) |> 
@@ -555,6 +462,8 @@ r <- map(vec_sql, sql_req)
 
 ##### IMPORT IMPORT BIERES CORRESPONDANCE ####
 
+cli::cli_h3("Import de la DB NOMENCLATURE BIERE")
+
 nomen_bieres <- IMPORT_BIERES_CORRESPONDANCE %>%
   filter(!is.na(`Nom commercial`)) |> 
   transmute(
@@ -573,13 +482,29 @@ vec_sql <- vapply(paquets, function(p) paste0(
 r <- map(vec_sql, sql_req)
 
 
+##### IMPORT_PASS #####
+
+cli::cli_h3("Import de la DB PASSWORD")
+
+password <- IMPORT_PASS |> 
+  mutate(Date_debut = format(Date_debut, "%Y-%m-%d"),
+         Date_fin = format(Date_fin, "%Y-%m-%d"))
+
+paquets <- df_to_paquets(password)
+
+vec_sql <- vapply(paquets, function(p) paste0(
+  "INSERT OR REPLACE INTO password ",
+  "(date_debut, date_fin, pass) VALUES\n",
+  paste(p, collapse = ",\n"), ";"), character(1))
+
+r <- map(vec_sql, sql_req)
+
 #### Tables intermédiaires #####
 
 ##### DB_PRODUITS_JOURS
 
 view_sql <- "
-DROP VIEW IF EXISTS tickets_heures;
-CREATE VIEW tickets_heures AS
+CREATE VIEW IF NOT EXISTS tickets_heures AS
 SELECT 
     DATE,
     midi,
@@ -601,9 +526,11 @@ r <- sql_req(view_sql)
 ##### DB_BRASSINS
 
 view_sql <- "
-DROP VIEW IF EXISTS db_brassins;
-CREATE VIEW db_brassins AS SELECT * from import_brassins b
+CREATE VIEW IF NOT EXISTS db_brassins AS SELECT * from import_brassins b
 left join import_bieres_correspondance c on b.nom_brassin = c.nom_brassin;
 "
 
 r <- sql_req(view_sql)
+
+cli::cli_progress_done()
+

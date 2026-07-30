@@ -1,109 +1,12 @@
-library(shiny)
-library(bslib)
-library(shinyjs)
-library(shinyWidgets)
-library(tidyverse)
-library(lubridate)
-library(janitor)
-library(googledrive)
-library(googlesheets4)
-library(readxl)
-library(scales)
-library(plotly)
-library(forecast)
-library(DT)
-library(zoo)
-library(patchwork)
-
-link_json <- Sys.getenv("LINK_JSON")
-path_drive <- Sys.getenv("PATH_DRIVE")
-id_sheet_mazette <- Sys.getenv("ID_DRIVE_MAZETTE")
-id_sheet_heures <- Sys.getenv("ID_DRIVE_HEURES")
-ID_MAZETTE_2023 <- Sys.getenv("ID_MAZETTE_2023")
-ID_MAZETTE_2025 <- Sys.getenv("ID_MAZETTE_2025")
-path_logos <- Sys.getenv("PATH_LOGOS")
-
-download.file(link_json, destfile = "connect.json")
-drive_auth(path = "connect.json")
-gs4_auth(path = "connect.json")
-
-df_logos <- googledrive::drive_ls(path_logos)
-
 options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))
-
-# Configuration des dates
-date_debut_semaine <- floor_date(today() - 2, unit = "week") + 1
-date_debut_mois <- floor_date(today() - 2, unit = "month")
-nb_jours_mois <- as.numeric(ceiling_date(today() - 2, unit = "month")-date_debut_mois)
-date_debut_annee <- floor_date(today() - 2, unit = "year") + 1
-
-date_debut_semaine_m1 <- date_debut_semaine - 7
-date_debut_8_semaines <- floor_date(today() - 2, unit = "week") - weeks(8)
-date_fin_8_semaines <- today()
 
 #### Chargement initial des données ####
 
-force_dl <- FALSE
-
-prefix <- "R_sql_env_"
-date_jour <- format(now() - days(1), format = "%Y-%m-%d")
+prefix         <- "R_sql_env_"
+date_jour      <- format(now() - days(1), format = "%Y-%m-%d")
 drive_env_name <- paste0(prefix, date_jour, ".RData")
 
-if (!force_dl) {
-  # Chargement local
-  drive_mazette <- try({
-    print("Chargement de données locales")
-    env_vec <- list.files("outputs/", pattern = drive_env_name)
-    env_name <- sort(env_vec)[length(env_vec)]
-    load(paste0("outputs/", env_name))
-  }, silent = TRUE)
-} else {
-  drive_mazette <- try({ERROR}, silent = TRUE)
-}
-
-# force_dl <- TRUE
-
-# Chargement via environnement google
-if (force_dl | class(drive_mazette)[1] == "try-error") {
-  drive_mazette <- try({
-    print("Aucune données locales, chargement de l'environnement via google")
-    drive_info <- drive_get(path = drive_env_name)
-    drive_download(drive_info,
-                   path = file.path("outputs", drive_info$name),
-                   overwrite = TRUE)
-    load(paste0("outputs/", drive_env_name))
-  }, silent = TRUE)
-}
-
-# force_dl <- TRUE
-
-# Chargement via google sheets (reconstruction complète)
-if (force_dl | class(drive_mazette)[1] == "try-error") {
-  print("Aucune données encore, il faut les charger une par une.")
-  # print(system.time({source("fonctions.R", local = TRUE)}))
-  print(system.time({source("import_sql.R", local = TRUE)}))
-  # print(system.time({source("nettoyage_ajout.R", local = TRUE)}))
-
-  # Prendre la dernière date comme date de sauvegarde
-  date_jour <- max(DB_JOURS$DATE)
-  drive_env_name <- paste0(prefix, date_jour, ".RData")
-  
-  rm(force_dl)
-
-  save(list = ls(),
-       file = file.path("outputs", drive_env_name),
-       compress = "xz",
-       compression_level = 9)
-
-  googledrive::drive_upload(file.path("outputs", drive_env_name),
-                            name = drive_env_name,
-                            path = as_id(path_drive),
-                            overwrite = TRUE)
-}
-
-# Générateurs de DB fictives pour l'onglet Compta (+ tutoriel d'intégration)
-# source("functions.R", local = TRUE)
-source("donnees_fictives_compta.R", local = TRUE)
+connexion_ou_creation(drive_env_name, prefix, force_dl = FALSE)
 
 #### Serveur ####
 
@@ -117,7 +20,7 @@ server <- function(input, output, session) {
 
   # DB fictives compta (personnel + matières), calées sur le calendrier réel.
   # 4 secteurs : Service / Transformation alimentaire / Brasserie / Support.
-  DATES_COMPTA <- DB_DATE %>% filter(DATE <= today()) %>% pull(DATE)
+  DATES_COMPTA <- creer_db_date() %>% filter(DATE <= today()) %>% pull(DATE)
 
   # CA hebdomadaire réel des 12 derniers mois : sert à calibrer les volumes
   # fictifs pour que food/work/prime cost restent des ordres de grandeur
@@ -142,9 +45,9 @@ server <- function(input, output, session) {
   # DB_COUTS_MATIERE <- DB_COUTS_MATIERE[0,]
   
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
-    left_join(DB_DATE |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
+    left_join(creer_db_date() |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
   
-  DB_COUTS_MATIERE_JOUR <- DB_DATE |> 
+  DB_COUTS_MATIERE_JOUR <- creer_db_date() |> 
     rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
     left_join(DB_COUTS_MATIERE) |> 
     group_by(SEMAINE,SECTEUR) |> 
@@ -164,8 +67,8 @@ server <- function(input, output, session) {
   #### Login ####
   observeEvent(input$boutton_log, {
     password <- IMPORT_PASS %>%
-      filter(Date_debut <= today(), Date_fin >= today()) %>%
-      pull(pass)
+      filter(DATE_DEBUT <= today(), DATE_FIN >= today()) %>%
+      pull(PASS)
 
     if (input$password %in% password) {
       USER$logged <- TRUE
@@ -208,7 +111,7 @@ server <- function(input, output, session) {
 
   output$top_veille <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_CATEGORIES_JOURS, date_veille, date_veille, n = 10)
+      top_produits_periode(DB_PRODUITS, date_veille, date_veille, n = 10)
     )
   })
 
@@ -289,21 +192,21 @@ server <- function(input, output, session) {
   #### Volet "Maintenant" — Produits de la semaine ####
   output$top_semaine <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_CATEGORIES_JOURS,
+      top_produits_periode(DB_PRODUITS,
                            date_debut_semaine, date_debut_semaine + 6, n = 10)
     )
   })
 
   output$hausse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_CATEGORIES_JOURS, date_debut_semaine,
+      evolution_produits_semaine(DB_PRODUITS, date_debut_semaine,
                                  sens = "hausse")
     )
   })
 
   output$baisse_semaine <- renderDT({
     datatable_simple(
-      evolution_produits_semaine(DB_CATEGORIES_JOURS, date_debut_semaine,
+      evolution_produits_semaine(DB_PRODUITS, date_debut_semaine,
                                  sens = "baisse")
     )
   })
@@ -356,7 +259,7 @@ server <- function(input, output, session) {
 
   output$detail_jour_produits <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_CATEGORIES_JOURS, jour_detail(), jour_detail(), n = 15)
+      top_produits_periode(DB_PRODUITS, jour_detail(), jour_detail(), n = 15)
     )
   })
   
@@ -587,8 +490,7 @@ server <- function(input, output, session) {
     output[[id("produits")]] <- renderDT({
       d1 <- periode_sel()
       datatable_simple(
-        top_produits_periode(DB_CATEGORIES_JOURS, d1,
-                             fin_periode(d1, unite), n = 20)
+        top_produits_periode(DB_PRODUITS, d1, fin_periode(d1, unite), n = 20)
       )
     })
   }
@@ -611,7 +513,7 @@ server <- function(input, output, session) {
 
   produits_df <- reactive({
     p <- periode_produit_detail()
-    liste_produits_periode(DB_CATEGORIES_JOURS, p[1], p[2])
+    liste_produits_periode(DB_PRODUITS, p[1], p[2])
   })
 
   output$detail_produit_liste <- renderDT({
@@ -639,15 +541,13 @@ server <- function(input, output, session) {
   evo_produit <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_CATEGORIES_JOURS, pr,
-                         min(DB_CATEGORIES_JOURS$DATE), today())
+    evolution_un_produit(DB_PRODUITS, pr, min(DB_PRODUITS$DATE), today())
   })
   
   evo_produit_periode <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_CATEGORIES_JOURS, pr,
-                         periode_produit_detail()[1], today())
+    evolution_un_produit(DB_PRODUITS, pr, periode_produit_detail()[1], today())
   })
 
   output$detail_produit_graph <- renderPlotly({
@@ -664,7 +564,7 @@ server <- function(input, output, session) {
                 Quantité = Quantite,
                 `CA HTVA` = format_CA(CA, -1),
                 `Part dans Total` = paste0(round(PC_ALL*100,0),"%"),
-                !!sym(category_column) := paste0(round(PC_CATEGORY*100,0),"%")
+                !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%")
                 ) %>%
       arrange(desc(Semaine))
     
@@ -688,13 +588,13 @@ server <- function(input, output, session) {
 
   # Évolution + prédictions des fûts en cours (calcul HoltWinters, une seule fois)
   db_predict_bieres <- reactive({
-    table_evo_brassins(today())
+    table_evo_brassins(DB_BIERES,today())
   })
 
   output$bieres_niveaux <- renderUI({
     # La prédiction est déjà calculée pour les autres sorties : on la réutilise
     # pour afficher l'échéance sous chaque jauge.
-    cartes_niveaux_bieres(niveau_bieres_actuel(), db_predict_bieres())
+    cartes_niveaux_bieres(niveau_bieres_actuel(DB_BIERES), db_predict_bieres())
   })
 
   output$bieres_evo <- renderPlotly({
@@ -1003,7 +903,9 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Suivi" ---
   trav_base <- reactive({
     p <- fenetre_travail(input$trav_periode)
-    base_travail(DB_CATEGORIES_JOURS, DB_COUTS_TRAVAIL, p[1], p[2])
+    # TICKETS_HEURES et non DB_PRODUITS : le créneau midi / soir n'existe qu'au
+    # grain horaire, et la table SQL `produits` est agrégée à la journée.
+    base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
   })
 
   trav_agrege <- reactive({
@@ -1031,8 +933,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Créneaux" ---
   cren_stats <- reactive({
     p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(DB_CATEGORIES_JOURS, DB_COUTS_TRAVAIL,
-                                p[1], p[2]))
+    stats_creneaux(base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
   })
 
   output$cren_heatmap <- renderPlotly({

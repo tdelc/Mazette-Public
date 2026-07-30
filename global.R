@@ -1,34 +1,67 @@
+library(shiny)
+library(bslib)
+library(shinyjs)
+library(shinyWidgets)
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(googledrive)
+library(googlesheets4)
+library(readxl)
+library(scales)
+library(plotly)
+library(forecast)
+library(DT)
+library(zoo)
+library(patchwork)
 
+source("R/connect.R")
+source("R/sql.R")
 
-#### REFONTE — Conventions de couleurs ####
+#### Paramètres ####
+
+##### Date #####
+
+date_debut_semaine    <- floor_date(today() - 2, unit = "week") + 1
+vecteur_jours <- c("lundi","mardi","mercredi",
+                   "jeudi","vendredi","samedi",
+                   "dimanche")
+
+##### Conventions de couleurs ####
+
 # Palette d'appréciation, partagée par tous les volets de la refonte.
+
 COUL_VERT   <- "#5B7B5A"
 COUL_AMBRE  <- "#d98236"
 COUL_ROUGE  <- "#c0392b"
 COUL_NEUTRE <- "#8d7b68"
 
-# Couleur d'un CA selon l'atteinte de son objectif. Même convention que les
-# box de ventes (cf. get_color_from_gradient) :
-#   >= 100 %  -> vert    (objectif atteint)
-#   >=  90 %  -> ambre   (tout proche)
-#   <   90 %  -> rouge   (manqué)
-# Sans objectif renseigné (0 ou NA), la barre reste neutre : on ne peut rien
-# juger. Vectorisé, donc utilisable directement sur une colonne.
-couleur_objectif <- function(reel, objectif, seuil_proche = 0.9) {
-  pct <- ifelse(is.na(objectif) | objectif <= 0, NA_real_, reel / objectif)
-  case_when(
-    is.na(pct)          ~ COUL_NEUTRE,
-    pct >= 1            ~ COUL_VERT,
-    pct >= seuil_proche ~ COUL_AMBRE,
-    TRUE                ~ COUL_ROUGE
-  )
+source("donnees_fictives_compta.R")
+
+
+from_product_to_boisson <- function(DB){
+  DB %>%
+    mutate(PRODUCT_VIDE = str_remove(PRODUCT," *[0-9]+ *[cC][lL]"),
+           PRODUCT_VIDE = str_remove(PRODUCT_VIDE," verre"),
+           PRODUCT_VIDE = str_remove(PRODUCT_VIDE," 1L"),
+           VOLUME_CL = case_when(
+             PRODUCT %in% c("Pépin blanc verre",
+                            "Pépin rouge verre",
+                            "Hurluberlu rouge verre") ~ 12.5,
+             PRODUCT %in% c("Cidre Rhuys","Kefir") ~ 25,
+             PRODUCT %in% c("Rhum Brussels") ~ 3,
+             str_detect(PRODUCT,"1L") ~ 100,
+             TRUE ~ as.numeric(str_extract(PRODUCT," *([0-9]+) *[cC]*[lL]",group= 1))
+           ),
+           BOISSON = case_when(
+             is.na(VOLUME_CL) ~ "",
+             TRUE ~ PRODUCT_VIDE
+           )
+    ) %>%
+    rename(PRODUCT_FULL = PRODUCT,
+           PRODUCT = PRODUCT_VIDE)
 }
 
-# Libellé "x % de l'objectif" pour les infobulles.
-label_objectif <- function(reel, objectif) {
-  ifelse(is.na(objectif) | objectif <= 0, "pas d'objectif",
-         paste0(round(100 * reel / objectif), " % de l'objectif"))
-}
 
 
 #### REFONTE — Volet "Maintenant" ####
@@ -359,8 +392,8 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
 #### REFONTE — Volet "Bières" ####
 
 # Niveau actuel de chaque bière en cours (dernière mesure connue)
-niveau_bieres_actuel <- function(max_date = today()) {
-  DB_BIERES %>%
+niveau_bieres_actuel <- function(db_bieres,max_date = today()) {
+  db_bieres %>%
     filter(!BIERE_FINIE, DATE <= max_date, DATE >= max_date - 30) %>%
     group_by(ID_BRASSIN, BOISSON) %>%
     arrange(DATE) %>%
@@ -1243,9 +1276,13 @@ kpi_annee_tiles <- function(serie, serie_m1) {
 CRENEAUX_ORDRE <- c("Midi", "Soir", "Pizzwanze")
 PAL_CRENEAU <- c("Midi" = "#e67e22", "Soir" = "#9b59b6", "Pizzwanze" = "#c0392b")
 
+# Toutes les fonctions de ce volet attendent une table AU GRAIN HORAIRE
+# (DATE x CD_HEURE x PRODUIT), c'est-à-dire TICKETS_HEURES — et non DB_PRODUITS,
+# qui est agrégée à la journée et n'a donc pas de colonne CD_HEURE.
+
 # Jours de Pizzwanze : mardi soir où l'on a vendu des pizzas.
-jours_pizzwanze <- function(db_produits) {
-  db_produits %>%
+jours_pizzwanze <- function(db_ventes_heure) {
+  db_ventes_heure %>%
     filter(str_detect(toupper(PRODUIT), "PIZZ"),
            CD_HEURE == "Soir (>=17h)",
            wday(DATE, week_start = 1) == 2,
@@ -1280,9 +1317,9 @@ normalise_creneaux <- function(db) {
 }
 
 # CA HTVA par jour et par créneau (Midi / Soir / Pizzwanze).
-ca_par_creneau <- function(db_produits, d1 = NULL, d2 = NULL) {
-  piz <- jours_pizzwanze(db_produits)
-  db <- db_produits
+ca_par_creneau <- function(db_ventes_heure, d1 = NULL, d2 = NULL) {
+  piz <- jours_pizzwanze(db_ventes_heure)
+  db <- db_ventes_heure
   if (!is.null(d1)) db <- filter(db, DATE >= as.Date(d1))
   if (!is.null(d2)) db <- filter(db, DATE <= as.Date(d2))
 
@@ -1298,15 +1335,15 @@ ca_par_creneau <- function(db_produits, d1 = NULL, d2 = NULL) {
 # Base de travail : une ligne par (DATE, CRENEAU) avec le CA, les heures de
 # service imputées directement, et les coûts indirects de la semaine répartis
 # au prorata du CA du créneau.
-base_travail <- function(db_produits, db_travail, d1, d2) {
+base_travail <- function(db_ventes_heure, db_travail, d1, d2) {
   d1 <- as.Date(d1); d2 <- as.Date(d2)
-  piz <- jours_pizzwanze(db_produits)
-  
-  # Ne prendre les jours de db_produits que pour les jours de db_travail connu
-  db_produits <- db_produits |> 
+  piz <- jours_pizzwanze(db_ventes_heure)
+
+  # Ne garder que les jours pour lesquels on connaît aussi les heures travaillées
+  db_ventes_heure <- db_ventes_heure |>
     filter(DATE %in% db_travail$DATE)
 
-  ca <- ca_par_creneau(db_produits, d1, d2)
+  ca <- ca_par_creneau(db_ventes_heure, d1, d2)
 
   service <- db_travail %>%
     filter(SECTEUR == "Service", CRENEAU %in% c("Midi", "Soir"),
@@ -2850,7 +2887,7 @@ label_specific <- function(jour,nb_jours){
 }
 
 prepa_db <- function(DB,var_tva){
-  DB_DATE %>%
+  creer_db_date() %>%
     left_join(DB) %>%
     mutate_if(is.numeric,replace_na,0) %>%
     mutate_if(is.character,replace_na,"") %>%
@@ -3000,7 +3037,7 @@ table_ventes <- function(DB_JOURS,DB_OBJECTIFS,date_debut,date_fin){
 }
 
 table_produits_mois <- function(db,debut_mois){
-  DB <- DB_DATE %>% left_join(db) %>%
+  DB <- creer_db_date() %>% left_join(db) %>%
     filter(PREMIER_JOUR_MOIS == debut_mois) %>%
     group_by(PRODUIT) %>%
     summarise(CA = sum(CA_HTVA),.groups = "drop") %>% arrange(-CA) %>%
@@ -3207,7 +3244,7 @@ table_resume_mois <- function(DB_JOURS,date){
   if (length(nb_heures) == 0) nb_heures <- ""
 
   # Répartition des CA
-  PC_CA <- DB_DATE %>%
+  PC_CA <- creer_db_date() %>%
     left_join(DB_KPI_SIMPLE) %>%
     filter(month(DATE) == mois & year(DATE) == annee) %>%
     group_by(PREMIER_JOUR_MOIS) %>%
@@ -3275,21 +3312,22 @@ table_resume_mois_category <- function(DB_PRODUITS,date){
 }
 
 # Tableau de prédiction de bières
-table_evo_brassins <- function(max_date=today(),
+table_evo_brassins <- function(db_bieres,
+                               max_date=today(),
                                length_predict = 200,
                                FL_ONLY_FINI = TRUE){
 
   if (is.null(max_date)) max_date <- today()
 
   table_evo_brassin_unique <- function(id_brassin){
-    table_evo_brassin(id_brassin,length_predict,max_date)
+    table_evo_brassin(db_bieres,id_brassin,length_predict,max_date)
   }
 
   if (FL_ONLY_FINI){
-    vec_brassins_en_cours <- DB_BIERES %>%
+    vec_brassins_en_cours <- db_bieres %>%
       filter(!BIERE_FINIE & DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
   }else{
-    vec_brassins_en_cours <- DB_BIERES %>%
+    vec_brassins_en_cours <- db_bieres %>%
       filter(DATE >= max_date-20) %>% pull(ID_BRASSIN) %>% unique
   }
 
@@ -3921,7 +3959,7 @@ graph_evo_cout <- function(date_fin,cd_secteur){
                  pull(pal_col[pal_col$name == "Support - Travail","col"]))
   }
 
-  vec_DATE <- DB_DATE %>%
+  vec_DATE <- creer_db_date() %>%
     filter(PREMIER_JOUR_MOIS <= date_fin,
            PREMIER_JOUR_MOIS >= date_fin-years(1),) %>%
     select(PREMIER_JOUR_MOIS) %>% pull %>% unique
@@ -5243,10 +5281,10 @@ predict_fin_brassin <- function(DB_PREDICT,id_brassin){
 }
 
 # Ajout des prédictions
-table_evo_brassin <- function(id_brassin,length_predict = 200,
+table_evo_brassin <- function(db_bieres,id_brassin,length_predict = 200,
                               max_date=today()){
 
-  serie <- DB_BIERES %>%
+  serie <- db_bieres %>%
     filter(DATE <= max_date) %>%
     filter(ID_BRASSIN == id_brassin)
 
@@ -5306,7 +5344,10 @@ graph_quali_predict <- function(max_date=today(),nb_jours = 30){
 
   vec_days <- seq(max_date-nb_jours,max_date,by=1)
 
-  DB_PREDICT_QUALI <- vec_days %>% map_df(table_evo_brassins)
+  DB_PREDICT_QUALI <- vec_days %>% map_df(~{table_evo_brassins(
+    db_bieres = DB_BIERES,
+    max_date = .x
+  )})
 
   TEST <- DB_PREDICT_QUALI %>%
     mutate(BIERE = paste0(ID_BRASSIN,"-",BOISSON)) %>%
