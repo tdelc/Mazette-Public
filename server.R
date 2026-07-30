@@ -93,8 +93,10 @@ server <- function(input, output, session) {
   })
 
   output$vb_pct_semaine <- renderText({
-    reel <- ca_periode(UPD_KPI_SIMPLE, date_debut_semaine, today())
-    obj  <- ca_periode(UPD_OBJECTIFS, date_debut_semaine, today())
+    reel <- ca_periode(UPD_KPI_SIMPLE, date_debut_semaine, today()-1)
+    obj  <- ca_periode(UPD_OBJECTIFS, date_debut_semaine, today()-1)
+    print(reel)
+    print(obj)
     if (is.na(obj) || obj == 0) "—" else paste0(round(100 * reel / obj), " %")
   })
 
