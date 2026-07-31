@@ -2,7 +2,7 @@ options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))
 
 #### Chargement initial des données ####
 
-prefix         <- "R_sql_env_"
+prefix         <- "R_new_env_"
 date_jour      <- format(now() - days(1), format = "%Y-%m-%d")
 drive_env_name <- paste0(prefix, date_jour, ".RData")
 
@@ -62,12 +62,12 @@ server <- function(input, output, session) {
   # DB_COUTS_MATIERE() <- DB_COUTS_MATIERE()[0,]
   
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
-    left_join(creer_db_date() |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
+    left_join(creer_db_date() |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS), by = "DATE")
   
   DB_COUTS_MATIERE_JOUR <- reactive({
     creer_db_date() |> 
       rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
-      left_join(DB_COUTS_MATIERE()) |> 
+      left_join(DB_COUTS_MATIERE(), by = "SEMAINE") |> 
       group_by(SEMAINE,SECTEUR) |> 
       mutate(COUT_MATIERE    = COUT_MATIERE / n(),
              ACHATS          = ACHATS / n(),
@@ -85,7 +85,7 @@ server <- function(input, output, session) {
 
   #### Login ####
   observeEvent(input$boutton_log, {
-    password <- IMPORT_PASS %>%
+    password <- DB_PASSWORD %>%
       filter(DATE_DEBUT <= today(), DATE_FIN >= today()) %>%
       pull(PASS)
 
@@ -114,8 +114,6 @@ server <- function(input, output, session) {
   output$vb_pct_semaine <- renderText({
     reel <- ca_periode(UPD_KPI_SIMPLE(), date_debut_semaine, today()-1)
     obj  <- ca_periode(UPD_OBJECTIFS(), date_debut_semaine, today()-1)
-    print(reel)
-    print(obj)
     if (is.na(obj) || obj == 0) "—" else paste0(round(100 * reel / obj), " %")
   })
 
@@ -961,9 +959,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Suivi" ---
   trav_base <- reactive({
     p <- fenetre_travail(input$trav_periode)
-    # TICKETS_HEURES et non DB_PRODUITS : le créneau midi / soir n'existe qu'au
-    # grain horaire, et la table SQL `produits` est agrégée à la journée.
-    base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
+    base_travail(DB_TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
   })
 
   trav_agrege <- reactive({
@@ -991,7 +987,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Créneaux" ---
   cren_stats <- reactive({
     p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
+    stats_creneaux(base_travail(DB_TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
   })
 
   output$cren_heatmap <- renderPlotly({

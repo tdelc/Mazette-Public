@@ -59,10 +59,10 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
   # Chargement via google sheets (reconstruction complète)
   if (force_dl | class(drive_mazette)[1] == "try-error") {
     cli::cli_h1("Mise à jour des données")
-    cli::cli_h2("Remplir les DB SQL")
-    print(system.time({source("sql.R", local = envir)}))
-    cli::cli_h2("Importer les DB SQL")
-    print(system.time({source("import_sql.R", local = envir)}))
+    # cli::cli_h2("Remplir les DB SQL")
+    # print(system.time({source("sql.R", local = envir)}))
+    cli::cli_h2("Importer les DB")
+    print(system.time({source("import_new.R", local = envir)}))
     
     # Prendre la dernière date comme date de sauvegarde
     date_jour      <- max(get("DB_JOURS", envir = envir)$DATE)

@@ -976,6 +976,7 @@ ui <- page_fluid(
   title = "Mazette",
   lang  = "fr",
   useShinyjs(),
+  add_busy_spinner(spin = "fading-circle"),
   theme = theme_mazette_ui,
   entete_application(),
   tags$head(tags$link(rel = "stylesheet", type = "text/css",
