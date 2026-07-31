@@ -107,7 +107,7 @@ legende_objectif <- function() {
 ui_app <- function() {
   navset_bar(
     title = span(class = "brand-title", 
-                 img(src = "mazette.png", height = 30, width = 30),
+                 img(src = "mazette-blanc.png", height = 30, width = 30),
                  "MAZETTE"),
     id = "nav",
     fillable = FALSE,
@@ -969,6 +969,12 @@ ui_maintenant <- function() {
 # empêchait les dépendances (grille, navbar) d'arriver côté client.
 
 ui <- page_fluid(
+  # `title` alimente le <title> du document : c'est le libellé de l'onglet du
+  # navigateur et le nom proposé par défaut à la mise en favori. À ne pas
+  # confondre avec le `title` de navset_bar(), qui est la marque affichée dans
+  # la barre de navigation.
+  title = "Mazette",
+  lang  = "fr",
   useShinyjs(),
   theme = theme_mazette_ui,
   entete_application(),
