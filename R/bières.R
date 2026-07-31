@@ -146,7 +146,7 @@ kpi_bieres_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL) {
     tuile_evolution(litres, litres_m1, "Litres servis", "beer-mug-empty",
                     function(x) paste0(format(round(x)), " L")),
     tuile_evolution(verres, verres_m1, "Verres servis", "wine-glass"),
-    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"bières"), "euro-sign",
+    tuile_evolution(ca, ca_m1, titre_avec_tva("CA bières", unite_tva), "euro-sign",
                     function(x) format_CA(x, -1)),
     tuile_ecart(nb, nb_m1, "Bières différentes", "list-ul"),
     kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,

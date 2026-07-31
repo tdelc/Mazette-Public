@@ -148,7 +148,8 @@ kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
   
   div(
     class = "kpi-grid",
-    kpi_tile(format_CA(ca, -1), paste("CA",unite_tva,"à date"), "#2e7d32", "euro-sign"),
+    kpi_tile(format_CA(ca, -1), titre_avec_tva("CA à date", unite_tva),
+             "#2e7d32", "euro-sign"),
     kpi_tile(format_CA(obj, -1), "Objectif à date", COUL_TRAVAIL, "bullseye",
              sous_titre = format_pct(pct(ca, obj))),
     kpi_tile(format_CA(ca - obj, -1), "Écart objectif",

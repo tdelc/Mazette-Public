@@ -111,7 +111,7 @@ kpi_focaccias_tiles <- function(fs, unite_tva = NULL) {
   div(
     class = "kpi-grid",
     tuile_evolution(q, q_m1, "Focaccias vendues", "bread-slice"),
-    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"focaccias"), "euro-sign",
+    tuile_evolution(ca, ca_m1, titre_avec_tva("CA focaccias", unite_tva), "euro-sign",
                     function(x) format_CA(x, -1)),
     kpi_tile(if (jours_ouverts > 0) format(round(q / jours_ouverts, 1)) else "—",
              "Par jour d'ouverture", CONSO_BRUN, "gauge-high",

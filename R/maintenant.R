@@ -87,7 +87,10 @@ graph_progression_mois <- function(prog, mois = floor_date(today(), "month")) {
 # colonne par jour, le CA coloré selon l'atteinte de son objectif. Remplace
 # une pile de cartes qui occupait beaucoup de place pour la seule valeur du
 # jour. Le détail (date complète, objectif, pourcentage) est en infobulle.
-tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5) {
+# L'unité se pose sur l'en-tête « Total » : le tableau compte une quarantaine
+# de montants, une pastille par cellule serait illisible.
+tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5,
+                             unite_tva = "HTVA") {
   fin <- floor_date(as.Date(fin_semaine), "week", week_start = 1)
   debut <- fin - weeks(n_semaines - 1)
   
@@ -142,7 +145,7 @@ tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5) {
     tags$thead(tags$tr(
       tags$th(class = "rs-sem", "Semaine"),
       lapply(jours_court, function(j) tags$th(j)),
-      tags$th("Total")
+      tags$th(titre_avec_tva("Total", unite_tva))
     )),
     tags$tbody(lapply(semaines, ligne))
   )

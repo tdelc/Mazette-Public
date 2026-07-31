@@ -33,6 +33,26 @@ label_periode <- function(periode, unite = c("semaine", "mois", "annee")) {
 # Ratio en % (NA si dénominateur nul)
 ratio_pct <- function(num, den) ifelse(den > 0, round(100 * num / den, 1), NA_real_)
 
+# Étiquette d'unité de TVA, à accoler à un intitulé de CA.
+#
+# Le style est volontairement défini en CSS (.badge-tva) plutôt qu'en ligne :
+# la pastille se pose sur des fonds très différents — brun, ambre, crème — et
+# doit rester lisible sur les trois. Elle emprunte donc sa couleur au texte qui
+# l'entoure via currentColor, au lieu de figer un couple fond/texte qui serait
+# faux dans deux cas sur trois.
+#
+# Titre d'un value_box :
+#   output$title_vb <- renderUI(titre_avec_tva("CA de la veille", input$unite_tva))
+badge_tva <- function(unite) {
+  if (is.null(unite) || !nzchar(unite)) return(NULL)
+  span(class = "badge-tva", unite)
+}
+
+# Intitulé suivi de sa pastille d'unité.
+titre_avec_tva <- function(libelle, unite) {
+  tagList(libelle, badge_tva(unite))
+}
+
 # Bandeau d'avertissement, à utiliser dans un renderUI.
 # Ne renvoie quelque chose que si `afficher` est vrai ; sinon NULL, donc rien
 # ne s'affiche et l'espace n'est pas réservé.

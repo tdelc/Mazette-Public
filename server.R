@@ -124,8 +124,8 @@ server <- function(input, output, session) {
     "Semaine en cours"
   })
   
-  output$title_vb_veille <- renderText({
-    paste0("CA ",input$unite_tva," de la veille")
+  output$title_vb_veille <- renderUI({
+    titre_avec_tva("CA de la veille", input$unite_tva)
   })
 
   output$box_veille <- renderUI({
@@ -146,8 +146,8 @@ server <- function(input, output, session) {
                     unite_tva = input$unite_tva)
   })
   
-  output$title_vb_semaine <- renderText({
-    paste0("CA ",input$unite_tva," de la semaine")
+  output$title_vb_semaine <- renderUI({
+    titre_avec_tva("CA de la semaine", input$unite_tva)
   })
 
   output$box_semaine_total <- renderUI({
@@ -159,7 +159,8 @@ server <- function(input, output, session) {
   # Les 5 semaines qui précèdent la semaine en cours, en une seule matrice
   output$recap_semaines <- renderUI({
     tableau_semaines(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                     date_debut_semaine - 7, n_semaines = 5)
+                     date_debut_semaine - 7, n_semaines = 5,
+                     unite_tva = input$unite_tva)
   })
  
   
@@ -554,9 +555,9 @@ server <- function(input, output, session) {
   })
 
   output$detail_produit_liste <- renderDT({
-    
-    col_name <- paste("CA",unite_tva)
-    
+
+    col_name <- paste("CA", input$unite_tva)
+
     df <- produits_df() %>%
       transmute(Produit = tronque_nom(Produit),
                 Quantité = Quantite,
@@ -597,9 +598,9 @@ server <- function(input, output, session) {
   })
 
   output$detail_produit_table <- renderDT({
-    
-    col_name <- paste("CA",unite_tva)
-    
+
+    col_name <- paste("CA", input$unite_tva)
+
     category <- evo_produit_periode() |> pull(CATEGORIE) |> unique() |> str_to_title()
     category_column <- paste0("Part dans '",category,"'")
     

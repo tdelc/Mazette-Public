@@ -347,3 +347,54 @@ table.dataTable td, table.dataTable th {
 }
 .fut-vol { font-size: 0.78rem; color: #8d7b68; margin-top: 0.1rem; }
 .fut-fin { font-size: 0.75rem; margin-top: 0.15rem; overflow-wrap: anywhere; }
+
+/* ---- Pastille d'unité de TVA ---------------------------------------------
+   Accolée aux intitulés de CA. Elle se pose sur les trois fonds de value_box
+   (brun, ambre, crème) : plutôt que de figer un couple fond/texte qui serait
+   illisible sur deux d'entre eux, elle emprunte la couleur du texte ambiant
+   via currentColor et se contente d'un fond très légèrement teinté.
+   `em` et non `rem` : la pastille suit la taille de l'intitulé qui la porte. */
+.badge-tva {
+  display: inline-block;
+  /* tagList insère déjà une espace entre le libellé et la pastille : une marge
+     faible suffit, sinon l'écart paraît double. */
+  margin-left: 0.15em;
+  padding: 0.08em 0.45em;
+  border: 1px solid currentColor;
+  border-radius: 0.6em;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  /* Relatif à l'intitulé, mais avec un plancher absolu : sur .kpi-tile-lab,
+     qui fait déjà 0.78rem, un simple 0.72em tomberait à 9 px. */
+  font-size: max(0.66rem, 0.72em);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  vertical-align: 0.08em;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+/* Repli pour les navigateurs sans color-mix() : la bordure seule suffit. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .badge-tva { background: transparent; }
+}
+
+/* Le titre d'un value_box passe de <div> à <span> avec uiOutput(inline = TRUE) :
+   on lui rend le comportement de bloc que bslib attend, sinon la valeur
+   remonte sur la même ligne que l'intitulé. */
+span.value-box-title { display: block; }
+
+/* La pastille sur le chiffre de CA d'une carte de ventes demande deux
+   corrections au style générique :
+   - taille en rem et non en em : .ventes-ca fait 1.4rem, un 0.72em donnerait
+     une pastille aussi haute qu'un chiffre ;
+   - couleur neutre : .ventes-ca porte la couleur d'atteinte de l'objectif
+     (vert / ambre / rouge), qu'une pastille d'unité ne doit pas emprunter —
+     un « HTVA » rouge se lirait comme une alerte. */
+.ventes-ca .badge-tva {
+  font-size: 0.62rem;
+  color: #8d7b68;
+  vertical-align: 0.45em;
+  opacity: 0.9;
+}

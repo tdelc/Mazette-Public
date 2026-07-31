@@ -898,9 +898,12 @@ ui_maintenant <- function() {
     layout_columns(
       fill = FALSE,
       col_widths = c(4, 4, 4),
-      value_box(textOutput("title_vb_veille"), textOutput("vb_ca_veille"),
+      # uiOutput(inline = TRUE) et non textOutput : le titre porte désormais une
+      # pastille d'unité, donc du HTML. bslib conserve la classe
+      # value-box-title et le showcase (vérifié sur le rendu).
+      value_box(uiOutput("title_vb_veille", inline = TRUE), textOutput("vb_ca_veille"),
                 showcase = icon("calendar-day"), theme = "primary"),
-      value_box(textOutput("title_vb_semaine"), textOutput("vb_ca_semaine"),
+      value_box(uiOutput("title_vb_semaine", inline = TRUE), textOutput("vb_ca_semaine"),
                 showcase = icon("calendar-week"),
                 theme = value_box_theme(bg = MZ_AMBRE, fg = "#ffffff")),
       value_box("Objectif de la semaine", textOutput("vb_pct_semaine"),

@@ -5,8 +5,8 @@
 box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
                             format_date = "%d",titre = "",
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
-                            is_objectif=TRUE, width = "14%", 
-                            unite_tva = "HTVA"){
+                            is_objectif=TRUE, width = "14%",
+                            unite_tva = "HTVA", montrer_unite = NULL){
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
@@ -21,7 +21,8 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
   plot_kpi <- plot_kpi %>%
     table_kpi(fl_semaine = is_semaine,fl_midi = is_midi,
               fl_boisson = is_boisson,fl_objectif = is_objectif,
-              width = width, unite_tva = unite_tva)
+              width = width, unite_tva = unite_tva,
+              montrer_unite = montrer_unite)
   
   return(
     div(class = "ventes-grid", do.call(tagList, plot_kpi))
@@ -31,7 +32,8 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
 box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
                              format_date = "%d",titre = "",
                              is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
-                             is_objectif=TRUE, unite_tva = "HTVA"){
+                             is_objectif=TRUE, unite_tva = "HTVA",
+                             montrer_unite = NULL){
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
@@ -46,7 +48,7 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
     mutate(title = titre) %>%
     table_kpi(fl_semaine = is_semaine,fl_midi = is_midi,
               fl_boisson = is_boisson,fl_objectif = is_objectif, width = "100%",
-              unite_tva = unite_tva)
+              unite_tva = unite_tva, montrer_unite = montrer_unite)
   
   return(
     div(class = "ventes-grid", do.call(tagList, plot_kpi))
@@ -54,10 +56,16 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
 }
 
 
+# `montrer_unite` : par défaut, la pastille d'unité n'apparaît que si la série
+# ne compte qu'une carte. Sur les sept cartes d'une semaine elle se répéterait
+# à l'identique sept fois — du bruit, alors que le total juste à côté porte
+# déjà l'information. Passer TRUE pour forcer l'affichage partout.
 table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
                       fl_semaine=TRUE,fl_objectif=TRUE,width = "14%",
-                      unite_tva = "HTVA"){
-  
+                      unite_tva = "HTVA", montrer_unite = NULL){
+
+  if (is.null(montrer_unite)) montrer_unite <- nrow(db) == 1
+
   list_kpi <- list()
   for (i in 1:nrow(db)){
     ligne <- db[i,]
@@ -94,7 +102,7 @@ table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
                                        percent_soir,percent_boisson,
                                        percent_nourriture,percent_semaine,
                                        percent_weekend,width,couleur,objectif,
-                                       unite_tva))
+                                       unite_tva, montrer_unite))
   }
   return(list_kpi)
 }
@@ -130,9 +138,9 @@ generate_bar <- function(percent1, percent2, color1, color2, title) {
 # les appels existants.
 caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
                       percent_nourriture, percent_semaine, percent_weekend,
-                      width = NULL, ca_color = NULL, objectif = NULL, 
-                      unite_tva = "HTVA") {
-  
+                      width = NULL, ca_color = NULL, objectif = NULL,
+                      unite_tva = "HTVA", montrer_unite = TRUE) {
+
   couleur <- if (is.null(ca_color)) couleur_objectif(ca, objectif) else ca_color
   
   # Les barres n'ont pas de sens sur une journée sans activité
@@ -148,17 +156,20 @@ caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
     )
   } else NULL
   
+  # L'unité était collée dans l'intitulé (« objectif HTVA 1 234 € ») : elle
+  # remonte sur le chiffre de CA, qui est celui qu'on lit et qu'on recopie.
   objectif_ligne <- if (!is.null(objectif) && !is.na(objectif) && objectif > 0) {
     div(class = "ventes-obj",
-        "objectif ", unite_tva, format_CA(objectif, -1), " · ",
+        "objectif ", format_CA(objectif, -1), " · ",
         tags$b(paste0(round(100 * ca / objectif), " %")))
   } else NULL
-  
+
   div(
     class = "ventes-card",
     div(class = "ventes-jour", title),
     div(class = "ventes-ca", style = paste0("color:", couleur, ";"),
-        format_CA(ca, -1)),
+        format_CA(ca, -1),
+        if (isTRUE(montrer_unite)) badge_tva(unite_tva)),
     objectif_ligne,
     barres
   )

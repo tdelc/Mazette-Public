@@ -158,7 +158,7 @@ kpi_pizzwanze_tiles <- function(ps, unite_tva = NULL) {
     class = "kpi-grid",
     tuile_evolution(q, q_m1, "Pizzas vendues", "pizza-slice",
                     suffixe = "vs soirée précédente"),
-    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"pizzas"), "euro-sign",
+    tuile_evolution(ca, ca_m1, titre_avec_tva("CA pizzas", unite_tva), "euro-sign",
                     function(x) format_CA(x, -1),
                     suffixe = "vs soirée précédente"),
     tuile_ecart(nref, nref_m1, "Pizzas à la carte", "list-ul",
