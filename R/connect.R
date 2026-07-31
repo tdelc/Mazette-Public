@@ -19,7 +19,7 @@ TABLES_DASHBOARD <- c(
   "DB_BIERES",        # suivi des fûts : volumes cumulés par brassin
   "DB_BRASSINS",      # référentiel des brassins
   "DB_COUTS_TRAVAIL", # heures et coûts par jour x secteur x créneau
-  "IMPORT_PASS"       # mots de passe valides par période
+  "DB_PASSWORD"       # mots de passe valides par période
 )
 
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
