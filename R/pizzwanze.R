@@ -40,25 +40,26 @@ soirees_pizzwanze <- function(db_produits,
 }
 
 # Ventes de pizzas d'une ou plusieurs soirées, agrégées par date et produit.
-conso_pizzas <- function(db_produits, dates) {
+conso_pizzas <- function(db_produits, dates, unite_tva) {
+  col <- paste0("CA_",unite_tva)
   dates <- as.Date(dates)
   db_produits %>%
     filter(est_pizza(PRODUIT_FULL), QUANTITE > 0, DATE %in% dates) %>%
     group_by(DATE, PIZZA = PRODUIT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
-              CA       = sum(CA_HTVA, na.rm = TRUE), .groups = "drop")
+              CA       = sum(!!sym(col), na.rm = TRUE), .groups = "drop")
 }
 
 # Statut de chaque pizza sur l'ensemble des soirées : incontournable, régulière
 # ou occasionnelle, avec ses dates de première et dernière apparition.
-statut_pizzas <- function(db_produits, soirees) {
+statut_pizzas <- function(db_produits, soirees, unite_tva = "HTVA") {
   n_soirees <- length(soirees)
   if (n_soirees == 0)
     return(tibble(PIZZA = character(), N_SOIREES = integer(),
                   PREMIERE = as.Date(character()), DERNIERE = as.Date(character()),
                   QUANTITE = numeric(), STATUT = character()))
   
-  conso_pizzas(db_produits, soirees) %>%
+  conso_pizzas(db_produits, soirees, unite_tva) %>%
     group_by(PIZZA) %>%
     summarise(N_SOIREES = n_distinct(DATE),
               PREMIERE  = min(DATE),
@@ -78,7 +79,8 @@ PAL_STATUT_PIZZA <- c("Incontournable" = "#732c02", "Régulière" = "#d98236",
 # Synthèse d'une soirée : ses ventes, celles de la soirée précédente, et le
 # statut de chaque pizza. Une pizza dont la première apparition est ce soir-là
 # est marquée « Nouveauté ».
-pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, soirees = NULL) {
+pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, 
+                             soirees = NULL, unite_tva = "HTVA") {
   date_soiree <- as.Date(date_soiree)
   if (is.null(soirees)) soirees <- soirees_pizzwanze(db_produits)
   
@@ -88,16 +90,16 @@ pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, soirees = NULL
   pic <- pizzas_par_heure(db_ticket, date_soiree) |> 
     arrange(-QUANTITE) |> filter(row_number() == 1) |> pull(HEURE)
   
-  statuts <- statut_pizzas(db_produits, soirees)
+  statuts <- statut_pizzas(db_produits, soirees, unite_tva)
   
-  act <- conso_pizzas(db_produits, date_soiree) %>%
+  act <- conso_pizzas(db_produits, date_soiree, unite_tva) %>%
     left_join(statuts %>% select(PIZZA, N_SOIREES, PREMIERE, STATUT), by = "PIZZA") %>%
     mutate(NOUVEAUTE = !is.na(PREMIERE) & PREMIERE == date_soiree,
            STATUT_SOIR = ifelse(NOUVEAUTE, "Nouveauté", STATUT)) %>%
     arrange(desc(QUANTITE))
   
   prec <- if (is.na(precedente)) act[0, c("PIZZA", "QUANTITE", "CA")]
-  else conso_pizzas(db_produits, precedente) %>% select(PIZZA, QUANTITE, CA)
+  else conso_pizzas(db_produits, precedente, unite_tva) %>% select(PIZZA, QUANTITE, CA)
   
   list(date = date_soiree,
        precedente = precedente,
@@ -108,14 +110,15 @@ pizzwanze_soiree <- function(db_produits, db_ticket, date_soiree, soirees = NULL
 
 # Historique : une ligne par soirée, avec le nombre de nouveautés et l'écart
 # depuis la soirée précédente.
-historique_pizzwanze <- function(db_produits, soirees = NULL) {
+historique_pizzwanze <- function(db_produits, soirees = NULL, 
+                                 unite_tva = "HTVA") {
   if (is.null(soirees)) soirees <- soirees_pizzwanze(db_produits)
   if (length(soirees) == 0)
     return(tibble(DATE = as.Date(character()), PIZZAS = numeric(),
                   CA = numeric(), N_REF = integer(), NOUVEAUTES = integer(),
                   ECART = numeric()))
   
-  detail <- conso_pizzas(db_produits, soirees)
+  detail <- conso_pizzas(db_produits, soirees, unite_tva)
   premieres <- detail %>% group_by(PIZZA) %>%
     summarise(PREMIERE = min(DATE), .groups = "drop")
   
@@ -143,7 +146,7 @@ pizzas_par_heure <- function(db_ticket, date_soiree) {
 
 ##### Tuiles KPI #####
 
-kpi_pizzwanze_tiles <- function(ps) {
+kpi_pizzwanze_tiles <- function(ps, unite_tva = NULL) {
   act <- ps$act; prec <- ps$prec; pic <- ps$pic
   q    <- sum(act$QUANTITE);  q_m1  <- sum(prec$QUANTITE)
   ca   <- sum(act$CA);        ca_m1 <- sum(prec$CA)
@@ -155,7 +158,7 @@ kpi_pizzwanze_tiles <- function(ps) {
     class = "kpi-grid",
     tuile_evolution(q, q_m1, "Pizzas vendues", "pizza-slice",
                     suffixe = "vs soirée précédente"),
-    tuile_evolution(ca, ca_m1, "CA pizzas", "euro-sign",
+    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"pizzas"), "euro-sign",
                     function(x) format_CA(x, -1),
                     suffixe = "vs soirée précédente"),
     tuile_ecart(nref, nref_m1, "Pizzas à la carte", "list-ul",
@@ -229,7 +232,8 @@ graph_pizzas_soiree <- function(ps) {
 
 # Heatmap pizza x soirée : d'un coup d'œil, qui revient et qui ne fait que
 # passer. Les pizzas les plus présentes sont en haut.
-graph_carte_pizzwanze <- function(db_produits, soirees, n_soirees = NULL) {
+graph_carte_pizzwanze <- function(db_produits, soirees, n_soirees = NULL,
+                                  unite_tva = "HTVA") {
   if (length(soirees) == 0)
     return(plotly_empty() %>% layout(title = "Aucune soirée détectée"))
   
@@ -238,7 +242,7 @@ graph_carte_pizzwanze <- function(db_produits, soirees, n_soirees = NULL) {
   # de pizzas ne se voient qu'en remontant plus loin.
   dernieres <- sort(soirees)
   if (!is.null(n_soirees)) dernieres <- tail(dernieres, n_soirees)
-  detail <- conso_pizzas(db_produits, dernieres)
+  detail <- conso_pizzas(db_produits, dernieres, unite_tva)
   if (nrow(detail) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
@@ -285,7 +289,8 @@ graph_pizzas_heure <- function(par_heure) {
 }
 
 # Détail par pizza, avec la part de la soirée et l'écart vs la précédente.
-table_pizzwanze <- function(ps) {
+table_pizzwanze <- function(ps, unite_tva = NULL) {
+  col_name <- paste("CA",unite_tva)
   act <- ps$act
   if (is.null(act) || nrow(act) == 0) return(tibble(Pizza = character()))
   
@@ -297,13 +302,13 @@ table_pizzwanze <- function(ps) {
            PART = if (total > 0) 100 * QUANTITE / total else NA_real_,
            EVO  = ifelse(Q_M1 > 0, round(100 * (QUANTITE - Q_M1) / Q_M1, 1),
                          NA_real_)) %>%
-    transmute(Pizza      = PIZZA,
-              Quantité   = QUANTITE,
-              Part       = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
-              CA         = format_CA(CA, -1),
+    transmute(Pizza            = PIZZA,
+              Quantité         = QUANTITE,
+              Part             = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
+              !!sym(col_name) := format_CA(CA, -1),
               # Statut     = STATUT_SOIR,
               # `Soirées`  = N_SOIREES,
-              `Qté préc.` = Q_M1,
-              `Évol.`    = ifelse(is.na(EVO), "—",
-                                  paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
+              `Qté préc.`      = Q_M1,
+              `Évol.`          = ifelse(is.na(EVO), "—",
+                                        paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
 }

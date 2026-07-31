@@ -5,7 +5,8 @@
 box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
                             format_date = "%d",titre = "",
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
-                            is_objectif=TRUE, width = "14%"){
+                            is_objectif=TRUE, width = "14%", 
+                            unite_tva = "HTVA"){
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
@@ -20,7 +21,7 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
   plot_kpi <- plot_kpi %>%
     table_kpi(fl_semaine = is_semaine,fl_midi = is_midi,
               fl_boisson = is_boisson,fl_objectif = is_objectif,
-              width = width)
+              width = width, unite_tva = unite_tva)
   
   return(
     div(class = "ventes-grid", do.call(tagList, plot_kpi))
@@ -30,7 +31,7 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
 box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
                              format_date = "%d",titre = "",
                              is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
-                             is_objectif=TRUE){
+                             is_objectif=TRUE, unite_tva = "HTVA"){
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
@@ -44,7 +45,8 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
               Semaine = sum(Semaine),`Week-end` = sum(`Week-end`)) %>%
     mutate(title = titre) %>%
     table_kpi(fl_semaine = is_semaine,fl_midi = is_midi,
-              fl_boisson = is_boisson,fl_objectif = is_objectif, width = "100%")
+              fl_boisson = is_boisson,fl_objectif = is_objectif, width = "100%",
+              unite_tva = unite_tva)
   
   return(
     div(class = "ventes-grid", do.call(tagList, plot_kpi))
@@ -53,7 +55,8 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
 
 
 table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
-                      fl_semaine=TRUE,fl_objectif=TRUE,width = "14%"){
+                      fl_semaine=TRUE,fl_objectif=TRUE,width = "14%",
+                      unite_tva = "HTVA"){
   
   list_kpi <- list()
   for (i in 1:nrow(db)){
@@ -90,7 +93,8 @@ table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
     list_kpi[[i]] <- tagList(caInfoBox(title,ca,percent_midi,
                                        percent_soir,percent_boisson,
                                        percent_nourriture,percent_semaine,
-                                       percent_weekend,width,couleur,objectif))
+                                       percent_weekend,width,couleur,objectif,
+                                       unite_tva))
   }
   return(list_kpi)
 }
@@ -126,7 +130,8 @@ generate_bar <- function(percent1, percent2, color1, color2, title) {
 # les appels existants.
 caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
                       percent_nourriture, percent_semaine, percent_weekend,
-                      width = NULL, ca_color = NULL, objectif = NULL) {
+                      width = NULL, ca_color = NULL, objectif = NULL, 
+                      unite_tva = "HTVA") {
   
   couleur <- if (is.null(ca_color)) couleur_objectif(ca, objectif) else ca_color
   
@@ -145,7 +150,7 @@ caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
   
   objectif_ligne <- if (!is.null(objectif) && !is.na(objectif) && objectif > 0) {
     div(class = "ventes-obj",
-        "objectif ", format_CA(objectif, -1), " · ",
+        "objectif ", unite_tva, format_CA(objectif, -1), " · ",
         tags$b(paste0(round(100 * ca / objectif), " %")))
   } else NULL
   

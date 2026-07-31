@@ -96,28 +96,34 @@ graph_repartition_periode <- function(db_kpi, db_obj, periode,
 }
 
 # Liste des produits (CA, quantité) sur une période -> table sélectionnable
-liste_produits_periode <- function(db_produits, d1, d2) {
+liste_produits_periode <- function(db_produits, d1, d2, unite_tva = "HTVA") {
+  
+  col <- paste0("CA_",unite_tva)
+  
   db_produits %>%
     filter(DATE >= d1, DATE <= d2) %>%
     group_by(Produit = PRODUIT) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+              CA = sum(!!sym(col), na.rm = TRUE), .groups = "drop") %>%
     arrange(desc(CA))
 }
 
 # Évolution hebdomadaire d'un produit
-evolution_un_produit <- function(db_produits, produit, d1, d2) {
+evolution_un_produit <- function(db_produits, produit, d1, d2, unite_tva = "HTVA") {
+  
+  col <- paste0("CA_",unite_tva)
+  
   db_produits %>%
     filter(DATE >= d1, DATE <= d2) |> 
     mutate(SEMAINE = floor_date(DATE, unit = "week", week_start = 1)) %>%
     group_by(SEMAINE) %>%
-    mutate(CA_TOT = sum(CA_HTVA, na.rm = TRUE)) |> 
+    mutate(CA_TOT = sum(!!sym(col), na.rm = TRUE)) |> 
     group_by(SEMAINE,CATEGORIE) %>%
-    mutate(CA_CATEGORIE = sum(CA_HTVA, na.rm = TRUE)) |> 
+    mutate(CA_CATEGORIE = sum(!!sym(col), na.rm = TRUE)) |> 
     filter(PRODUIT == produit) %>%
     group_by(SEMAINE,CATEGORIE) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(CA_HTVA, na.rm = TRUE), 
+              CA = sum(!!sym(col), na.rm = TRUE), 
               PC_ALL = CA / mean(CA_TOT, na.rm = TRUE), 
               PC_CATEGORIE = CA / mean(CA_CATEGORIE, na.rm = TRUE), 
               .groups = "drop") %>%

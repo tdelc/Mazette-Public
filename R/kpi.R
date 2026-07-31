@@ -57,11 +57,11 @@ kpi_tile <- function(valeur, libelle, couleur, icone = NULL, sous_titre = NULL) 
 }
 
 # Grille des KPI d'une période (sortie de compta_apercu).
-kpi_compta_tiles <- function(ap) {
+kpi_compta_tiles <- function(ap, unite_tva = 'HTVA') {
   t <- ap$total
   div(
     class = "kpi-grid",
-    kpi_tile(format_CA(t$CA, -1), "CA HTVA", "#2e7d32", "euro-sign"),
+    kpi_tile(format_CA(t$CA, -1), paste("CA",unite_tva), "#2e7d32", "euro-sign"),
     kpi_tile(format_CA(t$MARGE, -1), "Marge",
              if (t$MARGE >= 0) COUL_VERT else COUL_ROUGE, "piggy-bank",
              sous_titre = format_pct(t$MARGE_PCT)),

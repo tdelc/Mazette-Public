@@ -132,7 +132,7 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
 }
 
 # Tuiles de synthèse annuelle « à date ».
-kpi_annee_tiles <- function(serie, serie_m1) {
+kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
   ecoule <- serie %>% filter(DATE < today())
   ca     <- sum(ecoule$ventes, na.rm = TRUE)
   obj    <- sum(ecoule$objectif, na.rm = TRUE)
@@ -148,7 +148,7 @@ kpi_annee_tiles <- function(serie, serie_m1) {
   
   div(
     class = "kpi-grid",
-    kpi_tile(format_CA(ca, -1), "CA à date", "#2e7d32", "euro-sign"),
+    kpi_tile(format_CA(ca, -1), paste("CA",unite_tva,"à date"), "#2e7d32", "euro-sign"),
     kpi_tile(format_CA(obj, -1), "Objectif à date", COUL_TRAVAIL, "bullseye",
              sous_titre = format_pct(pct(ca, obj))),
     kpi_tile(format_CA(ca - obj, -1), "Écart objectif",

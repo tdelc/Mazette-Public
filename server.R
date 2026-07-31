@@ -15,9 +15,18 @@ server <- function(input, output, session) {
   USER <- reactiveValues(logged = FALSE)
 
   #### Données préparées (tout en CA HTVA) ####
-  UPD_KPI_SIMPLE <- prepa_db(DB_KPI_SIMPLE, "CA_HTVA")
-  UPD_OBJECTIFS  <- prepa_db(DB_OBJECTIFS, "CA_HTVA")
-
+  # UPD_KPI_SIMPLE() <- prepa_db(DB_KPI_SIMPLE, paste0("CA_",input$unite_tva))
+  # UPD_OBJECTIFS()  <- prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
+  
+  UPD_KPI_SIMPLE <- reactive({
+    req(input$unite_tva)
+    prepa_db(DB_KPI_SIMPLE, paste0("CA_",input$unite_tva))
+  })
+  UPD_OBJECTIFS  <- reactive({
+    req(input$unite_tva)
+    prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
+  })
+  
   # DB fictives compta (personnel + matières), calées sur le calendrier réel.
   # 4 secteurs : Service / Transformation alimentaire / Brasserie / Support.
   DATES_COMPTA <- creer_db_date() %>% filter(DATE <= today()) %>% pull(DATE)
@@ -25,14 +34,20 @@ server <- function(input, output, session) {
   # CA hebdomadaire réel des 12 derniers mois : sert à calibrer les volumes
   # fictifs pour que food/work/prime cost restent des ordres de grandeur
   # plausibles (et suivent le CA s'il évolue).
-  CA_HEBDO_REEL <- UPD_KPI_SIMPLE %>%
-    filter(ventes > 0, DATE > today() - 364) %>%
-    summarise(s = sum(ventes, na.rm = TRUE) / 52) %>%
-    pull(s)
-  if (!is.finite(CA_HEBDO_REEL) || CA_HEBDO_REEL <= 0)
-    CA_HEBDO_REEL <- CA_HEBDO_DEFAUT
+  CA_HEBDO_REEL <- reactive({
+    req(UPD_KPI_SIMPLE())
+    CA_HEBDO_REEL <- UPD_KPI_SIMPLE() %>%
+      filter(ventes > 0, DATE > today() - 364) %>%
+      summarise(s = sum(ventes, na.rm = TRUE) / 52) %>%
+      pull(s)
+    if (!is.finite(CA_HEBDO_REEL) || CA_HEBDO_REEL <= 0)
+      CA_HEBDO_REEL <- CA_HEBDO_DEFAUT
+    return(CA_HEBDO_REEL)
+  })
 
-  DB_COUTS_TRAVAIL_FICTIF <- generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
+  DB_COUTS_TRAVAIL_FICTIF <- reactive({
+    generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL())
+  })
   
   # Remplacer pour les données connues du coût du travail
   # date_connues <- DB_COUTS_TRAVAIL |> pull(DATE) |> unique()
@@ -40,24 +55,28 @@ server <- function(input, output, session) {
   #   filter(!DATE %in% date_connues) |> 
   #   add_row(DB_COUTS_TRAVAIL)
   
-  DB_COUTS_MATIERE <- generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL)
+  DB_COUTS_MATIERE <- reactive({
+    generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL())
+  })
   
-  # DB_COUTS_MATIERE <- DB_COUTS_MATIERE[0,]
+  # DB_COUTS_MATIERE() <- DB_COUTS_MATIERE()[0,]
   
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
     left_join(creer_db_date() |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS))
   
-  DB_COUTS_MATIERE_JOUR <- creer_db_date() |> 
-    rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
-    left_join(DB_COUTS_MATIERE) |> 
-    group_by(SEMAINE,SECTEUR) |> 
-    mutate(COUT_MATIERE    = COUT_MATIERE / n(),
-           ACHATS          = ACHATS / n(),
-           VARIATION_STOCK = VARIATION_STOCK / n()) |> 
-    ungroup() |> 
-    select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK, SIMU) |> 
-    filter(DATE < today())
-
+  DB_COUTS_MATIERE_JOUR <- reactive({
+    creer_db_date() |> 
+      rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
+      left_join(DB_COUTS_MATIERE()) |> 
+      group_by(SEMAINE,SECTEUR) |> 
+      mutate(COUT_MATIERE    = COUT_MATIERE / n(),
+             ACHATS          = ACHATS / n(),
+             VARIATION_STOCK = VARIATION_STOCK / n()) |> 
+      ungroup() |> 
+      select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK, SIMU) |> 
+      filter(DATE < today())
+  })
+  
   # Dernier jour d'ouverture (= "veille")
   date_veille <- DB_KPI_SIMPLE %>%
     filter(CA_HTVA > 0, DATE < today()) %>%
@@ -85,16 +104,16 @@ server <- function(input, output, session) {
   }
 
   output$vb_ca_veille <- renderText({
-    format_CA(ca_periode(UPD_KPI_SIMPLE, date_veille, date_veille), -1)
+    format_CA(ca_periode(UPD_KPI_SIMPLE(), date_veille, date_veille), -1)
   })
 
   output$vb_ca_semaine <- renderText({
-    format_CA(ca_periode(UPD_KPI_SIMPLE, date_debut_semaine, today()), -1)
+    format_CA(ca_periode(UPD_KPI_SIMPLE(), date_debut_semaine, today()), -1)
   })
 
   output$vb_pct_semaine <- renderText({
-    reel <- ca_periode(UPD_KPI_SIMPLE, date_debut_semaine, today()-1)
-    obj  <- ca_periode(UPD_OBJECTIFS, date_debut_semaine, today()-1)
+    reel <- ca_periode(UPD_KPI_SIMPLE(), date_debut_semaine, today()-1)
+    obj  <- ca_periode(UPD_OBJECTIFS(), date_debut_semaine, today()-1)
     print(reel)
     print(obj)
     if (is.na(obj) || obj == 0) "—" else paste0(round(100 * reel / obj), " %")
@@ -102,34 +121,44 @@ server <- function(input, output, session) {
 
   #### Volet "Maintenant" — Veille ####
   output$titre_veille <- renderText({
-    # paste0("Veille — ", format(date_veille, "%A %d/%m/%Y"))
     "Semaine en cours"
+  })
+  
+  output$title_vb_veille <- renderText({
+    paste0("CA ",input$unite_tva," de la veille")
   })
 
   output$box_veille <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE, UPD_OBJECTIFS, date_veille, 0,
-                    format_date = "%d/%m")
+    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, 0,
+                    format_date = "%d/%m", unite_tva = input$unite_tva)
   })
 
   output$top_veille <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS, date_veille, date_veille, n = 10)
+      top_produits_periode(DB_PRODUITS, date_veille, date_veille, n = 10, 
+                           unite_tva = input$unite_tva)
     )
   })
 
   #### Volet "Maintenant" — Semaine en cours ####
   output$box_semaine <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE, UPD_OBJECTIFS, date_debut_semaine, 6)
+    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_debut_semaine, 6,
+                    unite_tva = input$unite_tva)
+  })
+  
+  output$title_vb_semaine <- renderText({
+    paste0("CA ",input$unite_tva," de la semaine")
   })
 
   output$box_semaine_total <- renderUI({
-    box_ventes_total(UPD_KPI_SIMPLE, UPD_OBJECTIFS, date_debut_semaine, 6,
-                     titre = "Total semaine", is_semaine = TRUE)
+    box_ventes_total(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_debut_semaine, 6,
+                     titre = "Total semaine", is_semaine = TRUE,
+                     unite_tva = input$unite_tva)
   })
   
   # Les 5 semaines qui précèdent la semaine en cours, en une seule matrice
   output$recap_semaines <- renderUI({
-    tableau_semaines(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+    tableau_semaines(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                      date_debut_semaine - 7, n_semaines = 5)
   })
  
@@ -138,7 +167,7 @@ server <- function(input, output, session) {
   
   # Liste des mois disponibles (du plus récent au plus ancien)
   observe({
-    mois_dispo <- UPD_KPI_SIMPLE %>%
+    mois_dispo <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       distinct(PREMIER_JOUR_MOIS) %>%
       arrange(desc(PREMIER_JOUR_MOIS)) %>%
@@ -155,13 +184,14 @@ server <- function(input, output, session) {
   })
   
   output$box_mois_total <- renderUI({
-    box_ventes_total(UPD_KPI_SIMPLE, UPD_OBJECTIFS, mois_choisi(), 
+    box_ventes_total(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), mois_choisi(), 
                      days_in_month(mois_choisi())-1, 
-                     titre = "Total mois", is_semaine = TRUE)
+                     titre = "Total mois", is_semaine = TRUE,
+                     unite_tva = input$unite_tva)
   })
   
   prog_data <- reactive({
-    progression_mois(UPD_KPI_SIMPLE, UPD_OBJECTIFS, mois_choisi())
+    progression_mois(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), mois_choisi())
   })
   
   output$prog_graph <- renderPlotly({
@@ -195,7 +225,8 @@ server <- function(input, output, session) {
   output$top_semaine <- renderDT({
     datatable_simple(
       top_produits_periode(DB_PRODUITS,
-                           date_debut_semaine, date_debut_semaine + 6, n = 10)
+                           date_debut_semaine, date_debut_semaine + 6, n = 10, 
+                           unite_tva = input$unite_tva)
     )
   })
 
@@ -229,7 +260,7 @@ server <- function(input, output, session) {
 
   output$detail_jour_graph <- renderPlotly({
     p <- periode_detail()
-    graph_ca_jour(UPD_KPI_SIMPLE, UPD_OBJECTIFS, p[1], p[2], source = "detail_jour")
+    graph_ca_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2], source = "detail_jour")
   })
 
   # Jour sélectionné (clic sur une barre, défaut = veille)
@@ -255,13 +286,15 @@ server <- function(input, output, session) {
   })
 
   output$detail_jour_box <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE, UPD_OBJECTIFS, jour_detail(), 0,
-                    format_date = "%d/%m", width = "100%")
+    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), jour_detail(), 0,
+                    format_date = "%d/%m", width = "100%",
+                    unite_tva = input$unite_tva)
   })
 
   output$detail_jour_produits <- renderDT({
     datatable_simple(
-      top_produits_periode(DB_PRODUITS, jour_detail(), jour_detail(), n = 15)
+      top_produits_periode(DB_PRODUITS, jour_detail(), jour_detail(), n = 15, 
+                           unite_tva = input$unite_tva)
     )
   })
   
@@ -299,7 +332,7 @@ server <- function(input, output, session) {
   # Matières de la semaine du jour sélectionné, par secteur
   output$detail_jour_cout <- renderDT({
     datatable_simple(
-      DB_COUTS_MATIERE %>%
+      DB_COUTS_MATIERE() %>%
         filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
         transmute(Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
                   Stock = format_CA(VARIATION_STOCK, -1),
@@ -318,8 +351,8 @@ server <- function(input, output, session) {
       simu_travail <- 0
     }
     
-    if ("SIMU" %in% colnames(DB_COUTS_MATIERE)){
-      simu_matiere <- DB_COUTS_MATIERE %>%
+    if ("SIMU" %in% colnames(DB_COUTS_MATIERE())){
+      simu_matiere <- DB_COUTS_MATIERE() %>%
         filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
         summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
     }else{
@@ -348,7 +381,7 @@ server <- function(input, output, session) {
 
     output[[id("graph")]] <- renderPlotly({
       p <- periode()
-      graph_ca_periode(UPD_KPI_SIMPLE, UPD_OBJECTIFS, p[1], p[2],
+      graph_ca_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2],
                        unite = unite, source = src)
     })
 
@@ -382,7 +415,7 @@ server <- function(input, output, session) {
       d2 <- fin_periode(d1, unite)
       i <- interval(d1, d2)
       
-      DB_COUTS_MATIERE_JOUR %>%
+      DB_COUTS_MATIERE_JOUR() %>%
         filter(DATE %within% i) %>%
         group_by(SECTEUR) |> 
         summarise(ACHATS = sum(ACHATS),
@@ -408,8 +441,8 @@ server <- function(input, output, session) {
         simu_travail <- 0
       }
       
-      if ("SIMU" %in% colnames(DB_COUTS_MATIERE_JOUR)){
-        simu_matiere <- DB_COUTS_MATIERE %>%
+      if ("SIMU" %in% colnames(DB_COUTS_MATIERE_JOUR())){
+        simu_matiere <- DB_COUTS_MATIERE() %>%
           filter(SEMAINE %within% i_s) %>%
           summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
       }else{
@@ -425,15 +458,15 @@ server <- function(input, output, session) {
       d2 <- fin_periode(d1, unite)
       i <- interval(d1, d2)
       
-      UPD_KPI_SIMPLE |>  filter(DATE %within% i) |> pull(ventes) |> sum()
+      UPD_KPI_SIMPLE() |>  filter(DATE %within% i) |> pull(ventes) |> sum()
     })
     
     apercu <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
                     periode_sel(), unite)
     })
     
-    output[[id("kpi")]] <- renderUI({ kpi_compta_tiles(apercu()) })
+    output[[id("kpi")]] <- renderUI({ kpi_compta_tiles(apercu(),input$unite_tva)})
     
     marge <- reactive({
       cout_matiere() |> 
@@ -450,15 +483,16 @@ server <- function(input, output, session) {
     })
 
     output[[id("repartition")]] <- renderPlotly({
-      graph_repartition_periode(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+      graph_repartition_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                                 periode_sel(), unite = unite)
     })
 
     output[[id("box")]] <- renderUI({
       d1 <- periode_sel()
-      box_ventes_total(UPD_KPI_SIMPLE, UPD_OBJECTIFS, d1,
+      box_ventes_total(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), d1,
                        as.numeric(fin_periode(d1, unite) - d1),
-                       titre = label_periode(d1, unite), is_semaine = TRUE)
+                       titre = label_periode(d1, unite), is_semaine = TRUE,
+                       unite_tva = input$unite_tva)
     })
     
     output[[id("travail")]] <- renderDT({
@@ -492,7 +526,8 @@ server <- function(input, output, session) {
     output[[id("produits")]] <- renderDT({
       d1 <- periode_sel()
       datatable_simple(
-        top_produits_periode(DB_PRODUITS, d1, fin_periode(d1, unite), n = 20)
+        top_produits_periode(DB_PRODUITS, d1, fin_periode(d1, unite), n = 20, 
+                             unite_tva = input$unite_tva)
       )
     })
   }
@@ -515,14 +550,17 @@ server <- function(input, output, session) {
 
   produits_df <- reactive({
     p <- periode_produit_detail()
-    liste_produits_periode(DB_PRODUITS, p[1], p[2])
+    liste_produits_periode(DB_PRODUITS, p[1], p[2], unite_tva = input$unite_tva)
   })
 
   output$detail_produit_liste <- renderDT({
+    
+    col_name <- paste("CA",unite_tva)
+    
     df <- produits_df() %>%
       transmute(Produit = tronque_nom(Produit),
                 Quantité = Quantite,
-                `CA HTVA` = format_CA(CA, -1))
+                !!sym(col_name) := format_CA(CA, -1))
     datatable(df, selection = "single", rownames = FALSE,
               options = list(pageLength = 12, dom = 'ftp', 
                              language = list(search = "Filtrer :")))
@@ -543,13 +581,15 @@ server <- function(input, output, session) {
   evo_produit <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS, pr, min(DB_PRODUITS$DATE), today())
+    evolution_un_produit(DB_PRODUITS, pr, min(DB_PRODUITS$DATE), today(), 
+                         unite_tva = input$unite_tva)
   })
   
   evo_produit_periode <- reactive({
     pr <- produit_choisi()
     req(pr)
-    evolution_un_produit(DB_PRODUITS, pr, periode_produit_detail()[1], today())
+    evolution_un_produit(DB_PRODUITS, pr, periode_produit_detail()[1], today(),
+                         unite_tva = input$unite_tva)
   })
 
   output$detail_produit_graph <- renderPlotly({
@@ -558,13 +598,15 @@ server <- function(input, output, session) {
 
   output$detail_produit_table <- renderDT({
     
+    col_name <- paste("CA",unite_tva)
+    
     category <- evo_produit_periode() |> pull(CATEGORIE) |> unique() |> str_to_title()
     category_column <- paste0("Part dans '",category,"'")
     
     df <- evo_produit_periode() %>%
       transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
                 Quantité = Quantite,
-                `CA HTVA` = format_CA(CA, -1),
+                !!sym(col_name) := format_CA(CA, -1),
                 `Part dans Total` = paste0(round(PC_ALL*100,0),"%"),
                 !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%")
                 ) %>%
@@ -576,12 +618,12 @@ server <- function(input, output, session) {
 
   #### Volet "Historique" — CA par semaine / mois ####
   output$hist_graph <- renderPlotly({
-    graph_historique(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+    graph_historique(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                      unite = input$hist_unite, n = input$hist_n)
   })
 
   output$hist_evo <- renderPlotly({
-    graph_historique_tendance(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
+    graph_historique_tendance(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                      unite = input$hist_unite, n = input$hist_n)
   })
   
@@ -732,12 +774,14 @@ server <- function(input, output, session) {
     
     # Agrégat de toutes les périodes (pour les graphiques d'évolution)
     comptes <- reactive({
-      agrege_compta(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, unite)
+      req(UPD_KPI_SIMPLE(),DB_COUTS_MATIERE())
+      agrege_compta(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), unite)
     })
 
     # Liste des périodes proposées dans les deux sélecteurs
     observe({
-      # dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE, unite)
+      req(comptes())
+      # dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE(), unite)
       dispo <- sort(unique(comptes()$PERIODE),decreasing = TRUE)
       req(length(dispo) > 0)
       choix <- setNames(as.character(dispo), label_periode(dispo, unite))
@@ -778,11 +822,11 @@ server <- function(input, output, session) {
     })
 
     apercu_a <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
                     periode_a(), unite)
     })
     apercu_b <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE, DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
                     periode_b(), unite)
     })
 
@@ -793,7 +837,8 @@ server <- function(input, output, session) {
         paste0(a$libelle, "  (", format(a$bornes[1], "%d/%m"), " → ",
                format(a$bornes[2], "%d/%m/%Y"), ")")
       })
-      output[[id(paste0("kpi_", cle))]] <- renderUI({ kpi_compta_tiles(ap()) })
+      output[[id(paste0("kpi_", cle))]] <- renderUI({ 
+        kpi_compta_tiles(ap(),input$unite_tva) })
       output[[id(paste0("secteurs_", cle))]] <- renderPlotly({
         graph_secteurs_compta(ap())
       })
@@ -816,7 +861,7 @@ server <- function(input, output, session) {
   # sélectionne par défaut les 2 plus récentes.
   observe({
     req(input$comp_unite)
-    dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE, input$comp_unite)
+    dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE(), input$comp_unite)
     choix <- setNames(as.character(dispo), label_periode(dispo, input$comp_unite))
     updateSelectizeInput(session, "comp_periodes", choices = choix,
                          selected = as.character(head(dispo, 2)))
@@ -824,8 +869,8 @@ server <- function(input, output, session) {
 
   comp_data <- reactive({
     req(input$comp_periodes)
-    comparaison_periodes(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
-                         DB_COUTS_TRAVAIL, DB_COUTS_MATIERE,
+    comparaison_periodes(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                         DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
                          unite = input$comp_unite, periodes = input$comp_periodes)
   })
 
@@ -834,13 +879,14 @@ server <- function(input, output, session) {
   })
 
   output$comp_table <- renderDT({
-    datatable_simple(table_comparaison_aff(comp_data(), unite = input$comp_unite))
+    datatable_simple(table_comparaison_aff(comp_data(), unite = input$comp_unite,
+                                           unite_tva = input$unite_tva))
   })
 
   #### Volet "Année" ####
 
   observe({
-    annees <- UPD_KPI_SIMPLE %>%
+    annees <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       pull(DATE) %>% year() %>% unique() %>% sort(decreasing = TRUE)
     req(length(annees) > 0)
@@ -854,17 +900,17 @@ server <- function(input, output, session) {
   })
 
   serie_annee <- reactive({
-    serie_annuelle(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
-                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, annee_val())
+    serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), annee_val())
   })
 
   serie_annee_m1 <- reactive({
-    serie_annuelle(UPD_KPI_SIMPLE, UPD_OBJECTIFS,
-                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE, annee_val() - 1)
+    serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), annee_val() - 1)
   })
 
   output$annee_kpi <- renderUI({
-    kpi_annee_tiles(serie_annee(), serie_annee_m1())
+    kpi_annee_tiles(serie_annee(), serie_annee_m1(), input$unite_tva)
   })
 
   output$annee_ecart_obj <- renderPlotly({
@@ -872,17 +918,17 @@ server <- function(input, output, session) {
   })
 
   output$annee_ecart_ym1 <- renderPlotly({
-    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "ventes")
+    graph_ecart_ym1(UPD_KPI_SIMPLE(), annee_val(), var = "ventes")
   })
   
   output$annee_marge <- renderPlotly({
     serie_m1 <- serie_annee() |> mutate(MARGE = 0)
-    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
+    graph_ecart_ym1(UPD_KPI_SIMPLE(), annee_val(), var = "marge",
                     serie = serie_annee(), serie_m1 = serie_m1)
   })
 
   output$annee_ecart_marge <- renderPlotly({
-    graph_ecart_ym1(UPD_KPI_SIMPLE, annee_val(), var = "marge",
+    graph_ecart_ym1(UPD_KPI_SIMPLE(), annee_val(), var = "marge",
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
   
@@ -988,7 +1034,7 @@ server <- function(input, output, session) {
   })
 
   conso_comp <- reactive({
-    conso_bieres_comparee(DB_TICKET, REF_BIERES, conso_sem())
+    conso_bieres_comparee(DB_TICKET, REF_BIERES, conso_sem(), input$unite_tva)
   })
 
   conso_formats <- reactive({
@@ -1000,7 +1046,7 @@ server <- function(input, output, session) {
   })
 
   output$conso_kpi <- renderUI({
-    kpi_bieres_tiles(conso_comp(), conso_formats(), conso_horaire())
+    kpi_bieres_tiles(conso_comp(), conso_formats(), conso_horaire(), input$unite_tva)
   })
 
   output$conso_top <- renderPlotly({
@@ -1010,7 +1056,7 @@ server <- function(input, output, session) {
   output$conso_tendance <- renderPlotly({
     graph_tendance_bieres(
       evo_top_bieres(DB_TICKET, REF_BIERES, conso_sem(),
-                     n_top = 5, n_semaines = 12),
+                     n_top = 5, n_semaines = 12, input$unite_tva),
       semaine = conso_sem())
   })
 
@@ -1030,7 +1076,7 @@ server <- function(input, output, session) {
   })
 
   output$conso_table <- renderDT({
-    datatable_simple(table_conso_bieres(conso_comp()))
+    datatable_simple(table_conso_bieres(conso_comp(), input$unite_tva))
   })
 
   #### Volet "Pizzwanze" ####
@@ -1053,15 +1099,15 @@ server <- function(input, output, session) {
 
   pizz_data <- reactive({
     req(input$pizz_soiree)
-    pizzwanze_soiree(DB_PRODUITS, DB_TICKET, as.Date(input$pizz_soiree), SOIREES_PIZZWANZE)
+    pizzwanze_soiree(DB_PRODUITS, DB_TICKET, as.Date(input$pizz_soiree), SOIREES_PIZZWANZE, input$unite_tva)
   })
 
   pizz_hist <- reactive({
-    historique_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE)
+    historique_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE, input$unite_tva)
   })
 
   output$pizz_kpi <- renderUI({
-    kpi_pizzwanze_tiles(pizz_data())
+    kpi_pizzwanze_tiles(pizz_data(), input$unite_tva)
   })
 
   output$pizz_soiree <- renderPlotly({
@@ -1074,7 +1120,7 @@ server <- function(input, output, session) {
 
   output$pizz_carte <- renderPlotly({
     # n <- suppressWarnings(as.integer(input$pizz_profondeur))
-    graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE, n_soirees = 12)
+    graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE, n_soirees = 12, unite_tva = input$unite_tva)
   })
 
   output$pizz_evo <- renderPlotly({
@@ -1082,7 +1128,7 @@ server <- function(input, output, session) {
   })
 
   output$pizz_table <- renderDT({
-    datatable_simple(table_pizzwanze(pizz_data()))
+    datatable_simple(table_pizzwanze(pizz_data(), input$unite_tva))
   })
 
   #### Volet "Focaccias" ####
@@ -1102,15 +1148,15 @@ server <- function(input, output, session) {
   })
 
   foca_data <- reactive({
-    focaccias_semaine(DB_PRODUITS, foca_sem())
+    focaccias_semaine(DB_PRODUITS, foca_sem(), input$unite_tva)
   })
 
   foca_evo <- reactive({
-    evo_focaccias(DB_PRODUITS, n_semaines = 26, fin = foca_sem() + 6)
+    evo_focaccias(DB_PRODUITS, n_semaines = 26, fin = foca_sem() + 6, input$unite_tva)
   })
 
   output$foca_kpi <- renderUI({
-    kpi_focaccias_tiles(foca_data())
+    kpi_focaccias_tiles(foca_data(), input$unite_tva)
   })
 
   output$foca_jour <- renderPlotly({
@@ -1132,7 +1178,7 @@ server <- function(input, output, session) {
   })
 
   output$foca_table <- renderDT({
-    datatable_simple(table_focaccias(foca_data()))
+    datatable_simple(table_focaccias(foca_data(), input$unite_tva))
   })
 
   #### Volet "Focaccias" — carte Production ####
@@ -1141,7 +1187,7 @@ server <- function(input, output, session) {
   # production à venir, pas celle d'une semaine consultée dans l'historique.
 
   prod_base <- reactive({
-    production_focaccias_base(DB_PRODUITS, n_semaines = 3, marge = 1+input$prod_multi/100)
+    production_focaccias_base(DB_PRODUITS, n_semaines = 3, marge = 1+input$prod_multi/100, unite_tva = input$unite_tva)
   })
 
   # (Ré)applique les valeurs par défaut. La ligne libre reste vide.

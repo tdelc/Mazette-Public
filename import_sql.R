@@ -179,7 +179,8 @@ DB_BIERES <- DB_PRODUITS %>%
   mutate(VOLUME_TOT_L = QUANTITE*VOLUME_CL/100) |> 
   group_by(CATEGORIE,BOISSON,ID_BRASSIN,BIERE_FINIE,DATE,
            VOLUME_BRASSIN,VOLUME_BRASSIN_AJUST,PRIX_33CL) %>%
-  summarise(CA_HTVA = sum(CA_HTVA),
+  summarise(QUANTITE = sum(QUANTITE),
+            CA_HTVA = sum(CA_HTVA),
             CA_TVAC = sum(CA_TVAC),
             VOLUME_JOUR = sum(VOLUME_TOT_L),.groups = "drop") %>%
   arrange(ID_BRASSIN,BOISSON,DATE) %>%

@@ -56,20 +56,22 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
 }
 
 # Tableau comparatif (ventes vs objectif + compta).
-table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee")) {
+table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee"),
+                                  unite_tva = NULL) {
+  col_name <- paste("CA",unite_tva)
   unite <- match.arg(unite)
   if (is.null(comp) || nrow(comp) == 0)
     return(tibble(Période = character()))
   comp %>%
     arrange(desc(PERIODE)) %>%
-    transmute(Période       = label_periode(PERIODE, unite),
-              `CA (HTVA)`   = format_CA(CA, -1),
-              Objectif      = format_CA(OBJECTIF, -1),
-              `% obj.`      = ifelse(is.na(PCT_OBJ), "—", paste0(PCT_OBJ, " %")),
-              `Food cost`   = ifelse(is.na(FOOD_PCT), "—", paste0(FOOD_PCT, " %")),
-              `Work cost`   = ifelse(is.na(WORK_PCT), "—", paste0(WORK_PCT, " %")),
-              `Prime cost`  = ifelse(is.na(PRIME_PCT), "—", paste0(PRIME_PCT, " %")),
-              Marge         = format_CA(MARGE, -1),
-              `Marge %`     = ifelse(is.na(MARGE_PCT), "—", paste0(MARGE_PCT, " %")))
+    transmute(Période          = label_periode(PERIODE, unite),
+              !!sym(col_name) := format_CA(CA, -1),
+              Objectif         = format_CA(OBJECTIF, -1),
+              `% obj.`         = ifelse(is.na(PCT_OBJ), "—", paste0(PCT_OBJ, " %")),
+              `Food cost`      = ifelse(is.na(FOOD_PCT), "—", paste0(FOOD_PCT, " %")),
+              `Work cost`      = ifelse(is.na(WORK_PCT), "—", paste0(WORK_PCT, " %")),
+              `Prime cost`     = ifelse(is.na(PRIME_PCT), "—", paste0(PRIME_PCT, " %")),
+              Marge            = format_CA(MARGE, -1),
+              `Marge %`        = ifelse(is.na(MARGE_PCT), "—", paste0(MARGE_PCT, " %")))
 }
 

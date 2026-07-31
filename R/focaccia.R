@@ -24,7 +24,10 @@ ORDRE_GARNITURES <- c("Nature", "Fromage", "Viande", "Fromage + Viande")
 
 # Lignes de focaccia sur une fenêtre, décomposées en options.
 # On écarte les remises et lignes négatives, qui ne sont pas des ventes.
-conso_focaccias <- function(db_produits, d1, d2) {
+conso_focaccias <- function(db_produits, d1, d2, unite_tva) {
+  
+  col <- paste0("CA_",unite_tva)
+  
   db <- db_produits %>%
     filter(str_detect(tolower(PRODUIT_FULL), "focaccia"),
            !str_detect(tolower(PRODUIT_FULL), "discount|% sur produit"),
@@ -34,17 +37,17 @@ conso_focaccias <- function(db_produits, d1, d2) {
                   FROMAGE = logical(), VIANDE = logical(), SPICY = logical(),
                   GARNITURE = character(), VARIANTE = character(),
                   QUANTITE = numeric(), CA = numeric()))
-  bind_cols(db %>% select(DATE, QUANTITE, CA = CA_HTVA),
+  bind_cols(db %>% select(DATE, QUANTITE, CA = !!sym(col)),
             parse_focaccia(db$PRODUIT_FULL)) %>%
     mutate(GARNITURE = factor(GARNITURE, levels = ORDRE_GARNITURES))
 }
 
 # Synthèse d'une semaine, avec la semaine précédente pour comparaison.
-focaccias_semaine <- function(db_produits, semaine) {
+focaccias_semaine <- function(db_produits, semaine, unite_tva = "HTVA") {
   semaine <- as.Date(semaine)
   list(semaine = semaine,
-       act  = conso_focaccias(db_produits, semaine, semaine + 6),
-       prec = conso_focaccias(db_produits, semaine - 7, semaine - 1))
+       act  = conso_focaccias(db_produits, semaine, semaine + 6, unite_tva),
+       prec = conso_focaccias(db_produits, semaine - 7, semaine - 1, unite_tva))
 }
 
 # Nombre de focaccias par jour de la semaine choisie.
@@ -71,14 +74,14 @@ focaccias_variantes <- function(fo) {
 }
 
 # Historique hebdomadaire : volumes et taux d'options.
-evo_focaccias <- function(db_produits, n_semaines = 26, fin = NULL) {
+evo_focaccias <- function(db_produits, n_semaines = 26, fin = NULL, unite_tva = "HTVA") {
   fin <- if (is.null(fin)) max(db_produits$DATE, na.rm = TRUE) else as.Date(fin)
   debut <- floor_date(fin, "week", week_start = 1) - weeks(n_semaines - 1)
   # Les quantités par option sont calculées AVANT le regroupement : dans un
   # summarise(), `QUANTITE = sum(QUANTITE)` écrase la colonne, et un
   # `QUANTITE[FROMAGE]` écrit ensuite indexerait le total (scalaire) au lieu
   # des lignes — ce qui ne produit que des NA.
-  conso_focaccias(db_produits, debut, fin) %>%
+  conso_focaccias(db_produits, debut, fin, unite_tva) %>%
     mutate(SEMAINE   = floor_date(DATE, "week", week_start = 1),
            Q_FROMAGE = QUANTITE * FROMAGE,
            Q_VIANDE  = QUANTITE * VIANDE,
@@ -96,7 +99,8 @@ evo_focaccias <- function(db_produits, n_semaines = 26, fin = NULL) {
     arrange(SEMAINE)
 }
 
-kpi_focaccias_tiles <- function(fs) {
+kpi_focaccias_tiles <- function(fs, unite_tva = NULL) {
+  
   act <- fs$act; prec <- fs$prec
   q  <- sum(act$QUANTITE);  q_m1  <- sum(prec$QUANTITE)
   ca <- sum(act$CA);        ca_m1 <- sum(prec$CA)
@@ -107,7 +111,7 @@ kpi_focaccias_tiles <- function(fs) {
   div(
     class = "kpi-grid",
     tuile_evolution(q, q_m1, "Focaccias vendues", "bread-slice"),
-    tuile_evolution(ca, ca_m1, "CA focaccias", "euro-sign",
+    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"focaccias"), "euro-sign",
                     function(x) format_CA(x, -1)),
     kpi_tile(if (jours_ouverts > 0) format(round(q / jours_ouverts, 1)) else "—",
              "Par jour d'ouverture", CONSO_BRUN, "gauge-high",
@@ -217,7 +221,9 @@ graph_options_focaccias <- function(evo) {
 }
 
 # Détail par variante, avec comparaison S-1.
-table_focaccias <- function(fs) {
+table_focaccias <- function(fs, unite_tva = NULL) {
+  
+  col_name <- paste("CA",unite_tva)
   agg <- function(d) d %>% group_by(VARIANTE) %>%
     summarise(Q = sum(QUANTITE), CA = sum(CA), .groups = "drop")
   act <- agg(fs$act)
@@ -240,11 +246,11 @@ table_focaccias <- function(fs) {
               Quantité   = Q,
               # une décimale : à l'entier, huit petites parts arrondies
               # chacune vers le haut faisaient une somme à 102 %
-              `Part`     = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
-              `CA`       = format_CA(CA, -1),
-              `Qté S-1`  = Q_M1,
-              `Évol.`    = ifelse(is.na(EVO), "—",
-                                  paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
+              `Part`           = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
+              !!sym(col_name) := format_CA(CA, -1),
+              `Qté S-1`        = Q_M1,
+              `Évol.`          = ifelse(is.na(EVO), "—",
+                                        paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
 }
 
 
@@ -265,7 +271,7 @@ semaines_completes <- function(dates, n = 3, fin = NULL) {
 # Base de la carte production : nombre moyen de focaccias par semaine
 # concernées par chaque ingrédient, et portion par défaut.
 production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL,
-                                      marge = 1.1) {
+                                      marge = 1.1, unite_tva = "HTVA") {
   base <- INGREDIENTS_FOCACCIA %>% mutate(FOCACCIAS = NA_real_, SEMAINES = 0L)
   if (is.null(db_produits) || nrow(db_produits) == 0) return(base)
   
@@ -273,7 +279,7 @@ production_focaccias_base <- function(db_produits, n_semaines = 3, fin = NULL,
   else as.Date(fin)
   if (!is.finite(fin_donnees)) return(base)
   
-  fo_all <- conso_focaccias(db_produits, as.Date("1900-01-01"), fin_donnees)
+  fo_all <- conso_focaccias(db_produits, as.Date("1900-01-01"), fin_donnees, unite_tva)
   if (nrow(fo_all) == 0) return(base)
   
   sems <- semaines_completes(fo_all$DATE, n_semaines, fin)

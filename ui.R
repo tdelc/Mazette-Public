@@ -170,6 +170,12 @@ ui_app <- function() {
       title = "Comparaison",
       icon = icon("code-compare"),
       ui_comparaison()
+    ),
+    nav_spacer(),                        # pousse ce qui suit à droite
+    nav_item(
+      radioGroupButtons("unite_tva", label = NULL,
+                        choices = c("HTVA", "TVAC"), selected = "HTVA",
+                        size = "sm", status = "outline-secondary")
     )
   )
 }
@@ -892,9 +898,9 @@ ui_maintenant <- function() {
     layout_columns(
       fill = FALSE,
       col_widths = c(4, 4, 4),
-      value_box("CA HTVA de la veille", textOutput("vb_ca_veille"),
+      value_box(textOutput("title_vb_veille"), textOutput("vb_ca_veille"),
                 showcase = icon("calendar-day"), theme = "primary"),
-      value_box("CA HTVA de la semaine", textOutput("vb_ca_semaine"),
+      value_box(textOutput("title_vb_semaine"), textOutput("vb_ca_semaine"),
                 showcase = icon("calendar-week"),
                 theme = value_box_theme(bg = MZ_AMBRE, fg = "#ffffff")),
       value_box("Objectif de la semaine", textOutput("vb_pct_semaine"),

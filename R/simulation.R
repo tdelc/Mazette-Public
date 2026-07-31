@@ -30,7 +30,7 @@ table_simulation_aff <- function(sim) {
               Quantité = QUANTITE,
               `Prix moyen` = PRIX_MOYEN,
               `Prix simulé` = round(PRIX_SIMU, 2),
-              `CA actuel` = round(CA),
-              `CA simulé` = round(CA_SIMU),
+              `CA HTVA actuel` = round(CA),
+              `CA HTVA simulé` = round(CA_SIMU),
               `Δ CA` = round(DELTA))
 }

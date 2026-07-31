@@ -1,17 +1,22 @@
 #### REFONTE — Volet "Maintenant" ####
 
 # Top produits (CA HTVA) sur une période [date_debut, date_fin]
-top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10) {
+top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10,
+                                 unite_tva = "HTVA") {
+  
+  col <- paste0("CA_",unite_tva)
+  col_name <- paste("CA",unite_tva)
+  
   db_produits %>%
     filter(DATE >= date_debut, DATE <= date_fin) %>%
     group_by(PRODUIT) %>%
     summarise(Quantite = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
+              CA = sum(!!sym(col), na.rm = TRUE), .groups = "drop") %>%
     arrange(desc(CA)) %>%
     slice_head(n = n) %>%
     transmute(Produit = tronque_nom(PRODUIT),
               Quantité = Quantite,
-              `CA HTVA` = format_CA(CA, -1))
+              !!sym(col_name) := format_CA(CA, -1))
 }
 
 # Évolution des produits (hors bières) : semaine en cours vs semaine précédente

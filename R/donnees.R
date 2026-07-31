@@ -54,7 +54,9 @@ hydrate_donnees <- function(db_ticket, ref_produits) {
         wday(DATE_TS, week_start = 1) %in% c(6, 7)
         | (wday(DATE_TS, week_start = 1) == 5 & CD_PERIODE_JOUR == "Soir"),
         "Week-end", "Semaine"),
-      VOLUME_TOT_L       = QUANTITE * VOLUME_CL / 100
+      VOLUME_TOT_L       = QUANTITE * VOLUME_CL / 100,
+      CA_TVAC = PRIX_TOTAL,
+      CA_HTVA = CA_TVAC / (1 + TAUX_TVA)
     )
 
   list(DB_TICKET = complet, TICKETS_HEURES = tickets_heures(complet))

@@ -24,20 +24,24 @@ tickets_bieres <- function(db_ticket, ref, d1, d2) {
 }
 
 # Consommation par bière sur une fenêtre : verres, litres, CA.
-conso_bieres <- function(db_ticket, ref, d1, d2) {
+conso_bieres <- function(db_ticket, ref, d1, d2, unite_tva) {
+  
+  col <- paste0("CA_",unite_tva)
+  col_name <- paste("CA",unite_tva)
+  
   tickets_bieres(db_ticket, ref, d1, d2) %>%
     group_by(BOISSON) %>%
     summarise(VERRES = sum(QUANTITE, na.rm = TRUE),
               LITRES = sum(LITRES, na.rm = TRUE),
-              CA     = sum(PRIX_TOTAL, na.rm = TRUE), .groups = "drop") %>%
+              CA     = sum(!!sym(col), na.rm = TRUE), .groups = "drop") %>%
     arrange(desc(LITRES))
 }
 
 # Consommation d'une semaine, comparée à la semaine précédente.
-conso_bieres_comparee <- function(db_ticket, ref, semaine) {
+conso_bieres_comparee <- function(db_ticket, ref, semaine, unite_tva = "HTVA") {
   semaine <- as.Date(semaine)
-  act <- conso_bieres(db_ticket, ref, semaine, semaine + 6)
-  prec <- conso_bieres(db_ticket, ref, semaine - 7, semaine - 1) %>%
+  act <- conso_bieres(db_ticket, ref, semaine, semaine + 6, unite_tva)
+  prec <- conso_bieres(db_ticket, ref, semaine - 7, semaine - 1, unite_tva) %>%
     rename(VERRES_M1 = VERRES, LITRES_M1 = LITRES, CA_M1 = CA)
   
   full_join(act, prec, by = "BOISSON") %>%
@@ -91,9 +95,10 @@ evo_conso_bieres <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
 
 # Trajectoire hebdomadaire des principales bières de la semaine choisie :
 # permet de voir lesquelles montent, lesquelles s'essoufflent.
-evo_top_bieres <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12) {
+evo_top_bieres <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12,
+                           unite_tva = "HTVA") {
   semaine <- as.Date(semaine)
-  top <- conso_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+  top <- conso_bieres(db_ticket, ref, semaine, semaine + 6, unite_tva) %>%
     slice_head(n = n_top) %>%
     pull(BOISSON)
   if (length(top) == 0) return(tibble(SEMAINE = as.Date(character()),
@@ -121,7 +126,7 @@ formats_bieres <- function(db_ticket, ref, semaine) {
     arrange(desc(VERRES))
 }
 
-kpi_bieres_tiles <- function(comp, formats, horaire = NULL) {
+kpi_bieres_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL) {
   litres  <- sum(comp$LITRES);    litres_m1 <- sum(comp$LITRES_M1)
   verres  <- sum(comp$VERRES);    verres_m1 <- sum(comp$VERRES_M1)
   ca      <- sum(comp$CA);        ca_m1     <- sum(comp$CA_M1)
@@ -141,7 +146,7 @@ kpi_bieres_tiles <- function(comp, formats, horaire = NULL) {
     tuile_evolution(litres, litres_m1, "Litres servis", "beer-mug-empty",
                     function(x) paste0(format(round(x)), " L")),
     tuile_evolution(verres, verres_m1, "Verres servis", "wine-glass"),
-    tuile_evolution(ca, ca_m1, "CA bières", "euro-sign",
+    tuile_evolution(ca, ca_m1, paste("CA",unite_tva,"bières"), "euro-sign",
                     function(x) format_CA(x, -1)),
     tuile_ecart(nb, nb_m1, "Bières différentes", "list-ul"),
     kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,
@@ -282,8 +287,10 @@ graph_formats_bieres <- function(formats) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-table_conso_bieres <- function(comp) {
+table_conso_bieres <- function(comp, unite_tva = NULL) {
   if (is.null(comp) || nrow(comp) == 0) return(tibble(Bière = character()))
+  
+  col_name <- paste("CA",unite_tva)
   
   # Totaux calculés hors du transmute : une condition scalaire dans un
   # `ifelse` renverrait une valeur unique, recyclée sur toutes les lignes.
@@ -293,18 +300,18 @@ table_conso_bieres <- function(comp) {
   comp %>%
     mutate(PART    = if (total > 0) 100 * LITRES / total else NA_real_,
            PART_M1 = if (total_m1 > 0) 100 * LITRES_M1 / total_m1 else NA_real_) %>%
-    transmute(Bière      = BOISSON,
-              Verres     = VERRES,
-              Litres     = round(LITRES),
-              Part       = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
-              `CA`       = format_CA(CA, -1),
-              `Litres S-1` = round(LITRES_M1),
-              `Part S-1` = ifelse(is.na(PART_M1), "—",
-                                  paste0(round(PART_M1, 1), " %")),
-              `Évol.`    = ifelse(is.na(EVO_PCT), "—",
-                                  paste0(ifelse(EVO_PCT >= 0, "+", ""),
+    transmute(Bière            = BOISSON,
+              Verres           = VERRES,
+              Litres           = round(LITRES),
+              Part             = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
+              !!sym(col_name) := format_CA(CA, -1),
+              `Litres S-1`     = round(LITRES_M1),
+              `Part S-1`       = ifelse(is.na(PART_M1), "—",
+                                        paste0(round(PART_M1, 1), " %")),
+              `Évol.`          = ifelse(is.na(EVO_PCT), "—",
+                                        paste0(ifelse(EVO_PCT >= 0, "+", ""),
                                          EVO_PCT, " %")),
-              Statut     = STATUT)
+              Statut           = STATUT)
 }
 
 # Niveau actuel de chaque bière en cours (dernière mesure connue)
