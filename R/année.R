@@ -121,7 +121,7 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
     arrange(DATE) %>%
     filter(DATE < today()) %>%
     mutate(
-      # VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
+      VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
       ECART = replace_na(cumsum(VAL - VAL_M1), 0),
       LABEL = paste0(format(DATE, "%d/%m/%Y"),
                      "<br>", nom, " : ", format_CA(VAL, -1),

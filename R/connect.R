@@ -1,14 +1,4 @@
-# Contrat entre l'import et le dashboard : les seules tables que le tableau de
-# bord consomme, et donc les seules que l'on sauvegarde.
-#
-# Tout le reste (IMPORT_*, DB_sheets, NOMEN_*, les vecteurs de travail, les
-# fonctions) n'existe que le temps de la reconstruction. `save(list = ls(envir))`
-# les embarquait tous : 71 objets pour 8,6 Mo, dont 3,9 Mo rien qu'en fonctions
-# — une closure emporte son environnement de définition, donc chaque fonction
-# définie dans sql.R / import_sql.R sérialisait une copie complète des données.
-#
-# Ajouter une table ici est délibéré. Si le dashboard réclame un objet absent de
-# cette liste, il faut l'y inscrire plutôt que d'élargir le filet.
+# Tables conservés dans le rds
 TABLES_DASHBOARD <- c(
   "DB_JOURS",         # CA par jour, base des objectifs
   "DB_KPI_SIMPLE",    # CA jour x (midi/soir, semaine/week-end, boisson/nourriture)
@@ -59,10 +49,8 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
   # Chargement via google sheets (reconstruction complète)
   if (force_dl | class(drive_mazette)[1] == "try-error") {
     cli::cli_h1("Mise à jour des données")
-    # cli::cli_h2("Remplir les DB SQL")
-    # print(system.time({source("sql.R", local = envir)}))
     cli::cli_h2("Importer les DB")
-    print(system.time({source("import_new.R", local = envir)}))
+    print(system.time({source("import.R", local = envir)}))
     
     # Prendre la dernière date comme date de sauvegarde
     date_jour      <- max(get("DB_JOURS", envir = envir)$DATE)
@@ -87,8 +75,7 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
                               overwrite = TRUE)
   }
   # Quel que soit le chemin suivi, DB_TICKET est ici sous sa forme réduite : on
-  # reconstruit la forme complète et TICKETS_HEURES. Idempotent, donc sans effet
-  # sur un .RData antérieur à la normalisation.
+  # reconstruit la forme complète et TICKETS_HEURES.
   if (hydrate_dans(envir))
     cli::cli_alert_success("DB_TICKET reconstruit ({nrow(get('DB_TICKET', envir = envir))} lignes)")
 
