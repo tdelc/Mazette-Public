@@ -14,10 +14,11 @@ server <- function(input, output, session) {
 
   USER <- reactiveValues(logged = FALSE)
 
-  #### Données préparées (tout en CA HTVA) ####
-  # UPD_KPI_SIMPLE() <- prepa_db(DB_KPI_SIMPLE, paste0("CA_",input$unite_tva))
-  # UPD_OBJECTIFS()  <- prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
-  
+  #### Données préparées ####
+  UPD_JOURS <- reactive({
+    req(input$unite_tva)
+    prepa_db(DB_JOURS, paste0("CA_",input$unite_tva))
+  })  
   UPD_KPI_SIMPLE <- reactive({
     req(input$unite_tva)
     prepa_db(DB_KPI_SIMPLE, paste0("CA_",input$unite_tva))
@@ -617,12 +618,12 @@ server <- function(input, output, session) {
 
   #### Volet "Historique" — CA par semaine / mois ####
   output$hist_graph <- renderPlotly({
-    graph_historique(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+    graph_historique(UPD_JOURS(), UPD_OBJECTIFS(),
                      unite = input$hist_unite, n = input$hist_n)
   })
 
   output$hist_evo <- renderPlotly({
-    graph_historique_tendance(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+    graph_historique_tendance(UPD_JOURS(), UPD_OBJECTIFS(),
                      unite = input$hist_unite, n = input$hist_n)
   })
   

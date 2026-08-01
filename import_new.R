@@ -23,7 +23,7 @@ path_mazette <- drive_mazette$local_path
 
 IMPORT_BIERES_CORRESPONDANCE <- read_excel(path_mazette,sheet = "CORRESPONDANCE BIERES",range = cell_cols("A:D"))
 
-vec_sheets <- c("DB JOURS","IMPORT BRASSINS",
+vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
                 "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
                 "IMPORT OBJECTIFS 2026","IMPORT PASS")
@@ -34,6 +34,7 @@ read_mazette <- function(sheet_name) suppressWarnings(
 DB_sheets <- sapply(vec_sheets, read_mazette)
 
 IMPORT_DB_JOURS      <- DB_sheets$`DB JOURS`
+IMPORT_DB_OLD        <- DB_sheets$`IMPORT OLD DATA`
 IMPORT_BRASSINS      <- DB_sheets$`IMPORT BRASSINS`
 IMPORT_LIGHTSPEED    <- DB_sheets$`IMPORT LIGHTSPEED`
 IMPORT_TICKET        <- DB_sheets$`IMPORT TICKET`
@@ -119,6 +120,28 @@ DB_JOURS <- IMPORT_DB_JOURS  |>
     CA_HTVA  = `CA HTVA`,
     CA_TVAC  = `CA TVAC`
   )
+
+##### IMPORT DB OLD ####
+
+cli::cli_h3("Import de la DB OLD")
+
+DB_OLD <- IMPORT_DB_OLD %>%
+  rename(DATE = DATEVALUE,
+         CA_TVAC = `CA TVAC`,
+         CA_CAISSE_0 = `CA TVA 0%`,
+         CA_CAISSE_6 = `CA TVA 6%`,
+         CA_CAISSE_12 = `CA TVA 12%`,
+         CA_CAISSE_21 = `CA TVA 21%`,
+         NB_TABLES = Tables,
+         NB_CLIENTS = Couverts) %>%
+  mutate(DATE = ymd(DATE),
+         TVA_CAISSE_6 = 0.06*CA_CAISSE_6/1.06,
+         TVA_CAISSE_12 = 0.12*CA_CAISSE_12/1.12,
+         TVA_CAISSE_21 = 0.21*CA_CAISSE_21/1.21,
+         CA_HTVA = CA_TVAC - (TVA_CAISSE_6+TVA_CAISSE_12+TVA_CAISSE_21)
+  ) |> 
+  select(DATE,CA_TVAC,CA_HTVA)
+
 
 ##### IMPORT BRASSINS ####
 
@@ -351,12 +374,21 @@ NOMEN_PRODUITS <- NOMEN_PRODUITS |>
 #### Création des tables finales ####
 cli::cli_h2("Création des tables finales")
 
-#### DB_DATE ####
+##### DB_JOURS ####
+cli::cli_h3("Table DB_JOURS")
+
+# Ajout simplement la DB OLD
+
+DB_JOURS <- DB_JOURS %>%
+  add_row(DB_OLD) %>%
+  arrange(DATE)
+
+##### DB_DATE ####
 cli::cli_h3("Table DB_DATE")
 
-# Faire une DB date pour avoir toutes les dates, de 2023 à today()
+# Faire une DB date pour avoir toutes les dates, de min DB_JOURS à today()
 
-DB_DATE <- creer_db_date()
+DB_DATE <- creer_db_date(min(DB_JOURS$DATE))
 
 ##### DB_TICKETS_HEURES ####
 cli::cli_h3("Table DB_TICKETS_HEURES")
@@ -368,7 +400,9 @@ cli::cli_h3("Table DB_TICKETS_HEURES")
 # définie à un seul endroit — cf. R/donnees.R — donc identique après un import
 # et après un simple chargement du .RData.
 normalise <- normalise_tickets(
-  DB_TICKET |> left_join(NOMEN_PRODUITS, by = c("ID_PRODUIT","PRODUIT")))
+  DB_TICKET |> 
+    rename(PRODUIT_FULL = PRODUIT) |> 
+    left_join(NOMEN_PRODUITS, by = c("ID_PRODUIT","PRODUIT_FULL")))
 DB_TICKET    <- normalise$DB_TICKET
 REF_PRODUITS <- normalise$REF_PRODUITS
 rm(normalise)

@@ -23,7 +23,7 @@ creer_db_date <- function(date_min = ymd("2023-01-01"),
 }
 
 prepa_db <- function(DB,var_tva){
-  creer_db_date() %>%
+  creer_db_date(date_min = min(DB$DATE)) %>%
     left_join(DB) %>%
     mutate_if(is.numeric,replace_na,0) %>%
     mutate_if(is.character,replace_na,"") %>%
