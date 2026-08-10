@@ -6,9 +6,11 @@
 .quarto
 .Renviron
 outputs/*.RData
+outputs/*.rds
 doc
 inst
 logos/*.png
+*.rds
 *.Rproj
 connect.json
 IMPORT 2025.RData
