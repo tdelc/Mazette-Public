@@ -6,6 +6,7 @@
 .quarto
 .Renviron
 outputs/*.RData
+outputs/*.rds
 doc
 inst
 logos/*.png
@@ -13,4 +14,7 @@ logos/*.png
 connect.json
 IMPORT 2025.RData
 IMPORT 2023-2024.RData
-IMPORT AUTOMATIQUE.xlsx
+*.xlsx
+HISTO_COUTS_MATIERE.rds
+DB_COMPTA.rds
+*.xlsm
