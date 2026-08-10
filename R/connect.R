@@ -1,15 +1,17 @@
 # Tables conservés dans le rds
 TABLES_DASHBOARD <- c(
-  "DB_JOURS",         # CA par jour, base des objectifs
-  "DB_KPI_SIMPLE",    # CA jour x (midi/soir, semaine/week-end, boisson/nourriture)
-  "DB_OBJECTIFS",     # objectifs journaliers calculés
-  "DB_PRODUITS",      # ventes par jour x produit (+ brassin rattaché)
-  "DB_TICKET",        # grain ticket, forme réduite (cf. R/donnees.R)
-  "REF_PRODUITS",     # ID_PRODUIT -> nom, catégorie, TVA, volume
-  "DB_BIERES",        # suivi des fûts : volumes cumulés par brassin
-  "DB_BRASSINS",      # référentiel des brassins
-  "DB_COUTS_TRAVAIL", # heures et coûts par jour x secteur x créneau
-  "DB_PASSWORD"       # mots de passe valides par période
+  "DB_JOURS",            # CA par jour, base des objectifs
+  "DB_KPI_SIMPLE",       # CA jour x (midi/soir, semaine/week-end, boisson/nourriture)
+  "DB_OBJECTIFS",        # objectifs journaliers calculés
+  "DB_PRODUITS",         # ventes par jour x produit (+ brassin rattaché)
+  "DB_TICKET",           # grain ticket, forme réduite (cf. R/donnees.R)
+  "REF_PRODUITS",        # ID_PRODUIT -> nom, catégorie, TVA, volume
+  "DB_BIERES",           # suivi des fûts : volumes cumulés par brassin
+  "DB_BRASSINS",         # référentiel des brassins
+  "DB_COMPTA",           # Comptabilité générale
+  "DB_COUTS_TRAVAIL",    # heures et coûts par jour x secteur x créneau
+  "DB_RESA",             # réservations : début, fin, nombre de personnes
+  "DB_PASSWORD"          # mots de passe valides par période
 )
 
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,

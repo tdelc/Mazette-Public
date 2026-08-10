@@ -97,4 +97,3 @@ PIZZWANZE_MIN_REFS   <- 2   # une soirée propose une carte, pas un seul produit
 PIZZWANZE_MIN_PIZZAS <- 5   # garde-fou volume, pour écarter les restes
 
 
-source("donnees_fictives_compta.R")

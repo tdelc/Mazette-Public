@@ -107,8 +107,7 @@ legende_objectif <- function() {
 ui_app <- function() {
   navset_bar(
     title = span(class = "brand-title", 
-                 img(src = "mazette-blanc.png", height = 30, width = 30),
-                 "MAZETTE"),
+                 img(src = "mazette-blanc.png", height = 30, width = 30)),
     id = "nav",
     fillable = FALSE,
     nav_panel(
@@ -156,22 +155,27 @@ ui_app <- function() {
       icon = icon("sliders"),
       ui_simulation()
     ),
-    # nav_panel(
-    #   title = "Compta",
-    #   icon = icon("calculator"),
-    #   ui_compta()
-    # ),
-    # nav_panel(
-    #   title = "Travail",
-    #   icon = icon("person-running"),
-    #   ui_travail()
-    # ),
+    nav_panel(
+      title = "Compta",
+      icon = icon("calculator"),
+      ui_compta()
+    ),
+    nav_panel(
+      title = "Travail",
+      icon = icon("person-running"),
+      ui_travail()
+    ),
+    nav_panel(
+      title = "Réservations",
+      icon = icon("calendar-check"),
+      ui_reservations()
+    ),
     nav_panel(
       title = "Comparaison",
       icon = icon("code-compare"),
       ui_comparaison()
     ),
-    nav_spacer(),                        # pousse ce qui suit à droite
+    nav_spacer(),
     nav_item(
       radioGroupButtons("unite_tva", label = NULL,
                         choices = c("HTVA", "TVAC"), selected = "HTVA",
@@ -207,13 +211,25 @@ ui_travail <- function() {
               " mutualisés sur la semaine puis répartis entre créneaux au",
               " prorata du CA.", tags$br(), tags$br(),
               tags$b("Marge après travail"), " = CA HTVA − coût de service −",
-              " coûts indirects. Reste à couvrir matières, loyer et énergie.")
+              " coûts indirects. Reste à couvrir matières, loyer et énergie.",
+              tags$br(), tags$br(),
+              tags$b("Remarque"), " Les coûts indirects sont d'abord agrégés par 
+              semaine. L'analyse par mois de ces coûts peut donc légèrement 
+              différer de la somme par semaine.")
         ),
         uiOutput("trav_kpi"),
         card(
           full_screen = TRUE,
           card_header("Décomposition du CA : marge et coûts du travail"),
-          plotlyOutput("trav_structure", height = "340px")
+          plotlyOutput("trav_structure", height = "340px"),
+          div(class = "small text-muted",
+              "Cliquez sur un mois sur le graphique pour avoir la 
+              décomposition des heures.")
+        ),
+        card(
+          full_screen = TRUE, height = "350px",
+          card_header("Décomposition des heures de travail"),
+          DTOutput("trav_heures_decomp")
         ),
         card(
           full_screen = TRUE,
@@ -284,25 +300,132 @@ ui_travail <- function() {
   )
 }
 
+# Onglet "Réservations" : ce qui arrive, ce qui s'est passé, et ce que la
+# réservation apporte au chiffre d'affaires.
+ui_reservations <- function() {
+  navset_card_tab(
+    id = "resa_tabs",
+    nav_panel(
+      title = "À venir",
+      icon = icon("clock"),
+      uiOutput("resa_kpi_prochaines"),
+      layout_columns(
+        col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+        card(
+          full_screen = TRUE,
+          card_header("Couverts réservés par jour"),
+          radioButtons("resa_agenda_par", NULL,
+                       c("Salle / terrasse" = "lieu", "Midi / soir" = "creneau"),
+                       selected = "lieu", inline = TRUE),
+          plotlyOutput("resa_agenda", height = "320px")
+        ),
+        card(
+          full_screen = TRUE,
+          card_header("Prochaines réservations"),
+          DTOutput("resa_prochaines")
+        )
+      )
+    ),
+    nav_panel(
+      title = "Statistiques",
+      icon = icon("chart-simple"),
+      layout_sidebar(
+        sidebar = sidebar(
+          title = "Période analysée", width = 290,
+          dateRangeInput("resa_periode", NULL, start = NULL, end = NULL,
+                         separator = " → ", language = "fr",
+                         weekstart = 1, format = "dd/mm/yyyy"),
+          radioButtons("resa_par", "Répartir par",
+                       c("Salle / terrasse" = "lieu", "Midi / soir" = "creneau",
+                         "Taille de groupe" = "taille"), selected = "lieu"),
+          hr(),
+          div(class = "small text-muted",
+              "On mesure des",
+              " réservations ", tags$b("enregistrées"), ", pas de présences",
+              " constatées. Aucun taux de no-show n'est calculable.")
+        ),
+        uiOutput("resa_kpi_stats"),
+        card(
+          full_screen = TRUE,
+          card_header("Heures d'arrivée"),
+          plotlyOutput("resa_heures", height = "320px")
+        ),
+        card(
+          full_screen = TRUE,
+          card_header("Jours de semaine et tailles de groupe"),
+          plotlyOutput("resa_jours", height = "340px")
+        )
+      )
+    ),
+    nav_panel(
+      title = "Historique",
+      icon = icon("clock-rotate-left"),
+      layout_columns(
+        fill = FALSE, col_widths = breakpoints(sm = 12, md = c(4, 8)),
+        radioButtons("resa_unite", "Granularité",
+                     c("Par semaine" = "semaine", "Par mois" = "mois"),
+                     selected = "mois", inline = TRUE),
+        div()
+      ),
+      card(
+        full_screen = TRUE,
+        card_header("Couverts réservés par lieu, et taille moyenne des groupes"),
+        plotlyOutput("resa_historique", height = "360px")
+      ),
+      card(
+        full_screen = TRUE,
+        card_header("Détail par période"),
+        DTOutput("resa_table_histo")
+      )
+    ),
+    nav_panel(
+      title = "Réservations et CA",
+      icon = icon("link"),
+      uiOutput("resa_kpi_ca"),
+      card(
+        full_screen = TRUE,
+        card_header("CA du jour selon les couverts réservés"),
+        plotlyOutput("resa_ca_nuage", height = "400px"),
+        div(class = "small text-muted",
+            "Chaque point est un jour d'ouverture. La réservation ne couvre",
+            " qu'une part de la clientèle : la pente mesure ce qu'un couvert",
+            " réservé apporte au CA du jour, pas le remplissage de la salle.",
+            tags$br(),
+            "La corrélation n'est pas la causalité — un samedi soir attire à la",
+            " fois plus de réservations et plus de passage.")
+      ),
+      card(
+        full_screen = TRUE,
+        card_header("Jours les mieux réservés"),
+        DTOutput("resa_ca_table")
+      )
+    )
+  )
+}
+
 ui_comparaison <- function() {
   tagList(
-    card(
-      full_screen = TRUE,
-      card_header("Comparer des périodes"),
+    card(min_height = "300px",
+      card_header("Périodes à comparer"),
       layout_columns(
-        fill = FALSE,
-        col_widths = c(4, 8),
+        fill = FALSE, col_widths = breakpoints(sm = 12, md = c(4, 8)),
         radioButtons("comp_unite", "Comparer par",
                      c("Semaine" = "semaine", "Mois" = "mois", "Année" = "annee"),
                      selected = "mois", inline = TRUE),
-        selectizeInput("comp_periodes", "Périodes à comparer",
-                       choices = NULL, multiple = TRUE, width = "100%",
-                       options = list(placeholder = "Choisir des périodes…"))
-      ),
-      plotlyOutput("comp_graph", height = "380px"),
-      div(class = "small text-muted",
-          "Ventes réalisées vs objectif, et profit (compta fictive), ",
-          "pour chaque période sélectionnée.")
+        selectizeInput("comp_periodes", "Périodes", choices = NULL,
+                       multiple = TRUE, width = "100%",
+                       options = list(plugins = list("remove_button"),
+                                      placeholder = "Choisir des périodes…"))
+      )
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Chiffre d'affaires par période"),
+      plotlyOutput("comp_graph", height = "400px"),
+      legende_objectif(),
+      div(class = "small text-muted mt-1",
+          "La marge d'exploitation n'apparaît",
+          " que là où la comptabilité du mois est disponible.")
     ),
     card(
       full_screen = TRUE,
@@ -316,14 +439,112 @@ ui_compta <- function() {
   navset_card_tab(
     id = "compta_tabs",
     nav_panel(
-      title = "Par semaine",
-      icon = icon("calendar-week"),
-      ui_compta_volet("sem")
+      title = "Exploitation",
+      icon = icon("chart-simple"),
+      ui_exploitation()
     ),
     nav_panel(
-      title = "Par mois",
-      icon = icon("calendar-days"),
-      ui_compta_volet("mois")
+      title = "Comptabilité générale",
+      icon = icon("book"),
+      ui_compta_generale()
+    )
+  )
+}
+
+# Du chiffre d'affaires à la marge d'exploitation, mois par mois.
+# Tout provient de DB_COMPTA : pas de données simulées, donc un mois sans
+# comptabilité reste vide plutôt que d'être comblé.
+ui_exploitation <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Période", width = 300,
+      selectInput("expl_periode", "Mois analysé", choices = NULL),
+      radioButtons("expl_unite", "Granularité de la série",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      sliderInput("expl_nb", "Périodes affichées", min = 4, max = 36,
+                  value = 12, step = 1, ticks = FALSE),
+      checkboxInput("expl_pct", "Tableau en % du CA", FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Marge d'exploitation"), " = produits − matières − rémunérations",
+          " − frais généraux − amortissements.", tags$br(), tags$br(),
+          "Les charges financières et exceptionnelles sont hors de ce champ :",
+          " elles interviennent après, dans l'onglet Comptabilité générale.",
+          tags$br(), tags$br(),
+          "Les ratios sont rapportés au chiffre d'affaires seul.")
+    ),
+    uiOutput("expl_controle"),
+    uiOutput("expl_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Du chiffre d'affaires à la marge"),
+      plotlyOutput("expl_cascade", height = "380px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Structure des charges dans le temps"),
+      plotlyOutput("expl_structure", height = "360px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail par période"),
+      DTOutput("expl_table")
+    )
+  )
+}
+
+# Compte de résultat détaillé, mois par mois, plusieurs mois côte à côte.
+# La hiérarchie du plan comptable est reconstruite depuis l'indentation de
+# TX_DESCRIPTION (cf. R/plan_comptable.R).
+ui_compta_generale <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Périodes", width = 310,
+      selectizeInput("cg_periodes", "Mois à comparer", choices = NULL,
+                     multiple = TRUE,
+                     options = list(plugins = list("remove_button"),
+                                    placeholder = "Choisir un ou plusieurs mois")),
+      checkboxInput("cg_detail", "Dérouler les comptes", FALSE),
+      checkboxInput("cg_pct", "En % du chiffre d'affaires", FALSE),
+      hr(),
+      div(class = "small text-muted",
+          "Les comptes sont classés sur leur ", tags$b("numéro"), " : 70 ventes,",
+          " 60 achats (609 variations de stock), 61 services et biens, 62",
+          " rémunérations, 63 amortissements, 64 autres charges, 65/75",
+          " financier.", tags$br(), tags$br(),
+          tags$b("Soldes"), " : calculés en cumulant les postes qui les",
+          " précèdent, selon leur définition comptable.")
+    ),
+    uiOutput("cg_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header(textOutput("cg_titre", inline = TRUE)),
+      DTOutput("cg_table")
+    ),
+    navset_card_tab(
+      nav_panel(
+        title = "Soldes",
+        icon = icon("chart-column"),
+        plotlyOutput("cg_soldes", height = "330px")
+      ),
+      nav_panel(
+        title = "Contrôle des totaux",
+        icon = icon("scale-balanced"),
+        div(class = "small text-muted mb-2",
+            "Comptes que le plan ne sait pas ranger d'après leur numéro. Ils",
+            " n'entrent dans aucun total : la liste doit rester vide."),
+        DTOutput("cg_controle")
+      ),
+      nav_panel(
+        title = "Vie des comptes",
+        icon = icon("clock-rotate-left"),
+        div(class = "small text-muted mb-2",
+            "Première et dernière période où chaque compte porte un montant.",
+            " Utile pour ne pas lire une baisse là où il n'y a qu'un changement",
+            " de plan comptable."),
+        DTOutput("cg_vie")
+      )
     )
   )
 }
@@ -368,7 +589,7 @@ ui_compta_volet <- function(sfx) {
           tags$b("Work Cost"), " = personnel / CA", tags$br(),
           tags$b("Prime Cost"), " = (matières + personnel) / CA", tags$br(),
           tags$b("Marge"), " = CA − prime cost", tags$br(), tags$br(),
-          "Coûts des matières fictifs (cf. donnees_fictives_compta.R).")
+          "Coûts des matières issus de la comptabilité (DB_COMPTA).")
     ),
     card(
       full_screen = TRUE,
@@ -416,20 +637,20 @@ ui_annee <- function() {
     ),
     card(
       full_screen = TRUE,
-      card_header("Marge cumulée"),
+      card_header("Marge d'exploitation cumulée"),
       plotlyOutput("annee_marge", height = "340px"),
-      uiOutput("annee_simu"),
       div(class = "small text-muted",
-          "Marge quotidienne = CA − personnel du jour − matières de la semaine ",
-          "réparties sur 7 jours.",tags$br(),
-          "La marge est disponible que pour les dates où les coûts sont ",
-          "disponibles.")
+          "Marge = CA + autres produits − matières − rémunérations − frais ",
+          "généraux − amortissements, telle que la donne la comptabilité.",
+          tags$br(),
+          "Elle est mensuelle : ses charges sont réparties uniformément sur les ",
+          "jours d'ouverture du mois. Le cumul est donc exact à chaque fin de ",
+          "mois, seul le chemin à l'intérieur du mois est lissé.")
     ),
     card(
       full_screen = TRUE,
       card_header("Écart cumulé de marge vs N-1"),
       plotlyOutput("annee_ecart_marge", height = "340px"),
-      uiOutput("annee_simu2"),
       div(class = "small text-muted",
           "L'écart est disponible que pour les dates où les deux marges sont ",
           "disponibles.")
@@ -596,7 +817,7 @@ ui_pizzwanze <- function() {
            # div(class = "small text-muted",
            #     "Couleur selon la présence historique de la pizza.")),
       card(full_screen = TRUE,
-           card_header("Rythme de la soirée"),
+           card_header("Ventes par heure"),
            plotlyOutput("pizz_heure", height = "380px"))
     ),
     card(
@@ -731,12 +952,12 @@ ui_focaccias <- function() {
     layout_columns(
       col_widths = c(6, 6),
       card(full_screen = TRUE,
-           card_header("Rythme de la semaine"),
+           card_header("Ventes de la semaine"),
            plotlyOutput("foca_jour", height = "360px"),
            div(class = "small text-muted",
                "En pointillé : la même semaine, une semaine plus tôt.")),
       card(full_screen = TRUE,
-           card_header("Variantes les plus commandées"),
+           card_header("Options les plus commandées"),
            plotlyOutput("foca_variantes", height = "360px"))
     ),
     layout_columns(
@@ -750,7 +971,7 @@ ui_focaccias <- function() {
     ),
     card(
       full_screen = TRUE,
-      card_header("Détail par variante"),
+      card_header("Détail par option"),
       DTOutput("foca_table")
     ),
     ui_production_focaccias()
@@ -800,8 +1021,7 @@ ui_detail <- function() {
           DTOutput("detail_jour_travail"),
           h6("Coût de la semaine", class = "section-sub"),
           DTOutput("detail_jour_travail_semaine"),
-          DTOutput("detail_jour_cout"),
-          uiOutput("detail_jour_simu")
+          DTOutput("detail_jour_cout")
         ),
         div(
           h6("Produits du jour", class = "section-sub"),
@@ -875,11 +1095,11 @@ ui_detail_periode <- function(sfx) {
           uiOutput(id("box")),
           div(
             h6("Coût de la période", class = "section-sub"),
+            uiOutput(id("prorata")),
             DTOutput(id("travail")),
             DTOutput(id("cout")),
-            uiOutput(id("simu"))
-            # ,h6("Marge de la période", class = "section-sub")
-            # ,DTOutput(id("marge"))
+            h6("Coûts et marge par secteur", class = "section-sub mt-2"),
+            DTOutput(id("marge"))
           )
         ),
         uiOutput(id("kpi"))

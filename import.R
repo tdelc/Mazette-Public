@@ -17,6 +17,8 @@ drive_auth(path = "connect.json")
 
 cli::cli_h2("Import de la DB actuelle")
 
+cli::cli_h3("Drive Mazette")
+
 drive_mazette <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_MAZETTE")),
                                 overwrite = TRUE)
 path_mazette <- drive_mazette$local_path
@@ -46,10 +48,38 @@ IMPORT_PASS          <- DB_sheets$`IMPORT PASS`
 
 # Import des heures (issu du rapport pour l'AG)
 
+cli::cli_h3("Drive Heures")
+
 drive_heures <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_HEURES")),
                                 overwrite = TRUE)
 IMPORT_HEURES <- read_excel(drive_heures$local_path,sheet = "Rapport",skip = 1)
 IMPORT_COUT <- read_excel(drive_heures$local_path,sheet = "Cout")
+
+# Import des matières premières (old issu de la compta 2022 à juin 2026)
+
+# drive_download(drive_get(id =Sys.getenv("ID_OLD_COMPTA")),overwrite = TRUE)
+# HISTO_COUTS_MATIERE <- readRDS("HISTO_COUTS_MATIERE.rds")
+
+cli::cli_h3("Drive Compta")
+
+drive_download(drive_get(id =Sys.getenv("ID_DB_COMPTA")),overwrite = TRUE)
+# drive_download(drive_get(id ="1ol_tidQL3PyZeh17EPU10PC157JlRlbY"),overwrite = TRUE)
+DB_COMPTA <- readRDS("DB_COMPTA.rds")
+
+# Import des réservations
+
+cli::cli_h3("Drive Réservations")
+
+drive_resa <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_RESA")),
+                                overwrite = TRUE)
+path_resa <- drive_resa$local_path
+
+IMPORT_HIST <- read_excel(path_resa,sheet = "RESA")
+
+IMPORT_RESA_SALLE <- calendar::ic_read("https://mazette.brussels/feed_calendar_salle")
+IMPORT_RESA_EXT <- calendar::ic_read("https://mazette.brussels/ics/en-terrasse-a-lexterieur-75")
+
+
 
 # Old Mazette 2023 à 2025
 
@@ -323,10 +353,45 @@ colnames(IMPORT_COUT) <- c("CONTRAT","COUT_HEURE")
 DB_HEURES <- DB_HEURES %>% left_join(IMPORT_COUT) %>% 
   mutate(COUT = COUT_HEURE * NB_HEURES)
 
+##### IMPORT RESA ####
+
+cli::cli_h3("Import de la DB RESA")
+
+DB_RESA_HIST <- IMPORT_HIST |> 
+  transmute(
+    HEURE_DEB = `Heure début`,
+    HEURE_FIN = `Heure fin`,
+    NB_PERS = `Nombre de personnes`,
+    LOCATION = ifelse(str_detect(`...9`, "en salle"),"SALLE","TERRASSE"),
+    A_VENIR = FALSE
+  )
+
+DB_RESA_SALLE <- IMPORT_RESA_SALLE |> 
+  transmute(
+    # HEURE_RESA = ymd_hms(DTSTAMP),
+    NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
+    HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
+    HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
+    LOCATION = "SALLE",
+    A_VENIR = TRUE
+  )
+
+DB_RESA_EXT <- IMPORT_RESA_EXT |> 
+  transmute(
+    # HEURE_RESA = ymd_hms(DTSTAMP),
+    NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
+    HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
+    HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
+    LOCATION = "TERRASSE",
+    A_VENIR = TRUE
+  )
+
+DB_RESA <- rbind(DB_RESA_HIST,DB_RESA_SALLE,DB_RESA_EXT) |> distinct()
+
 
 #### Création des tables intermédiaires ####
 
-cli::cli_h3(" Création des tables intermédiaires")
+cli::cli_h2("Création des tables intermédiaires")
 
 ##### Nomenclature Produits ######
 
@@ -589,3 +654,25 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
     TAUX_HORAIRE = COUT_TRAVAIL / HEURES,
     .groups = "drop"
   )
+
+# Lorsque la compte officielle est sortie, remplacer les coûts par les coûts
+# réels, histoire d'avoir une cohérence entre DB
+
+DB_HEURES_COMPTA <- DB_COMPTA |> 
+  filter(TYPE == "compte", CATEGORIE == "REMUNERATION") |> 
+  group_by(ANNEE,MOIS) |> 
+  summarise(COUT_COMPTA = sum(VALEUR)) |> ungroup()
+
+DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
+  mutate(ANNEE = year(DATE), MOIS = month(DATE)) |> 
+  left_join(DB_HEURES_COMPTA) |> 
+  group_by(ANNEE,MOIS) |> 
+  mutate(COUT_HOREKO = sum(COUT_TRAVAIL,na.rm=TRUE)) |> 
+  ungroup() |> 
+  mutate(
+    COUT_TRAVAIL_HOREKO = COUT_TRAVAIL,
+    COUT_TRAVAIL = if_else(!is.na(COUT_COMPTA),
+                           COUT_TRAVAIL * COUT_COMPTA / COUT_HOREKO,
+                           COUT_TRAVAIL)
+  )
+

@@ -1,36 +1,62 @@
 ##### Agrégation compta #####
 
 # Agrège CA / matières / personnel / marge par période, avec les ratios KPI.
-#   db_kpi     : sortie de prepa_db (DATE, ventes)
+#   db_compta  : DB_COMPTA
 #   db_travail : DB_COUTS_TRAVAIL
 #   db_matiere : DB_COUTS_MATIERE
-agrege_compta <- function(db_kpi, db_travail, db_matiere,
+agrege_compta <- function(db_compta, db_travail, db_matiere,
                           unite = c("semaine", "mois", "annee"),
                           d1 = NULL, d2 = NULL) {
   unite <- match.arg(unite)
+
+  # Ne retenir que les lignes de coûts exploitables à cette granularité : une
+  # vue hebdomadaire ignore l'historique mensuel plutôt que de le découper.
+  db_matiere <- couts_matiere_effectifs(db_matiere, unite)
   
+  db_compta <- db_compta |> 
+    mutate(
+      DATE_DEB = floor_date  (ymd(paste(ANNEE,MOIS,"01")),unit = "month"),
+      DATE_FIN = ceiling_date(ymd(paste(ANNEE,MOIS,"01")),unit = "month")
+      )
+
   if (!is.null(d1)) {
     d1 <- as.Date(d1)
-    db_kpi     <- filter(db_kpi,     DATE    >= d1)
-    db_travail <- filter(db_travail, DATE    >= d1)
-    db_matiere <- filter(db_matiere, SEMAINE >= d1)
+    db_compta  <- filter(db_compta,  DATE_DEB >= d1)
+    db_travail <- filter(db_travail, DATE     >= d1)
+    db_matiere <- filter(db_matiere, PERIODE  >= d1)
   }
   if (!is.null(d2)) {
     d2 <- as.Date(d2)
-    db_kpi     <- filter(db_kpi,     DATE    <= d2)
-    db_travail <- filter(db_travail, DATE    <= d2)
-    db_matiere <- filter(db_matiere, SEMAINE <= d2)
+    db_compta  <- filter(db_compta,  DATE_FIN <= d2 | DATE_FIN < d2)
+    db_travail <- filter(db_travail, DATE     <= d2)
+    db_matiere <- filter(db_matiere, PERIODE  <= d2)
   }
+
+  # Se limiter aux jours couverts À LA FOIS par le travail et par les matières.
+  # La couverture matière se juge sur la période native de chaque ligne, pas sur
+  # la semaine : un mois d'historique couvre tous ses jours.
+  jours_matiere <- unique(unlist(Map(
+    function(p, g) seq(p, fin_granularite(p, g), by = "day"),
+    db_matiere$PERIODE, db_matiere$GRANULARITE)))
+  db_compta <- db_compta |>
+    filter(DATE_DEB %in% db_travail$DATE,
+           DATE_DEB %in% as.Date(jours_matiere, origin = "1970-01-01"))
   
-  # Se limiter aux données dispo en db_travail et en db_matiere
-  db_kpi <- db_kpi |>
-    filter(DATE %in% db_travail$DATE,
-           PREMIER_JOUR_SEMAINE %in% db_matiere$SEMAINE)
+  produit <- db_compta %>%
+    mutate(PERIODE = debut_periode(DATE_DEB, unite)) %>%
+    select(CATEGORIE,PERIODE,TYPE,RUBRIQUE,VALEUR, COMPTE) |> 
+    filter(CATEGORIE == "VENTE") |> 
+    group_by(PERIODE, RUBRIQUE) |> 
+    summarise(VALEUR = sum(VALEUR, na.rm = TRUE)) |> 
+    filter(VALEUR != 0) |> ungroup()
   
-  ca <- db_kpi %>%
-    mutate(PERIODE = debut_periode(DATE, unite)) %>%
-    group_by(PERIODE) %>%
-    summarise(CA = sum(ventes, na.rm = TRUE), .groups = "drop")
+  ca <- produit |> 
+    filter(RUBRIQUE == "Chiffre d'affaires") |> 
+    rename(CA = VALEUR) |> select(-RUBRIQUE)
+  
+  autres_produits <- produit |> 
+    filter(RUBRIQUE == "Autres produits d'exploitation") |> 
+    rename(AUTRES_PRODUITS = VALEUR) |> select(-RUBRIQUE)
   
   trav <- db_travail %>%
     mutate(PERIODE = debut_periode(DATE, unite)) %>%
@@ -42,27 +68,29 @@ agrege_compta <- function(db_kpi, db_travail, db_matiere,
   # généraux (Support) : le Prime Cost au sens de la restauration = matières +
   # personnel, les frais généraux étant suivis à part.
   mat <- db_matiere %>%
-    mutate(PERIODE = debut_periode(SEMAINE, unite)) %>%
+    mutate(PERIODE = debut_periode(PERIODE, unite)) %>%
     group_by(PERIODE) %>%
     summarise(FOOD    = sum(COUT_MATIERE[SECTEUR != "Support"], na.rm = TRUE),
               GENERAL = sum(COUT_MATIERE[SECTEUR == "Support"], na.rm = TRUE),
               .groups = "drop")
   
   ca %>%
+    full_join(autres_produits, by = "PERIODE") %>%
     full_join(trav, by = "PERIODE") %>%
     full_join(mat,  by = "PERIODE") %>%
     filter(!is.na(CA)) |> 
     arrange(PERIODE) %>%
-    mutate(across(c(CA, TRAVAIL, HEURES, FOOD, GENERAL), ~replace_na(., 0))) %>%
+    mutate(across(c(CA, AUTRES_PRODUITS, TRAVAIL, HEURES, FOOD, GENERAL), ~replace_na(., 0))) %>%
     mutate(MATIERE = FOOD + GENERAL,
            PRIME   = FOOD + TRAVAIL,
            CHARGES = PRIME + GENERAL,
-           MARGE   = CA - CHARGES,
+           CA_ADD  = CA + AUTRES_PRODUITS,
+           MARGE   = CA_ADD - CHARGES,
            FOOD_PCT    = ratio_pct(FOOD,    CA),
            WORK_PCT    = ratio_pct(TRAVAIL, CA),
            GENERAL_PCT = ratio_pct(GENERAL, CA),
            PRIME_PCT   = ratio_pct(PRIME,   CA),
-           MARGE_PCT   = ratio_pct(MARGE,   CA)) %>%
+           MARGE_PCT   = ratio_pct(MARGE,   CA_ADD)) %>%
     filter(CA > 0 | CHARGES > 0)
 }
 
@@ -76,12 +104,15 @@ compta_secteurs <- function(db_travail, db_matiere, d1, d2) {
     summarise(HEURES  = sum(HEURES, na.rm = TRUE),
               TRAVAIL = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop")
   
+  # Une période native chevauchant les bornes est retenue si elle commence
+  # dedans — même règle qu'avant, appliquée au mois comme à la semaine.
   mat <- db_matiere %>%
-    filter(SEMAINE >= d1, SEMAINE <= d2) %>%
+    filter(PERIODE >= d1, PERIODE <= d2) %>%
     group_by(SECTEUR) %>%
     summarise(ACHATS  = sum(ACHATS, na.rm = TRUE),
               STOCK   = sum(VARIATION_STOCK, na.rm = TRUE),
-              MATIERE = sum(COUT_MATIERE, na.rm = TRUE), .groups = "drop")
+              MATIERE = sum(COUT_MATIERE, na.rm = TRUE),
+              STOCK_CONNU = all(STOCK_CONNU), .groups = "drop")
   
   tibble(SECTEUR = SECTEURS_COMPTA) %>%
     left_join(trav, by = "SECTEUR") %>%
@@ -91,20 +122,22 @@ compta_secteurs <- function(db_travail, db_matiere, d1, d2) {
 }
 
 # Synthèse d'UNE période : la ligne d'agrégat + le détail par secteur.
-compta_apercu <- function(db_kpi, db_travail, db_matiere, periode,
+compta_apercu <- function(db_compta, db_travail, db_matiere, periode,
                           unite = c("semaine", "mois", "annee")) {
   unite   <- match.arg(unite)
   periode <- as.Date(periode)
   d1 <- periode
   d2 <- fin_periode(periode, unite)
   
-  res <- agrege_compta(db_kpi, db_travail, db_matiere, unite, d1 = d1, d2 = d2)
+  res <- agrege_compta(db_compta, db_travail, db_matiere, unite, d1 = d1, d2 = d2)
   if (nrow(res) == 0)
     res <- tibble(PERIODE = periode, CA = 0, TRAVAIL = 0, HEURES = 0,
                   FOOD = 0, GENERAL = 0, MATIERE = 0, PRIME = 0, CHARGES = 0,
                   MARGE = 0, FOOD_PCT = NA_real_, WORK_PCT = NA_real_,
                   GENERAL_PCT = NA_real_, PRIME_PCT = NA_real_,
                   MARGE_PCT = NA_real_)
+  
+  print(res)
   
   list(unite    = unite,
        periode  = periode,
@@ -147,6 +180,10 @@ graph_evo_compta <- function(comptes, unite = c("semaine", "mois", "annee"),
               line = list(color = "#2e7d32", width = 2.5),
               hovertemplate = ~paste0(lbl, "<br>CA ",
                                       format_CA(CA, -1), "<extra></extra>")) %>%
+    add_lines(x = ~PERIODE, y = ~CA_ADD, name = "CA + Autres Produits",
+              line = list(color = "#2eaa00", width = 2.5),
+              hovertemplate = ~paste0(lbl, "<br>CA + Autres Produits ",
+                                      format_CA(CA_ADD, -1), "<extra></extra>")) %>%
     add_markers(x = ~PERIODE, y = ~MARGE, name = "Marge",
                 marker = list(size = 9, symbol = "diamond",
                               color = ifelse(comptes$MARGE >= 0, COUL_VERT, COUL_ROUGE)),

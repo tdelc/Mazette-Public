@@ -43,7 +43,9 @@ couleur_seuil_haut <- function(x, bon, moyen) {
   if (x >= bon) COUL_VERT else if (x >= moyen) COUL_AMBRE else COUL_ROUGE
 }
 
-format_pct <- function(x, nb = 1) if (is.na(x)) "—" else paste0(round(x, nb), " %")
+# Vectorisé : `if` prendrait la première valeur sur un vecteur, et lève une
+# erreur depuis R 4.2. Les appels scalaires sont inchangés.
+format_pct <- function(x, nb = 1) ifelse(is.na(x), "—", paste0(round(x, nb), " %"))
 
 # Une tuile KPI (grand chiffre + libellé + icône en filigrane)
 kpi_tile <- function(valeur, libelle, couleur, icone = NULL, sous_titre = NULL) {

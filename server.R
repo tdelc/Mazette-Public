@@ -28,54 +28,27 @@ server <- function(input, output, session) {
     prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
   })
   
-  # DB fictives compta (personnel + matières), calées sur le calendrier réel.
-  # 4 secteurs : Service / Transformation alimentaire / Brasserie / Support.
-  DATES_COMPTA <- creer_db_date() %>% filter(DATE <= today()) %>% pull(DATE)
-
-  # CA hebdomadaire réel des 12 derniers mois : sert à calibrer les volumes
-  # fictifs pour que food/work/prime cost restent des ordres de grandeur
-  # plausibles (et suivent le CA s'il évolue).
-  CA_HEBDO_REEL <- reactive({
-    req(UPD_KPI_SIMPLE())
-    CA_HEBDO_REEL <- UPD_KPI_SIMPLE() %>%
-      filter(ventes > 0, DATE > today() - 364) %>%
-      summarise(s = sum(ventes, na.rm = TRUE) / 52) %>%
-      pull(s)
-    if (!is.finite(CA_HEBDO_REEL) || CA_HEBDO_REEL <= 0)
-      CA_HEBDO_REEL <- CA_HEBDO_DEFAUT
-    return(CA_HEBDO_REEL)
-  })
-
-  DB_COUTS_TRAVAIL_FICTIF <- reactive({
-    generer_couts_travail(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL())
-  })
-  
-  # Remplacer pour les données connues du coût du travail
-  # date_connues <- DB_COUTS_TRAVAIL |> pull(DATE) |> unique()
-  # DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL_FICTIF |> 
-  #   filter(!DATE %in% date_connues) |> 
-  #   add_row(DB_COUTS_TRAVAIL)
-  
+  # Coûts matière : uniquement la comptabilité réelle, au mois. Aucune donnée
+  # simulée — une période absente de DB_COMPTA reste vide, elle n'est pas
+  # comblée. Le pilotage vaut mieux vide que faux.
   DB_COUTS_MATIERE <- reactive({
-    generer_couts_matiere(DATES_COMPTA, ca_hebdo = CA_HEBDO_REEL())
+    DB_COMPTA %>%
+      filter(TYPE == "compte", AGREGE,
+             CATEGORIE %in% c("ACHATS", "VARIATION_STOCK"),
+             SECTION == "Coût des ventes et prestations") %>%
+      group_by(ANNEE, MOIS, SECTEUR, CATEGORIE) %>%
+      summarise(VALEUR = sum(VALEUR, na.rm = TRUE), .groups = "drop") %>%
+      pivot_wider(names_from = CATEGORIE, values_from = VALEUR) %>%
+      mutate(ACHATS = replace_na(ACHATS, 0),
+             VARIATION_STOCK = replace_na(VARIATION_STOCK, 0)) %>%
+      normalise_couts_matiere(granularite = "mois")
   })
-  
-  # DB_COUTS_MATIERE() <- DB_COUTS_MATIERE()[0,]
-  
+
   DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |> 
     left_join(creer_db_date() |> select(DATE,PREMIER_JOUR_SEMAINE,PREMIER_JOUR_MOIS), by = "DATE")
   
   DB_COUTS_MATIERE_JOUR <- reactive({
-    creer_db_date() |> 
-      rename(SEMAINE = PREMIER_JOUR_SEMAINE) |> 
-      left_join(DB_COUTS_MATIERE(), by = "SEMAINE") |> 
-      group_by(SEMAINE,SECTEUR) |> 
-      mutate(COUT_MATIERE    = COUT_MATIERE / n(),
-             ACHATS          = ACHATS / n(),
-             VARIATION_STOCK = VARIATION_STOCK / n()) |> 
-      ungroup() |> 
-      select(DATE,SEMAINE,SECTEUR,COUT_MATIERE,ACHATS,VARIATION_STOCK, SIMU) |> 
-      filter(DATE < today())
+    couts_matiere_par_jour(DB_COUTS_MATIERE(), creer_db_date())
   })
   
   # Dernier jour d'ouverture (= "veille")
@@ -333,34 +306,15 @@ server <- function(input, output, session) {
   output$detail_jour_cout <- renderDT({
     datatable_simple(
       DB_COUTS_MATIERE() %>%
-        filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
-        transmute(Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
-                  Stock = format_CA(VARIATION_STOCK, -1),
+        couts_matiere_du_jour(jour_detail()) %>%
+        transmute(Secteur = SECTEUR,
+                  Période = ifelse(GRANULARITE == "mois",
+                                   format(PERIODE, "%B %Y"),
+                                   paste("Sem.", format(PERIODE, "%d/%m"))),
+                  Achats = format_CA(ACHATS, -1),
+                  Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
                   Matières = format_CA(COUT_MATIERE, -1))
     )
-  })
-  
-  # Détection de données simulées
-  output$detail_jour_simu <- renderUI({
-    
-    if ("SIMU" %in% colnames(DB_COUTS_TRAVAIL)){
-      simu_travail <- DB_COUTS_TRAVAIL %>%
-        filter(PREMIER_JOUR_SEMAINE == semaine_detail()) |> 
-        summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
-    }else{
-      simu_travail <- 0
-    }
-    
-    if ("SIMU" %in% colnames(DB_COUTS_MATIERE())){
-      simu_matiere <- DB_COUTS_MATIERE() %>%
-        filter(SEMAINE == floor_date(jour_detail(), unit = "week", week_start = 1)) %>%
-        summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
-    }else{
-      simu_matiere <- 0
-    }
-    
-    bandeau_alerte(simu_travail + simu_matiere > 0,
-                   "Résulats basés sur données simulées (coût du travail et matières)")
   })
 
   #### Volet "Détail" — Par semaine / Par mois ####
@@ -397,83 +351,51 @@ server <- function(input, output, session) {
       if (is.null(p)) debut_periode(date_veille, unite) else p
     })
     
-    cout_travail <- reactive({
+    bornes <- reactive({
       d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      i <- interval(d1, d2)
-      
-      DB_COUTS_TRAVAIL %>%
-        filter(DATE %within% i) %>%
-        group_by(SECTEUR) |> 
-        summarise(HEURES = sum(HEURES),
-                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
-                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES)
+      list(d1 = d1, d2 = fin_periode(d1, unite))
     })
-    
-    cout_matiere <- reactive({
-      d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      i <- interval(d1, d2)
-      
-      DB_COUTS_MATIERE_JOUR() %>%
-        filter(DATE %within% i) %>%
-        group_by(SECTEUR) |> 
-        summarise(ACHATS = sum(ACHATS),
-                  VARIATION_STOCK = sum(VARIATION_STOCK),
-                  COUT_MATIERE = sum(COUT_MATIERE))
-    })
-    
-    # Détection de données simulées
-    output[[id("simu")]] <- renderUI({
-      
-      d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      i <- interval(d1, d2)
-      s1 <- floor_date(d1, unit = "week", week_start = 1)
-      s2 <- floor_date(d2, unit = "week", week_start = 1)
-      i_s <- interval(s1, s2)
-      
-      if ("SIMU" %in% colnames(DB_COUTS_TRAVAIL)){
-        simu_travail <- DB_COUTS_TRAVAIL %>%
-          filter(DATE %within% i) %>%
-          summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
-      }else{
-        simu_travail <- 0
-      }
-      
-      if ("SIMU" %in% colnames(DB_COUTS_MATIERE_JOUR())){
-        simu_matiere <- DB_COUTS_MATIERE() %>%
-          filter(SEMAINE %within% i_s) %>%
-          summarise(SIMU = sum(SIMU, na.rm = T)) |> pull(SIMU)
-      }else{
-        simu_matiere <- 0
-      }
-      
-      bandeau_alerte(simu_travail + simu_matiere > 0,
-                     "Résulats basés sur données simulées (coût du travail et matières)")
-    })
-    
+
     ca <- reactive({
-      d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      i <- interval(d1, d2)
-      
-      UPD_KPI_SIMPLE() |>  filter(DATE %within% i) |> pull(ventes) |> sum()
+      b <- bornes()
+      UPD_KPI_SIMPLE() |> filter(DATE >= b$d1, DATE <= b$d2) |>
+        pull(ventes) |> sum(na.rm = TRUE)
     })
-    
+
+    # Matieres : ventilees par secteur dans la compta, etalees au jour. Sur un
+    # mois entier le total est exact ; sur une semaine c'est un prorata, signale
+    # comme tel plutot que presente comme une mesure hebdomadaire.
+    cout_matiere <- reactive({
+      b <- bornes()
+      matieres_par_secteur(DB_COUTS_MATIERE_JOUR(), b$d1, b$d2)
+    })
+
+    # Travail : DB_HEURES tant qu'elle couvre la periode, sinon le total de la
+    # comptabilite (qui n'a pas de ventilation par secteur).
+    cout_travail <- reactive({
+      b <- bornes()
+      travail_par_secteur(DB_COUTS_TRAVAIL,
+                          if (exists("DB_COMPTA")) DB_COMPTA else NULL,
+                          b$d1, b$d2)
+    })
+
     apercu <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
-                    periode_sel(), unite)
+      b <- bornes()
+      req(exists("DB_COMPTA"))
+      apercu_exploitation(DB_COMPTA, b$d1, b$d2)
     })
-    
-    output[[id("kpi")]] <- renderUI({ kpi_compta_tiles(apercu(),input$unite_tva)})
-    
-    marge <- reactive({
-      cout_matiere() |> 
-        left_join(cout_travail()) |> 
-        mutate(CA = ca()) |> 
-        select(SECTEUR,CA,COUT_TRAVAIL,COUT_MATIERE)
+
+    output[[id("kpi")]] <- renderUI({
+      a <- apercu()
+      if (is.null(a))
+        return(div(class = "text-muted small",
+                   "Pas de comptabilite sur cette periode. Les indicateurs de ",
+                   "gestion sont mensuels : ils apparaissent sur le sous-onglet ",
+                   "Par mois."))
+      kpi_exploitation(a, "mois")
     })
+
+    marge <- reactive({ marge_par_secteur(cout_matiere(), cout_travail(), ca()) })
 
     output[[id("titre")]] <- renderText({
       d1 <- periode_sel()
@@ -496,31 +418,55 @@ server <- function(input, output, session) {
     })
     
     output[[id("travail")]] <- renderDT({
-      req(cout_travail())
-      datatable_simple(
-        cout_travail() |> 
-          transmute(Secteur = SECTEUR, Heures = round(HEURES),
-                    `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-                    Personnel = format_CA(COUT_TRAVAIL, -1))
-      )
+      t <- cout_travail()
+      if (is.null(t) || !nrow(t))
+        return(datatable_simple(tibble(`Coût du travail` =
+          "Aucune donnée d'heures ni de comptabilité sur la période.")))
+      if (identical(t$SOURCE[1], "heures"))
+        datatable_simple(t |> transmute(
+          Secteur = SECTEUR, Heures = round(HEURES),
+          `Taux/h` = format_CA(TAUX_HORAIRE, 2),
+          Personnel = format_CA(COUT_TRAVAIL, -1)))
+      else
+        # Hors couverture de DB_HEURES : la compta donne le total, pas la
+        # ventilation par secteur ni les heures.
+        datatable_simple(t |> transmute(
+          Secteur = SECTEUR, Personnel = format_CA(COUT_TRAVAIL, -1),
+          Source = "comptabilité"))
     })
-    
+
     output[[id("cout")]] <- renderDT({
-      datatable_simple(
-        cout_matiere() |> 
-          transmute(Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
-                    Stock = format_CA(VARIATION_STOCK, -1),
-                    Matières = format_CA(COUT_MATIERE, -1))
-      )
+      m <- cout_matiere()
+      if (is.null(m) || !nrow(m))
+        return(datatable_simple(tibble(`Coût matière` =
+          "Aucune comptabilité sur la période.")))
+      datatable_simple(m |> transmute(
+        Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
+        Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
+        `Matières` = format_CA(COUT_MATIERE, -1)))
     })
-    
+
+    output[[id("prorata")]] <- renderUI({
+      m <- cout_matiere()
+      bandeau_alerte(!is.null(m) && nrow(m) && isTRUE(m$PRORATA[1]),
+        paste("La comptabilité est mensuelle : les coûts affichés ici sont un",
+              "prorata du mois sur les jours de la période. Le total du mois est",
+              "juste, sa répartition à l'intérieur du mois est une hypothèse."),
+        titre = "Coûts au prorata", couleur = COUL_AMBRE,
+        icone = "circle-info")
+    })
+
     output[[id("marge")]] <- renderDT({
-      datatable_simple(
-        marge() |> 
-          transmute(Secteur = SECTEUR, "Chiffre d'affaire" = format_CA(CA, -1),
-                    Personnel = format_CA(COUT_TRAVAIL, -1),
-                    Matières = format_CA(COUT_MATIERE, -1))
-      )
+      m <- marge()
+      if (is.null(m) || !nrow(m))
+        return(datatable_simple(tibble(Marge = "Aucun coût sur la période.")))
+      datatable_simple(m |> transmute(
+        Secteur = SECTEUR,
+        Personnel = format_CA(COUT_TRAVAIL, -1),
+        `Matières` = format_CA(COUT_MATIERE, -1),
+        Total = format_CA(TOTAL, -1),
+        `Chiffre d'affaires` = format_CA(CA, -1),
+        `% du CA` = format_pct(PCT_CA)))
     })
 
     output[[id("produits")]] <- renderDT({
@@ -768,92 +714,229 @@ server <- function(input, output, session) {
   # Un bloc générique sert les deux sous-onglets (semaine / mois). Chaque volet
   # a un panneau A (période analysée) et un panneau B (période comparée), ce
   # dernier étant affiché/masqué par shinyjs — l'UI reste statique.
-  registre_compta_volet <- function(sfx, unite) {
-    id  <- function(x) paste0("compta_", sfx, "_", x)
-    src <- paste0("compta_evo_", sfx)
-    
-    # Agrégat de toutes les périodes (pour les graphiques d'évolution)
-    comptes <- reactive({
-      req(UPD_KPI_SIMPLE(),DB_COUTS_MATIERE())
-      agrege_compta(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), unite)
-    })
+  #### Volet "Compta / Gestion" — Exploitation ####
 
-    # Liste des périodes proposées dans les deux sélecteurs
-    observe({
-      req(comptes())
-      # dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE(), unite)
-      dispo <- sort(unique(comptes()$PERIODE),decreasing = TRUE)
-      req(length(dispo) > 0)
-      choix <- setNames(as.character(dispo), label_periode(dispo, unite))
-      updateSelectInput(session, id("a"), choices = choix,
-                        selected = as.character(dispo[1]))
-      updateSelectInput(session, id("b"), choices = choix,
-                        selected = as.character(dispo[min(2, length(dispo))]))
-    })
+  # Tout vient de DB_COMPTA. Aucune donnee simulee : si les chiffres ne sont pas
+  # la, le volet reste vide.
+  expl_postes <- reactive({
+    req(exists("DB_COMPTA"))
+    postes_exploitation(DB_COMPTA)
+  })
 
-    periode_a <- reactive({ req(input[[id("a")]]); as.Date(input[[id("a")]]) })
-    periode_b <- reactive({ req(input[[id("b")]]); as.Date(input[[id("b")]]) })
+  expl_serie <- reactive({
+    p <- agrege_exploitation(expl_postes(), input$expl_unite %||% "mois")
+    req(nrow(p) > 0)
+    n <- as.integer(input$expl_nb %||% 12)
+    tail(p, n)
+  })
 
-    # Clic sur une barre -> devient la période analysée (panneau A)
-    observeEvent(event_data("plotly_click", source = src), {
-      ev <- event_data("plotly_click", source = src)
-      if (!is.null(ev$x))
-        updateSelectInput(session, id("a"),
-                          selected = as.character(debut_periode(as.Date(ev$x), unite)))
-    })
+  observe({
+    p <- expl_postes()
+    req(nrow(p) > 0)
+    dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
+    updateSelectInput(session, "expl_periode",
+                      choices = setNames(as.character(dispo),
+                                         format(dispo, "%B %Y")),
+                      selected = as.character(dispo[1]))
+  })
 
-    # Activation du second volet : split de l'écran en deux boxes
-    observeEvent(input[[id("cmp")]], {
-      cibles <- c(id("cmp_box"), id("panel_b"), id("ecarts_box"))
-      if (isTRUE(input[[id("cmp")]])) {
-        for (cible in cibles) shinyjs::show(cible)
-      } else {
-        for (cible in cibles) shinyjs::hide(cible)
-      }
-    })
+  # La cascade porte sur la periode choisie ; les autres vues sur la serie.
+  expl_une <- reactive({
+    p <- expl_postes()
+    req(nrow(p) > 0)
+    d <- if (is.null(input$expl_periode)) max(p$PERIODE) else as.Date(input$expl_periode)
+    filter(p, PERIODE == d)
+  })
 
-    output[[id("evo")]] <- renderPlotly({
-      graph_evo_compta(comptes(), unite = unite, source = src,
-                       selection = periode_a())
-    })
+  output$expl_kpi      <- renderUI({ kpi_exploitation(expl_une()) })
+  output$expl_cascade  <- renderPlotly({ graph_cascade_exploitation(expl_une()) })
+  output$expl_structure <- renderPlotly({
+    graph_structure_exploitation(expl_serie(), input$expl_unite %||% "mois") })
+  output$expl_table <- renderDT({
+    datatable_simple(table_exploitation(expl_serie(), input$expl_unite %||% "mois",
+                                        en_pct = isTRUE(input$expl_pct)))
+  })
+  output$expl_controle <- renderUI({
+    ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
+    n <- sum(abs(ctrl$ECART) > 1, na.rm = TRUE)
+    bandeau_alerte(n > 0, paste0(
+      n, " periode(s) ou la marge recomposee differe du solde comptable. ",
+      "Un compte echappe au classement en postes."))
+  })
 
-    output[[id("kpi_evo")]] <- renderPlotly({
-      graph_evo_kpi_compta(comptes(), unite = unite)
-    })
 
-    apercu_a <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
-                    periode_a(), unite)
-    })
-    apercu_b <- reactive({
-      compta_apercu(UPD_KPI_SIMPLE(), DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
-                    periode_b(), unite)
-    })
+  #### Volet "Compta / Gestion" — Comptabilité générale ####
 
-    # Contenu d'un panneau (identique pour A et B)
-    registre_panneau <- function(cle, ap) {
-      output[[id(paste0("titre_", cle))]] <- renderText({
-        a <- ap()
-        paste0(a$libelle, "  (", format(a$bornes[1], "%d/%m"), " → ",
-               format(a$bornes[2], "%d/%m/%Y"), ")")
-      })
-      output[[id(paste0("kpi_", cle))]] <- renderUI({ 
-        kpi_compta_tiles(ap(),input$unite_tva) })
-      output[[id(paste0("secteurs_", cle))]] <- renderPlotly({
-        graph_secteurs_compta(ap())
-      })
-      output[[id(paste0("table_", cle))]] <- renderDT({
-        datatable_simple(table_secteurs_compta(ap()))
-      })
-    }
-    registre_panneau("a", apercu_a)
-    registre_panneau("b", apercu_b)
+  # Plus de reconstruction de plan : les comptes sont classés sur leur numéro
+  # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
 
-    output[[id("ecarts")]] <- renderUI({ kpi_ecarts_tiles(apercu_a(), apercu_b()) })
-  }
+  observe({
+    req(exists("DB_COMPTA"))
+    p <- periodes_compta(DB_COMPTA)
+    updateSelectizeInput(session, "cg_periodes",
+                         choices = setNames(as.character(p$PERIODE), p$LIBELLE),
+                         selected = as.character(head(p$PERIODE, 3)))
+  })
 
-  registre_compta_volet("sem",  "semaine")
-  registre_compta_volet("mois", "mois")
+  cg_periodes <- reactive({
+    req(input$cg_periodes)
+    sort(as.Date(input$cg_periodes))
+  })
+
+  output$cg_titre <- renderText({
+    n <- length(cg_periodes())
+    paste0("Compte de résultat — ", n, if (n > 1) " mois comparés" else " mois")
+  })
+
+  output$cg_kpi <- renderUI({ kpi_compta_generale(DB_COMPTA, cg_periodes()) })
+
+  output$cg_table <- renderDT({
+    tbl <- table_compte_resultat(DB_COMPTA, cg_periodes(),
+                                 detail = isTRUE(input$cg_detail),
+                                 en_pct = isTRUE(input$cg_pct))
+    datatable(tbl, rownames = FALSE, escape = FALSE,
+              options = list(pageLength = 200, dom = "ft", scrollX = TRUE,
+                             ordering = FALSE,
+                             columnDefs = list(list(className = "dt-right",
+                                                    targets = 2:(ncol(tbl) - 1))),
+                             language = list(search = "Filtrer :"))) %>%
+      formatStyle("Compte", target = "row", fontWeight = styleEqual("", "bold"))
+  })
+
+  output$cg_soldes <- renderPlotly({ graph_soldes(DB_COMPTA, cg_periodes()) })
+
+  # Contrôle : un compte que le plan ne sait pas ranger n'entre dans aucun total.
+  output$cg_controle <- renderDT({
+    nc <- comptes_non_classes(DB_COMPTA)
+    if (!nrow(nc))
+      return(datatable_simple(tibble(
+        Contrôle = "Tous les comptes sont classés par leur numéro.")))
+    datatable_simple(nc %>% transmute(
+      Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
+      `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1)))
+  })
+
+  output$cg_vie <- renderDT({
+    datatable_simple(
+      vie_des_comptes(DB_COMPTA) %>%
+        transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
+                  Poste = POSTE,
+                  `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),
+                  `Dernière` = format(DERNIERE, "%m/%Y"),
+                  `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1))
+    )
+  })
+
+  #### Volet "Réservations" ####
+
+  RESA <- reactive({
+    if (!exists("DB_RESA")) return(resa_vide())
+    prepare_resa(DB_RESA)
+  })
+
+  # --- À venir
+  output$resa_kpi_prochaines <- renderUI({ kpi_prochaines_resa(RESA()) })
+
+  output$resa_prochaines <- renderDT({
+    datatable_simple(table_prochaines_resa(RESA()))
+  })
+
+  output$resa_agenda <- renderPlotly({
+    a <- agenda_resa(RESA())
+    if (!nrow(a))
+      return(plotly_empty(type = "scatter", mode = "markers") %>%
+               layout(title = list(text = "Aucune réservation à venir")))
+    lab <- paste0(substr(as.character(a$JOUR), 1, 3), " ", format(a$DATE, "%d/%m"))
+    ordre <- factor(lab, levels = lab)
+    # Deux découpages du même total : par lieu (où installer) ou par créneau
+    # (quand renforcer le service).
+    par_lieu <- !identical(input$resa_agenda_par, "creneau")
+    s1 <- if (par_lieu) list(v = a$SALLE, n = "Salle", c = COUL_LIEU[["SALLE"]])
+          else          list(v = a$MIDI,  n = "Midi",  c = COUL_AMBRE)
+    s2 <- if (par_lieu) list(v = a$TERRASSE, n = "Terrasse", c = COUL_LIEU[["TERRASSE"]])
+          else          list(v = a$SOIR,     n = "Soir",     c = "#8d5b8c")
+    plot_ly() %>%
+      add_bars(x = ordre, y = s1$v, name = s1$n,
+               marker = list(color = s1$c),
+               hovertemplate = paste0(lab, "<br>", s1$n, " : ", s1$v,
+                                      " couverts<extra></extra>")) %>%
+      add_bars(x = ordre, y = s2$v, name = s2$n,
+               marker = list(color = s2$c),
+               hovertemplate = paste0(lab, "<br>", s2$n, " : ", s2$v,
+                                      " couverts<extra></extra>")) %>%
+      layout(barmode = "stack", xaxis = list(title = "", tickangle = -35),
+             yaxis = list(title = "Couverts réservés"),
+             legend = list(orientation = "h", y = -0.3), margin = list(b = 90))
+  })
+
+  # --- Statistiques
+  observe({
+    r <- RESA()
+    req(nrow(r) > 0)
+    updateDateRangeInput(session, "resa_periode",
+                         start = max(r$DATE) - days(89), end = max(r$DATE))
+  })
+
+  resa_bornes <- reactive({
+    r <- RESA()
+    req(nrow(r) > 0)
+    rng <- input$resa_periode
+    if (is.null(rng) || any(is.na(rng))) c(max(r$DATE) - 89, max(r$DATE)) else rng
+  })
+
+  output$resa_kpi_stats <- renderUI({
+    b <- resa_bornes(); kpi_stats_resa(RESA(), b[1], b[2])
+  })
+  output$resa_heures <- renderPlotly({
+    b <- resa_bornes()
+    graph_heures_resa(RESA(), b[1], b[2], input$resa_par %||% "lieu")
+  })
+  output$resa_jours <- renderPlotly({
+    b <- resa_bornes()
+    graph_jours_resa(RESA(), b[1], b[2], input$resa_par %||% "lieu")
+  })
+
+  # --- Historique
+  resa_histo <- reactive({
+    historique_resa(RESA(), input$resa_unite %||% "mois")
+  })
+
+  output$resa_historique <- renderPlotly({
+    graph_historique_resa(resa_histo(), input$resa_unite %||% "mois")
+  })
+
+  output$resa_table_histo <- renderDT({
+    h <- resa_histo()
+    if (!nrow(h)) return(datatable_simple(tibble(Historique = "Aucune donnée.")))
+    datatable_simple(
+      h %>% arrange(desc(PERIODE)) %>%
+        transmute(Période = if (identical(input$resa_unite, "semaine"))
+                    paste("Sem.", format(PERIODE, "%d/%m/%Y"))
+                  else format(PERIODE, "%B %Y"),
+                  Réservations = RESA, Couverts = COUVERTS,
+                  Salle = SALLE, Terrasse = TERRASSE,
+                  `Part terrasse` = format_pct(PCT_TERRASSE),
+                  `Taille moy.` = TAILLE_MOY,
+                  `Part du soir` = format_pct(PCT_SOIR)))
+  })
+
+  # --- Réservations et CA
+  resa_ca <- reactive({ resa_vs_ca(RESA(), UPD_KPI_SIMPLE()) })
+
+  output$resa_kpi_ca   <- renderUI({ kpi_resa_ca(resa_ca()) })
+  output$resa_ca_nuage <- renderPlotly({ graph_resa_ca(resa_ca()) })
+
+  output$resa_ca_table <- renderDT({
+    d <- resa_ca()
+    if (!nrow(d)) return(datatable_simple(tibble(Jours = "Aucune donnée croisée.")))
+    datatable_simple(
+      d %>% arrange(desc(COUVERTS)) %>% head(25) %>%
+        transmute(Date = format(DATE, "%a %d/%m/%Y"),
+                  Réservations = RESA, Couverts = COUVERTS,
+                  Midi = COUVERTS_MIDI, Soir = COUVERTS_SOIR,
+                  CA = format_CA(CA, -1),
+                  `CA / couvert` = format_CA(CA_PAR_COUVERT, 0)))
+  })
 
   #### Volet "Comparaison" ####
 
@@ -870,8 +953,9 @@ server <- function(input, output, session) {
   comp_data <- reactive({
     req(input$comp_periodes)
     comparaison_periodes(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                         DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(),
-                         unite = input$comp_unite, periodes = input$comp_periodes)
+                         db_compta = if (exists("DB_COMPTA")) DB_COMPTA else NULL,
+                         unite = input$comp_unite,
+                         periodes = input$comp_periodes)
   })
 
   output$comp_graph <- renderPlotly({
@@ -901,12 +985,12 @@ server <- function(input, output, session) {
 
   serie_annee <- reactive({
     serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), annee_val())
+                   if (exists("DB_COMPTA")) DB_COMPTA else NULL, annee_val())
   })
 
   serie_annee_m1 <- reactive({
     serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                   DB_COUTS_TRAVAIL, DB_COUTS_MATIERE(), annee_val() - 1)
+                   if (exists("DB_COMPTA")) DB_COMPTA else NULL, annee_val() - 1)
   })
 
   output$annee_kpi <- renderUI({
@@ -922,9 +1006,7 @@ server <- function(input, output, session) {
   })
   
   output$annee_marge <- renderPlotly({
-    serie_m1 <- serie_annee() |> mutate(MARGE = 0)
-    graph_ecart_ym1(UPD_KPI_SIMPLE(), annee_val(), var = "marge",
-                    serie = serie_annee(), serie_m1 = serie_m1)
+    graph_marge_cumulee(serie_annee(), serie_annee_m1(), annee_val())
   })
 
   output$annee_ecart_marge <- renderPlotly({
@@ -932,15 +1014,6 @@ server <- function(input, output, session) {
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
   
-  # Détection de données simulées
-  output$annee_simu <- renderUI({
-    bandeau_alerte(TRUE, "Marges fictives basées sur données simulées (coût du travail et matières)")
-  })
-  
-  output$annee_simu2 <- renderUI({
-    bandeau_alerte(TRUE, "Marges fictives basées sur données simulées (coût du travail et matières)")
-  })
-
   #### Volet "Travail" ####
 
   # Fenêtre par défaut : 12 mois glissants (une occurrence de chaque jour de
@@ -960,7 +1033,7 @@ server <- function(input, output, session) {
   # --- Sous-onglet "Suivi" ---
   trav_base <- reactive({
     p <- fenetre_travail(input$trav_periode)
-    base_travail(DB_TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
+    base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
   })
 
   trav_agrege <- reactive({
@@ -972,7 +1045,8 @@ server <- function(input, output, session) {
   })
 
   output$trav_structure <- renderPlotly({
-    graph_structure_travail(trav_agrege(), unite = input$trav_unite)
+    graph_structure_travail(trav_agrege(), unite = input$trav_unite,
+                            source = "trav_structure_graph")
   })
 
   output$trav_productivite <- renderPlotly({
@@ -984,11 +1058,48 @@ server <- function(input, output, session) {
       agrege_creneaux_periode(trav_base(), unite = input$trav_unite),
       unite = input$trav_unite)
   })
+  
+  # Mois / Semaine sélectionnée (clic sur une barre, défaut = veille)
+  selected_bar <- reactiveVal(NULL)
+  
+  observeEvent(event_data("plotly_click", source = "trav_structure_graph"), {
+    ev <- event_data("plotly_click", source = "trav_structure_graph")
+    if (!is.null(ev$x)) selected_bar(as.Date(ev$x))
+  })
+  
+  periode_trav <- reactive({
+    req(selected_bar())
+    j <- unique(selected_bar())
+    if (input$trav_unite == "semaine") {
+      d1 <- floor_date(j, "week")
+      d2 <- ceiling_date(j, "week")
+    }else{
+      d1 <- floor_date(j, "month")
+      d2 <- ceiling_date(j, "month")
+    }
+    return(c(d1,d2))
+  })
+  
+  output$trav_heures_decomp <- renderDT({
+    print(periode_trav())
+    DB_COUTS_TRAVAIL |> 
+      filter(DATE >= periode_trav()[1], DATE <= periode_trav()[2]) |> 
+      group_by(SECTEUR,CRENEAU) |> 
+      summarise(
+        `Heures de travail` = round(sum(HEURES)),
+        `Coût du travail (compta)` = format_CA(sum(COUT_TRAVAIL,na.rm = T),-1),
+        `Coût du travail (horeko)` = format_CA(sum(COUT_TRAVAIL_HOREKO,na.rm = T),-1),
+        `∑ coûts du travail (compta)` = format_CA(mean(COUT_COMPTA,na.rm = T),-1), 
+        `∑ coûts du travail (horeko)` = format_CA(mean(COUT_HOREKO,na.rm = T),-1)) |> 
+      datatable(rownames = FALSE, escape = FALSE,
+                options = list(dom = "t"))
+  })
+  
 
   # --- Sous-onglet "Créneaux" ---
   cren_stats <- reactive({
     p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(DB_TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
+    stats_creneaux(base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
   })
 
   output$cren_heatmap <- renderPlotly({

@@ -121,9 +121,6 @@ base_travail <- function(db_ventes_heure, db_travail, d1, d2) {
     mutate(across(c(H_TRANSFO, COUT_TRANSFO, H_AUTRE, COUT_AUTRE),
                   ~replace_na(., 0))) %>%
     # Répartition des coûts indirects au prorata du CA de la semaine.
-    # NB : `if_else` (et non `ifelse`) car la condition porte sur un total de
-    # groupe — `ifelse` renverrait une valeur de longueur 1, recyclée sur toutes
-    # les lignes, et donnerait la même part à tous les créneaux.
     group_by(SEMAINE) %>%
     mutate(CA_SEMAINE = sum(CA, na.rm = TRUE),
            PART = if_else(CA_SEMAINE > 0, CA / CA_SEMAINE, 0),
@@ -198,14 +195,15 @@ stats_creneaux <- function(base) {
 
 
 # Décomposition du CA : marge + coût service + transfo + autre, par période.
-graph_structure_travail <- function(ag, unite = c("semaine", "mois", "annee")) {
+graph_structure_travail <- function(ag, unite = c("semaine", "mois", "annee"),
+                                    source = "trav_structure_graph") {
   unite <- match.arg(unite)
   if (is.null(ag) || nrow(ag) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
   lbl <- label_periode(ag$PERIODE, unite)
   
-  plot_ly(ag) %>%
+  plot_ly(ag, source = source) %>%
     add_bars(x = ~PERIODE, y = ~COUT_SERVICE, name = "Coût service",
              marker = list(color = COUL_TRAVAIL),
              hovertemplate = ~paste0(lbl, "<br>Service ", format_CA(COUT_SERVICE, -1),

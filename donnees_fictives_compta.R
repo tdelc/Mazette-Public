@@ -254,8 +254,9 @@ generer_couts_matiere <- function(dates, ca_hebdo = CA_HEBDO_DEFAUT, seed = 7) {
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(STOCK_FIN    = STOCK_DEBUT - VARIATION_STOCK,
-                  COUT_MATIERE = ACHATS + VARIATION_STOCK,
-                  SIMU = TRUE) %>%
-    dplyr::select(SEMAINE, SECTEUR, ACHATS, STOCK_DEBUT, STOCK_FIN,
-                  VARIATION_STOCK, COUT_MATIERE, SIMU)
+                  COUT_MATIERE = ACHATS + VARIATION_STOCK) %>%
+    dplyr::select(SEMAINE, SECTEUR, ACHATS, VARIATION_STOCK) %>%
+    # Même forme canonique que les données réelles (cf. R/couts.R), sans quoi
+    # les deux sources ne pourraient pas s'empiler.
+    normalise_couts_matiere(granularite = "semaine", simu = TRUE)
 }

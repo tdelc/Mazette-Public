@@ -31,7 +31,16 @@ label_periode <- function(periode, unite = c("semaine", "mois", "annee")) {
 }
 
 # Ratio en % (NA si dénominateur nul)
-ratio_pct <- function(num, den) ifelse(den > 0, round(100 * num / den, 1), NA_real_)
+#
+# ifelse() renvoie un vecteur de la longueur de sa CONDITION : avec un
+# dénominateur scalaire et un numérateur vectoriel, il ne rendait qu'une seule
+# valeur, recyclée sur toute la colonne. On recycle donc explicitement.
+ratio_pct <- function(num, den) {
+  n <- max(length(num), length(den))
+  if (n == 0) return(numeric(0))
+  num <- rep_len(num, n); den <- rep_len(den, n)
+  ifelse(!is.na(den) & den > 0, round(100 * num / den, 1), NA_real_)
+}
 
 # Étiquette d'unité de TVA, à accoler à un intitulé de CA.
 #
@@ -79,6 +88,17 @@ bandeau_alerte <- function(afficher, texte,
 
 # Périodes disponibles (avec du CA), de la plus récente à la plus ancienne.
 liste_periodes_dispo <- function(db_kpi, unite = c("semaine", "mois", "annee")) {
+  unite <- match.arg(unite)
+  db_kpi %>%
+    filter(ventes > 0) %>%
+    mutate(PERIODE = debut_periode(DATE, unite)) %>%
+    distinct(PERIODE) %>%
+    arrange(desc(PERIODE)) %>%
+    pull(PERIODE)
+}
+
+# Périodes disponibles d'après la compta, de la plus récente à la plus ancienne.
+liste_periodes_compta_dispo <- function(db_compta) {
   unite <- match.arg(unite)
   db_kpi %>%
     filter(ventes > 0) %>%
