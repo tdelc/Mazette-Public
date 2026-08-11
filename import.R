@@ -13,13 +13,24 @@ path_drive <- Sys.getenv("PATH_DRIVE")
 download.file(link_json, destfile = "connect.json")
 drive_auth(path = "connect.json")
 
+#### Récupération des liens drive ####
+
+drive_paths <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_PATHS")), overwrite = TRUE)
+paths <- drive_paths$local_path
+
+PATHS <- read_excel(paths,sheet = "PATHS")
+
+get_path <- function(PATH){
+  PATHS %>% filter(Path == PATH) %>% pull(Link)
+}
+
 #### Import de toute la DB actuelle ####
 
 cli::cli_h2("Import de la DB actuelle")
 
 cli::cli_h3("Drive Mazette")
 
-drive_mazette <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_MAZETTE")),
+drive_mazette <- drive_download(drive_get(id =get_path("ID_DRIVE_MAZETTE")),
                                 overwrite = TRUE)
 path_mazette <- drive_mazette$local_path
 
@@ -50,40 +61,37 @@ IMPORT_PASS          <- DB_sheets$`IMPORT PASS`
 
 cli::cli_h3("Drive Heures")
 
-drive_heures <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_HEURES")),
+drive_heures <- drive_download(drive_get(id =get_path("ID_DRIVE_HEURES")),
                                 overwrite = TRUE)
 IMPORT_HEURES <- read_excel(drive_heures$local_path,sheet = "Rapport",skip = 1)
 IMPORT_COUT <- read_excel(drive_heures$local_path,sheet = "Cout")
 
 # Import des matières premières (old issu de la compta 2022 à juin 2026)
 
-# drive_download(drive_get(id =Sys.getenv("ID_OLD_COMPTA")),overwrite = TRUE)
+# drive_download(drive_get(id =get_path("ID_OLD_COMPTA")),overwrite = TRUE)
 # HISTO_COUTS_MATIERE <- readRDS("HISTO_COUTS_MATIERE.rds")
 
 cli::cli_h3("Drive Compta")
 
-drive_download(drive_get(id =Sys.getenv("ID_DB_COMPTA")),overwrite = TRUE)
-# drive_download(drive_get(id ="1ol_tidQL3PyZeh17EPU10PC157JlRlbY"),overwrite = TRUE)
+drive_download(drive_get(id =get_path("ID_DB_COMPTA")),overwrite = TRUE)
 DB_COMPTA <- readRDS("DB_COMPTA.rds")
 
 # Import des réservations
 
 cli::cli_h3("Drive Réservations")
 
-drive_resa <- drive_download(drive_get(id =Sys.getenv("ID_DRIVE_RESA")),
+drive_resa <- drive_download(drive_get(id =get_path("ID_DRIVE_RESA")),
                                 overwrite = TRUE)
 path_resa <- drive_resa$local_path
 
 IMPORT_HIST <- read_excel(path_resa,sheet = "RESA")
 
-IMPORT_RESA_SALLE <- calendar::ic_read("https://mazette.brussels/feed_calendar_salle")
-IMPORT_RESA_EXT <- calendar::ic_read("https://mazette.brussels/ics/en-terrasse-a-lexterieur-75")
-
-
+IMPORT_RESA_SALLE <- calendar::ic_read(get_path("ICS_SALLE"))
+IMPORT_RESA_EXT <- calendar::ic_read(get_path("ICS_TERRASSE"))
 
 # Old Mazette 2023 à 2025
 
-# drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2023")),overwrite = TRUE)
+# drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
 # load("IMPORT 2023-2024.RData")
 # 
 # IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
@@ -91,7 +99,7 @@ IMPORT_RESA_EXT <- calendar::ic_read("https://mazette.brussels/ics/en-terrasse-a
 # IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
 # IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
 # 
-# drive_download(drive_get(id=Sys.getenv("ID_MAZETTE_2025")),overwrite = TRUE)
+# drive_download(drive_get(id=get_path("ID_MAZETTE_2025")),overwrite = TRUE)
 # load("IMPORT 2025.RData")
 # 
 # IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
@@ -103,7 +111,7 @@ drive_mazette_2023 <- try(load("outputs/IMPORT 2023-2024.RData"),silent=TRUE)
 
 if (class(drive_mazette_2023)[1] == "try-error"){
   try({
-    drive_download(drive_get(id=ID_MAZETTE_2023),overwrite = TRUE)
+    drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
     load("IMPORT 2023-2024.RData")
   },silent=TRUE)
 }
@@ -121,7 +129,7 @@ drive_mazette_2025 <- try(load("outputs/IMPORT 2025.RData"),silent=TRUE)
 
 if (class(drive_mazette_2025)[1] == "try-error"){
   try({
-    drive_download(drive_get(id=ID_MAZETTE_2025),overwrite = TRUE)
+    drive_download(drive_get(id=get_path("ID_MAZETTE_2025")),overwrite = TRUE)
     load("IMPORT 2025.RData")
   },silent=TRUE)
 }
