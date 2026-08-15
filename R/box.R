@@ -7,13 +7,15 @@ box_ventes_jour <- function(db_kpi,db_obj,date_debut,nb_jours,
                             is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
                             is_objectif=TRUE, width = "14%",
                             unite_tva = "HTVA", montrer_unite = NULL){
+  
+  keys_join <- c("DATE", "JOUR_SEMAINE", "ANNEE_MOIS", "ANNEE_SEMAINE", "ANNEE_TRIM",
+"PREMIER_JOUR_SEMAINE", "PREMIER_JOUR_MOIS")
+  
   plot_kpi <- db_kpi %>%
-    left_join(db_obj%>%
+    left_join(db_obj %>%
                 select(-starts_with("CA_")) %>%
-                rename(ventes_obj = ventes)) %>%
+                rename(ventes_obj = ventes), by = keys_join) %>%
     filter(DATE >= date_debut,DATE <= date_debut+days(nb_jours)) %>%
-    # mutate(JOUR_SEMAINE = factor(JOUR_SEMAINE,levels=vecteur_jours_LOCAL,
-    #                              labels = vecteur_jours)) %>%
     mutate(title = paste0(JOUR_SEMAINE," ",format(DATE,format = format_date)))
   
   if (titre != "") plot_kpi$title <- titre
@@ -34,10 +36,14 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
                              is_semaine=FALSE,is_midi=TRUE,is_boisson=TRUE,
                              is_objectif=TRUE, unite_tva = "HTVA",
                              montrer_unite = NULL){
+  
+  keys_join <- c("DATE", "JOUR_SEMAINE", "ANNEE_MOIS", "ANNEE_SEMAINE", "ANNEE_TRIM",
+                 "PREMIER_JOUR_SEMAINE", "PREMIER_JOUR_MOIS")
+  
   plot_kpi <- db_kpi %>%
     left_join(db_obj%>%
                 select(-starts_with("CA_")) %>%
-                rename(ventes_obj = ventes)) %>%
+                rename(ventes_obj = ventes), by = keys_join) %>%
     mutate(ventes_obj = ventes_obj * (ventes>0)) %>%
     filter(DATE >= date_debut,DATE <= date_debut+days(nb_jours)) %>%
     summarise(ventes = sum(ventes,na.rm=TRUE),

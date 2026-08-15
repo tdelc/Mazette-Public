@@ -50,8 +50,9 @@ kpi_accueil <- function(db_kpi, db_obj, date_veille, unite_tva = NULL) {
              else sous)
   }
 
-  d_sem  <- floor_date(date_veille, "week", week_start = 1)
-  d_mois <- floor_date(date_veille, "month")
+  d_sem   <- floor_date(date_veille, "week", week_start = 1)
+  d_mois  <- floor_date(date_veille, "month")
+  d_annee <- floor_date(date_veille, "year")
 
   div(class = "kpi-grid",
       bloc(date_veille, date_veille,
@@ -59,7 +60,9 @@ kpi_accueil <- function(db_kpi, db_obj, date_veille, unite_tva = NULL) {
       bloc(d_sem, date_veille, "CA de la semaine", "calendar-week",
            sous = paste("depuis le", format(d_sem, "%d/%m"))),
       bloc(d_mois, date_veille, "CA du mois", "calendar-days",
-           sous = format(d_mois, "%B %Y"))
+           sous = format(d_mois, "%B %Y")),
+      bloc(d_annee, date_veille, "CA de l'année", "calendar-check",
+           sous = format(d_annee, "%Y"))
   )
 }
 
