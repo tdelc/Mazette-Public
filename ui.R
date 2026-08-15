@@ -205,51 +205,32 @@ ui_app <- function() {
 
 # Onglet "Accueil" : cards simples avec une info importante de chaque onglet
 ui_accueil <- function() {
-  nav_panel(
-    id = "accueil_tabs",
+  # Une carte = un onglet. Le corps est rendu côté serveur pour suivre le
+  # sélecteur HTVA/TVAC là où il a un sens.
+  carte <- function(titre, icone, sortie, bouton, libelle = "Aller plus loin") {
+    card(
+      class = "acc-card",
+      card_header(span(icon(icone), " ", titre)),
+      card_body(uiOutput(sortie)),
+      card_footer(actionButton(bouton, libelle,
+                               class = "btn-sm btn-primary w-100"))
+    )
+  }
+
+  tagList(
     uiOutput("accueil_kpi"),
+    # Responsive : 1 carte par ligne sur téléphone, 2 sur tablette, 4 sur grand
+    # écran. Un col_widths fixe imposerait trois colonnes même sur mobile.
     layout_columns(
-      col_widths = c(4, 4, 4),
-      card(
-        card_header("Maintenant"),
-        card_footer(actionButton("go_maintenant", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Année"),
-        card_footer(actionButton("go_annee", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Fûts"),
-        card_footer(actionButton("go_futs", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Bières"),
-        card_footer(actionButton("go_bieres", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Focaccias"),
-        card_footer(actionButton("go_focaccias", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Pizzwanze"),
-        card_footer(actionButton("go_pizzwanze", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Réservation"),
-        card_footer(actionButton("go_reservation", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
-      card(
-        card_header("Compta"),
-        card_footer(actionButton("go_compta", "Allez plus loin",
-                                 class = "btn-sm btn-primary"))
-      ),
+      col_widths = breakpoints(sm = 12, md = 6, lg = 4, xl = 3),
+      carte("Maintenant",   "gauge-high",             "acc_maintenant",   "go_maintenant"),
+      carte("Année",        "calendar-check",         "acc_annee",        "go_annee"),
+      carte("Fûts",         "boxes-stacked",          "acc_futs",         "go_futs"),
+      carte("Bières",       "beer-mug-empty",         "acc_bieres",       "go_bieres"),
+      carte("Focaccias",    "bread-slice",            "acc_focaccias",    "go_focaccias"),
+      carte("Pizzwanze",    "pizza-slice",            "acc_pizzwanze",    "go_pizzwanze"),
+      carte("Réservations", "calendar-check",         "acc_reservations", "go_reservation"),
+      carte("Compta",       "calculator",             "acc_compta",       "go_compta")
     )
   )
 }

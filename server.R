@@ -72,6 +72,64 @@ server <- function(input, output, session) {
     }
   })
 
+  #### Volet "Accueil" ####
+
+  # Bandeau : CA de la veille, de la semaine et du mois, chacun face à son
+  # objectif. Suit le sélecteur HTVA/TVAC.
+  output$accueil_kpi <- renderUI({
+    kpi_accueil(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, input$unite_tva)
+  })
+
+  # Une carte par onglet. Celles qui portent des euros suivent la TVA ; les
+  # autres (fûts, réservations) sont en volumes et n'en dépendent pas.
+  output$acc_maintenant <- renderUI({
+    acc_maintenant(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille)
+  })
+  output$acc_annee <- renderUI({
+    acc_annee(UPD_KPI_SIMPLE(), date_veille)
+  })
+  output$acc_futs <- renderUI({
+    acc_futs(DB_BIERES, tryCatch(db_predict_bieres(), error = function(e) NULL))
+  })
+  output$acc_bieres <- renderUI({
+    acc_bieres(DB_TICKET, DB_PRODUITS, input$unite_tva)
+  })
+  output$acc_focaccias <- renderUI({
+    acc_focaccias(DB_PRODUITS, input$unite_tva)
+  })
+  output$acc_pizzwanze <- renderUI({
+    acc_pizzwanze(DB_PRODUITS, input$unite_tva)
+  })
+  output$acc_reservations <- renderUI({
+    acc_reservations(RESA())
+  })
+  output$acc_compta <- renderUI({
+    acc_compta(if (exists("DB_COMPTA")) DB_COMPTA else NULL)
+  })
+
+  # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
+  # Une table plutôt que huit observeEvent recopiés : ajouter une carte, c'est
+  # ajouter une ligne.
+  ACCUEIL_LIENS <- c(go_maintenant  = "tab_maintenant",
+                     go_annee       = "tab_annee",
+                     go_futs        = "tab_futs",
+                     go_bieres      = "tab_bieres",
+                     go_focaccias   = "tab_focaccias",
+                     go_pizzwanze   = "tab_pizzwanze",
+                     go_reservation = "tab_reservations",
+                     go_compta      = "tab_compta")
+
+  for (bouton in names(ACCUEIL_LIENS)) {
+    # local() fige `bouton` : sans lui, les huit observeEvent partageraient la
+    # dernière valeur de la boucle et renverraient tous vers le même onglet.
+    local({
+      b <- bouton
+      observeEvent(input[[b]], {
+        nav_select("nav", ACCUEIL_LIENS[[b]], session = session)
+      }, ignoreInit = TRUE)
+    })
+  }
+
   #### Volet "Maintenant" — Indicateurs clés ####
   ca_periode <- function(db, d1, d2) {
     db %>% filter(DATE >= d1, DATE <= d2) %>% summarise(s = sum(ventes, na.rm = TRUE)) %>% pull(s)
