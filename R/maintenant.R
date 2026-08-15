@@ -62,7 +62,7 @@ progression_mois <- function(db_kpi, db_obj, mois = floor_date(today(), "month")
            cum_reel = cumsum(ventes),
            cum_obj  = cumsum(objectif),
            # on n'affiche pas le cumulé réalisé pour les jours pas encore passés
-           cum_reel = ifelse(DATE > today(), NA, cum_reel))
+           cum_reel = ifelse(DATE >= today(), NA, cum_reel))
 }
 
 # Graphe de progression mensuelle : objectif cumulé (pointillé) + réalisé cumulé (aire)

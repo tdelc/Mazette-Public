@@ -1362,5 +1362,21 @@ server <- function(input, output, session) {
       })
     })
   }
+  
+  # ===================== Navigation ========================================
+  go <- function(input_id, target) {
+    observeEvent(input[[input_id]], {
+      nav_select("nav", target, session = session)
+    })
+  }
+  
+  go("go_maintenant", "tab_maintenant")
+  go("go_annee", "tab_annee")
+  go("go_bieres", "tab_bieres")
+  go("go_futs", "tab_futs")
+  go("go_focaccias", "tab_focaccias")
+  go("go_pizzwanze",   "tab_pizzwanze")
+  go("go_compta",  "tab_compta")
+  go("go_reservations",  "tab_reservations")
 
 }

@@ -111,66 +111,85 @@ ui_app <- function() {
     id = "nav",
     fillable = FALSE,
     nav_panel(
+      value = "tab_accueil",
+      title = "Accueil",
+      icon = icon("home"),
+      ui_accueil()
+    ),
+    nav_panel(
+      value = "tab_maintenant",
       title = "Maintenant",
       icon = icon("gauge-high"),
       ui_maintenant()
     ),
     nav_panel(
+      value = "tab_detail",
       title = "Détail",
       icon = icon("magnifying-glass-chart"),
       ui_detail()
     ),
     nav_panel(
+      value = "tab_historique",
       title = "Historique",
       icon = icon("chart-line"),
       ui_historique()
     ),
     nav_panel(
+      value = "tab_annee",
       title = "Année",
       icon = icon("calendar-check"),
       ui_annee()
     ),
     nav_panel(
+      value = "tab_futs",
       title = "Fûts",
       icon = icon("boxes-stacked"),
       ui_futs()
     ),
     nav_panel(
+      value = "tab_bieres",
       title = "Bières",
       icon = icon("beer-mug-empty"),
       ui_conso_bieres()
     ),
     nav_panel(
+      value = "tab_focaccias",
       title = "Focaccias",
       icon = icon("bread-slice"),
       ui_focaccias()
     ),
     nav_panel(
+      value = "tab_pizzwanze",
       title = "Pizzwanze",
       icon = icon("pizza-slice"),
       ui_pizzwanze()
     ),
     nav_panel(
+      value = "tab_simulation",
       title = "Simulation",
       icon = icon("sliders"),
       ui_simulation()
     ),
     nav_panel(
+      value = "tab_compta",
       title = "Compta",
       icon = icon("calculator"),
       ui_compta()
     ),
     nav_panel(
+      value = "tab_travail",
       title = "Travail",
       icon = icon("person-running"),
       ui_travail()
     ),
     nav_panel(
+      value = "tab_reservations",
       title = "Réservations",
       icon = icon("calendar-check"),
       ui_reservations()
     ),
     nav_panel(
+      value = "tab_comparaison",
       title = "Comparaison",
       icon = icon("code-compare"),
       ui_comparaison()
@@ -180,6 +199,57 @@ ui_app <- function() {
       radioGroupButtons("unite_tva", label = NULL,
                         choices = c("HTVA", "TVAC"), selected = "HTVA",
                         size = "sm", status = "outline-secondary")
+    )
+  )
+}
+
+# Onglet "Accueil" : cards simples avec une info importante de chaque onglet
+ui_accueil <- function() {
+  nav_panel(
+    id = "accueil_tabs",
+    uiOutput("accueil_kpi"),
+    layout_columns(
+      col_widths = c(4, 4, 4),
+      card(
+        card_header("Maintenant"),
+        card_footer(actionButton("go_maintenant", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Année"),
+        card_footer(actionButton("go_annee", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Fûts"),
+        card_footer(actionButton("go_futs", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Bières"),
+        card_footer(actionButton("go_bieres", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Focaccias"),
+        card_footer(actionButton("go_focaccias", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Pizzwanze"),
+        card_footer(actionButton("go_pizzwanze", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Réservation"),
+        card_footer(actionButton("go_reservation", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
+      card(
+        card_header("Compta"),
+        card_footer(actionButton("go_compta", "Allez plus loin",
+                                 class = "btn-sm btn-primary"))
+      ),
     )
   )
 }
