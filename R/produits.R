@@ -1,5 +1,5 @@
 from_product_to_boisson <- function(DB){
-  DB %>%
+  DB |> 
     mutate(PRODUIT_VIDE = str_remove(PRODUIT," *[0-9]+ *[cC][lL]"),
            PRODUIT_VIDE = str_remove(PRODUIT_VIDE," verre"),
            PRODUIT_VIDE = str_remove(PRODUIT_VIDE," 1L"),

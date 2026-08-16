@@ -1,21 +1,14 @@
-##### Bières — consommation #####
+##### Boisson — consommation #####
 
-# Produit "bière" = catégorie contenant BIÈRE (rotation constante -> exclu des comparaisons)
-est_biere <- function(category) {
-  str_detect(toupper(replace_na(category, "")), "BI[EÈ]RE")
-}
-
-# Référentiel des vraies bières (catégories BIÈRES / ANCIENNES BIÈRES), pour
-# écarter les autres boissons volumétriques (limonade, kéfir, cola, cidre...).
-ref_bieres <- function(db_produits) {
+ref_boissons <- function(db_produits) {
   db_produits %>%
     filter(est_biere(CATEGORIE), !is.na(BOISSON), BOISSON != "") %>%
     distinct(BOISSON) %>%
     pull(BOISSON)
 }
 
-# Lignes de ticket correspondant à des bières, sur une fenêtre de dates.
-tickets_bieres <- function(db_ticket, ref, d1, d2) {
+# Lignes de ticket correspondant à des boissons, sur une fenêtre de dates.
+tickets_boissons <- function(db_ticket, ref, d1, d2) {
   db_ticket %>%
     filter(BOISSON %in% ref, DATE >= as.Date(d1), DATE <= as.Date(d2),
            QUANTITE > 0) %>%
@@ -23,13 +16,13 @@ tickets_bieres <- function(db_ticket, ref, d1, d2) {
            HEURE  = heure_service(TIMESTAMP))
 }
 
-# Consommation par bière sur une fenêtre : verres, litres, CA.
-conso_bieres <- function(db_ticket, ref, d1, d2, unite_tva) {
+# Consommation par boisson sur une fenêtre : verres, litres, CA.
+conso_boissons <- function(db_ticket, ref, d1, d2, unite_tva) {
   
   col <- paste0("CA_",unite_tva)
   col_name <- paste("CA",unite_tva)
   
-  tickets_bieres(db_ticket, ref, d1, d2) %>%
+  tickets_boissons(db_ticket, ref, d1, d2) %>%
     group_by(BOISSON) %>%
     summarise(VERRES = sum(QUANTITE, na.rm = TRUE),
               LITRES = sum(LITRES, na.rm = TRUE),
@@ -38,10 +31,10 @@ conso_bieres <- function(db_ticket, ref, d1, d2, unite_tva) {
 }
 
 # Consommation d'une semaine, comparée à la semaine précédente.
-conso_bieres_comparee <- function(db_ticket, ref, semaine, unite_tva = "HTVA") {
+conso_boissons_comparee <- function(db_ticket, ref, semaine, unite_tva = "HTVA") {
   semaine <- as.Date(semaine)
-  act <- conso_bieres(db_ticket, ref, semaine, semaine + 6, unite_tva)
-  prec <- conso_bieres(db_ticket, ref, semaine - 7, semaine - 1, unite_tva) %>%
+  act <- conso_boissons(db_ticket, ref, semaine, semaine + 6, unite_tva)
+  prec <- conso_boissons(db_ticket, ref, semaine - 7, semaine - 1, unite_tva) %>%
     rename(VERRES_M1 = VERRES, LITRES_M1 = LITRES, CA_M1 = CA)
   
   full_join(act, prec, by = "BOISSON") %>%
@@ -56,10 +49,10 @@ conso_bieres_comparee <- function(db_ticket, ref, semaine, unite_tva = "HTVA") {
 }
 
 # Litres par heure de service, semaine courante et S-1.
-conso_bieres_horaire <- function(db_ticket, ref, semaine) {
+conso_boissons_horaire <- function(db_ticket, ref, semaine) {
   semaine <- as.Date(semaine)
   par_heure <- function(d1, d2, nom) {
-    tickets_bieres(db_ticket, ref, d1, d2) %>%
+    tickets_boissons(db_ticket, ref, d1, d2) %>%
       group_by(HEURE) %>%
       summarise(LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
       mutate(PERIODE = nom)
@@ -70,9 +63,9 @@ conso_bieres_horaire <- function(db_ticket, ref, semaine) {
 }
 
 # Litres par jour de semaine et par heure (heatmap).
-conso_bieres_jour_heure <- function(db_ticket, ref, semaine) {
+conso_boissons_jour_heure <- function(db_ticket, ref, semaine) {
   semaine <- as.Date(semaine)
-  tickets_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+  tickets_boissons(db_ticket, ref, semaine, semaine + 6) %>%
     mutate(JOUR = wday(DATE, label = TRUE, abbr = FALSE, week_start = 1)) %>%
     group_by(JOUR, HEURE) %>%
     summarise(LITRES = sum(LITRES, na.rm = TRUE), .groups = "drop") %>%
@@ -80,10 +73,10 @@ conso_bieres_jour_heure <- function(db_ticket, ref, semaine) {
 }
 
 # Historique hebdomadaire des litres servis.
-evo_conso_bieres <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
+evo_conso_boissons <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
   fin <- if (is.null(fin)) max(db_ticket$DATE, na.rm = TRUE) else as.Date(fin)
   debut <- floor_date(fin, "week", week_start = 1) - weeks(n_semaines - 1)
-  tickets_bieres(db_ticket, ref, debut, fin) %>%
+  tickets_boissons(db_ticket, ref, debut, fin) %>%
     mutate(SEMAINE = floor_date(DATE, "week", week_start = 1)) %>%
     group_by(SEMAINE) %>%
     summarise(LITRES = sum(LITRES, na.rm = TRUE),
@@ -93,19 +86,19 @@ evo_conso_bieres <- function(db_ticket, ref, n_semaines = 26, fin = NULL) {
     arrange(SEMAINE)
 }
 
-# Trajectoire hebdomadaire des principales bières de la semaine choisie :
+# Trajectoire hebdomadaire des principales boissons de la semaine choisie :
 # permet de voir lesquelles montent, lesquelles s'essoufflent.
-evo_top_bieres <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12,
+evo_top_boissons <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12,
                            unite_tva = "HTVA") {
   semaine <- as.Date(semaine)
-  top <- conso_bieres(db_ticket, ref, semaine, semaine + 6, unite_tva) %>%
+  top <- conso_boissons(db_ticket, ref, semaine, semaine + 6, unite_tva) %>%
     slice_head(n = n_top) %>%
     pull(BOISSON)
   if (length(top) == 0) return(tibble(SEMAINE = as.Date(character()),
                                       BOISSON = character(), LITRES = numeric()))
   
   debut <- semaine - weeks(n_semaines - 1)
-  tickets_bieres(db_ticket, ref, debut, semaine + 6) %>%
+  tickets_boissons(db_ticket, ref, debut, semaine + 6) %>%
     filter(BOISSON %in% top) %>%
     mutate(SEMAINE = floor_date(DATE, "week", week_start = 1)) %>%
     group_by(SEMAINE, BOISSON) %>%
@@ -116,9 +109,9 @@ evo_top_bieres <- function(db_ticket, ref, semaine, n_top = 5, n_semaines = 12,
 }
 
 # Répartition des formats servis (33 cl, 50 cl, dégustation...).
-formats_bieres <- function(db_ticket, ref, semaine) {
+formats_boissons <- function(db_ticket, ref, semaine) {
   semaine <- as.Date(semaine)
-  tickets_bieres(db_ticket, ref, semaine, semaine + 6) %>%
+  tickets_boissons(db_ticket, ref, semaine, semaine + 6) %>%
     filter(!is.na(VOLUME_CL)) %>%
     group_by(FORMAT = paste0(VOLUME_CL, " cl")) %>%
     summarise(VERRES = sum(QUANTITE, na.rm = TRUE),
@@ -126,7 +119,8 @@ formats_bieres <- function(db_ticket, ref, semaine) {
     arrange(desc(VERRES))
 }
 
-kpi_bieres_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL) {
+kpi_boissons_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL,
+                              categorie = "") {
   litres  <- sum(comp$LITRES);    litres_m1 <- sum(comp$LITRES_M1)
   verres  <- sum(comp$VERRES);    verres_m1 <- sum(comp$VERRES_M1)
   ca      <- sum(comp$CA);        ca_m1     <- sum(comp$CA_M1)
@@ -146,9 +140,9 @@ kpi_bieres_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL) {
     tuile_evolution(litres, litres_m1, "Litres servis", "beer-mug-empty",
                     function(x) paste0(format(round(x)), " L")),
     tuile_evolution(verres, verres_m1, "Verres servis", "wine-glass"),
-    tuile_evolution(ca, ca_m1, titre_avec_tva("CA bières", unite_tva), "euro-sign",
+    tuile_evolution(ca, ca_m1, titre_avec_tva(paste("CA",categorie), unite_tva), "euro-sign",
                     function(x) format_CA(x, -1)),
-    tuile_ecart(nb, nb_m1, "Bières différentes", "list-ul"),
+    tuile_ecart(nb, nb_m1, "Boissons différentes", "list-ul"),
     kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,
              "boxes-stacked", sous_titre = paste0(round(litres / 7), " L / jour")),
     kpi_tile(if (is.null(pic)) "—" else as.character(pic$HEURE),
@@ -158,8 +152,8 @@ kpi_bieres_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL) {
   )
 }
 
-# Top bières par litres, colorées selon l'évolution vs S-1.
-graph_top_bieres <- function(comp, n = 12) {
+# Top boissons par litres, colorées selon l'évolution vs S-1.
+graph_top_boissons <- function(comp, n = 12) {
   if (is.null(comp) || nrow(comp) == 0)
     return(plotly_empty() %>% layout(title = "Aucune bière servie"))
   
@@ -183,9 +177,9 @@ graph_top_bieres <- function(comp, n = 12) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Trajectoire des principales bières : une ligne par bière, litres par semaine.
+# Trajectoire des principales boissons : une ligne par bière, litres par semaine.
 # La semaine analysée est marquée d'un point, pour situer le contexte.
-graph_tendance_bieres <- function(evo, semaine = NULL) {
+graph_tendance_boissons <- function(evo, semaine = NULL) {
   if (is.null(evo) || nrow(evo) == 0)
     return(plotly_empty() %>% layout(title = "Aucune bière servie"))
   
@@ -222,7 +216,7 @@ graph_tendance_bieres <- function(evo, semaine = NULL) {
 }
 
 # Heatmap jour x heure des litres servis.
-graph_heatmap_bieres <- function(jh) {
+graph_heatmap_boissons <- function(jh) {
   if (is.null(jh) || nrow(jh) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
@@ -247,8 +241,8 @@ graph_heatmap_bieres <- function(jh) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Historique hebdomadaire : litres en barres, nombre de bières en ligne.
-graph_evo_conso_bieres <- function(evo, semaine = NULL) {
+# Historique hebdomadaire : litres en barres, nombre de boissons en ligne.
+graph_evo_conso_boissons <- function(evo, semaine = NULL) {
   if (is.null(evo) || nrow(evo) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
@@ -261,18 +255,18 @@ graph_evo_conso_bieres <- function(evo, semaine = NULL) {
              hovertemplate = ~paste0("Sem. ", format(SEMAINE, "%d/%m/%y"), "<br>",
                                      round(LITRES), " L — ", VERRES,
                                      " verres<extra></extra>")) %>%
-    add_lines(x = ~SEMAINE, y = ~NB_BIERES, name = "Bières à la carte",
+    add_lines(x = ~SEMAINE, y = ~NB_BIERES, name = "Boissons à la carte",
               yaxis = "y2", line = list(color = "#5B7B5A", width = 2),
-              hovertemplate = ~paste0(NB_BIERES, " bières<extra></extra>")) %>%
+              hovertemplate = ~paste0(NB_BIERES, " boissons<extra></extra>")) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "Litres"),
-           yaxis2 = list(title = "Nb de bières", overlaying = "y", side = "right",
+           yaxis2 = list(title = "Nb de boissons", overlaying = "y", side = "right",
                          showgrid = FALSE, rangemode = "tozero"),
            legend = list(orientation = "h"),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
 # Formats servis (33 cl, 50 cl, dégustation...).
-graph_formats_bieres <- function(formats) {
+graph_formats_boissons <- function(formats) {
   if (is.null(formats) || nrow(formats) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   dat <- formats %>% arrange(VERRES) %>%
@@ -287,8 +281,8 @@ graph_formats_bieres <- function(formats) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-table_conso_bieres <- function(comp, unite_tva = NULL) {
-  if (is.null(comp) || nrow(comp) == 0) return(tibble(Bière = character()))
+table_conso_boissons <- function(comp, unite_tva = NULL) {
+  if (is.null(comp) || nrow(comp) == 0) return(tibble(Boisson = character()))
   
   col_name <- paste("CA",unite_tva)
   

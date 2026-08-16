@@ -632,7 +632,7 @@ server <- function(input, output, session) {
   })
   
 
-  #### Volet "Bières" ####
+  #### Volet "Fût" ####
 
   # Évolution + prédictions des fûts en cours (calcul HoltWinters, une seule fois)
   db_predict_bieres <- reactive({
@@ -852,7 +852,7 @@ server <- function(input, output, session) {
     tbl <- table_compte_resultat(DB_COMPTA, cg_periodes(),
                                  detail = isTRUE(input$cg_detail),
                                  en_pct = isTRUE(input$cg_pct))
-    datatable(tbl, rownames = FALSE, escape = FALSE,
+    datatable(tbl, rownames = FALSE, escape = FALSE, selection = 'single',
               options = list(pageLength = 200, dom = "ft", scrollX = TRUE,
                              ordering = FALSE,
                              columnDefs = list(list(className = "dt-right",
@@ -1180,10 +1180,24 @@ server <- function(input, output, session) {
     datatable_simple(table_creneaux(cren_stats()))
   })
 
-  #### Volet "Bières" — consommation ####
+  #### Volet "Boisson" — consommation ####
+  
+  observe({
+    updateSelectInput(session,"conso_categorie",
+                      choices=c("Bières","Softs","Alcools & Vins"))
+  })
+    
+  REF_BOISSONS <- reactive({
+    choix <- toupper(input$conso_categorie)
+    DB_PRODUITS %>%
+      filter(str_detect(toupper(replace_na(CATEGORIE, "")), choix), 
+             !is.na(BOISSON), BOISSON != "") %>%
+      distinct(BOISSON) %>%
+      pull(BOISSON)
+  })
 
   # Référentiel des vraies bières, calculé une seule fois
-  REF_BIERES <- ref_bieres(DB_PRODUITS)
+  # REF_BIERES <- ref_bieres(DB_PRODUITS)
 
   # Semaines proposées (la semaine en cours, partielle, est exclue)
   observe({
@@ -1201,49 +1215,49 @@ server <- function(input, output, session) {
   })
 
   conso_comp <- reactive({
-    conso_bieres_comparee(DB_TICKET, REF_BIERES, conso_sem(), input$unite_tva)
+    conso_boissons_comparee(DB_TICKET, REF_BOISSONS(), conso_sem(), input$unite_tva)
   })
 
   conso_formats <- reactive({
-    formats_bieres(DB_TICKET, REF_BIERES, conso_sem())
+    formats_boissons(DB_TICKET, REF_BOISSONS(), conso_sem())
   })
 
   conso_horaire <- reactive({
-    conso_bieres_horaire(DB_TICKET, REF_BIERES, conso_sem())
+    conso_boissons_horaire(DB_TICKET, REF_BOISSONS(), conso_sem())
   })
 
   output$conso_kpi <- renderUI({
-    kpi_bieres_tiles(conso_comp(), conso_formats(), conso_horaire(), input$unite_tva)
+    kpi_boissons_tiles(conso_comp(), conso_formats(), conso_horaire(), input$unite_tva, input$conso_categorie)
   })
 
   output$conso_top <- renderPlotly({
-    graph_top_bieres(conso_comp())
+    graph_top_boissons(conso_comp())
   })
 
   output$conso_tendance <- renderPlotly({
-    graph_tendance_bieres(
-      evo_top_bieres(DB_TICKET, REF_BIERES, conso_sem(),
+    graph_tendance_boissons(
+      evo_top_boissons(DB_TICKET, REF_BOISSONS(), conso_sem(),
                      n_top = 5, n_semaines = 12, input$unite_tva),
       semaine = conso_sem())
   })
 
   output$conso_heatmap <- renderPlotly({
-    graph_heatmap_bieres(conso_bieres_jour_heure(DB_TICKET, REF_BIERES, conso_sem()))
+    graph_heatmap_boissons(conso_boissons_jour_heure(DB_TICKET, REF_BOISSONS(), conso_sem()))
   })
 
   output$conso_formats <- renderPlotly({
-    graph_formats_bieres(conso_formats())
+    graph_formats_boissons(conso_formats())
   })
 
   output$conso_evo <- renderPlotly({
-    graph_evo_conso_bieres(
-      evo_conso_bieres(DB_TICKET, REF_BIERES, n_semaines = 26,
+    graph_evo_conso_boissons(
+      evo_conso_boissons(DB_TICKET, REF_BOISSONS(), n_semaines = 26,
                        fin = conso_sem() + 6),
       semaine = conso_sem())
   })
 
   output$conso_table <- renderDT({
-    datatable_simple(table_conso_bieres(conso_comp(), input$unite_tva))
+    datatable_simple(table_conso_boissons(conso_comp(), input$unite_tva))
   })
 
   #### Volet "Pizzwanze" ####
@@ -1430,7 +1444,7 @@ server <- function(input, output, session) {
   
   go("go_maintenant", "tab_maintenant")
   go("go_annee", "tab_annee")
-  go("go_bieres", "tab_bieres")
+  go("go_boissons", "tab_boissons")
   go("go_futs", "tab_futs")
   go("go_focaccias", "tab_focaccias")
   go("go_pizzwanze",   "tab_pizzwanze")

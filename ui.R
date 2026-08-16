@@ -147,10 +147,10 @@ ui_app <- function() {
       ui_futs()
     ),
     nav_panel(
-      value = "tab_bieres",
-      title = "Bières",
+      value = "tab_boissons",
+      title = "Boissons",
       icon = icon("beer-mug-empty"),
-      ui_conso_bieres()
+      ui_conso_boissons()
     ),
     nav_panel(
       value = "tab_focaccias",
@@ -226,7 +226,7 @@ ui_accueil <- function() {
       carte("Maintenant",   "gauge-high",             "acc_maintenant",   "go_maintenant"),
       carte("Année",        "calendar-check",         "acc_annee",        "go_annee"),
       carte("Fûts",         "boxes-stacked",          "acc_futs",         "go_futs"),
-      carte("Bières",       "beer-mug-empty",         "acc_bieres",       "go_bieres"),
+      carte("Bières",       "beer-mug-empty",         "acc_bieres",       "go_boissons"),
       carte("Focaccias",    "bread-slice",            "acc_focaccias",    "go_focaccias"),
       carte("Pizzwanze",    "pizza-slice",            "acc_pizzwanze",    "go_pizzwanze"),
       carte("Réservations", "calendar-check",         "acc_reservations", "go_reservation"),
@@ -272,15 +272,15 @@ ui_travail <- function() {
         card(
           full_screen = TRUE,
           card_header("Décomposition du CA : marge et coûts du travail"),
-          plotlyOutput("trav_structure", height = "340px"),
-          div(class = "small text-muted",
-              "Cliquez sur un mois sur le graphique pour avoir la 
-              décomposition des heures.")
+          plotlyOutput("trav_structure", height = "340px")
         ),
         card(
           full_screen = TRUE, height = "350px",
           card_header("Décomposition des heures de travail"),
-          DTOutput("trav_heures_decomp")
+          DTOutput("trav_heures_decomp"),
+          div(class = "small text-muted",
+              "Cliquez sur un mois sur le graphique pour avoir la 
+              décomposition des heures.")
         ),
         card(
           full_screen = TRUE,
@@ -784,13 +784,14 @@ ui_futs <- function() {
   )
 }
 
-# Onglet "Bières" : consommation, à la semaine, comparée à S-1.
-ui_conso_bieres <- function() {
+# Onglet "Boisson" : consommation, à la semaine, comparée à S-1.
+ui_conso_boissons <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Semaine",
       width = 280,
       selectInput("conso_semaine", "Semaine analysée", choices = NULL),
+      selectInput("conso_categorie", "Catégorie", choices = NULL),
       hr(),
       div(class = "small text-muted",
           "Tout est comparé à la ", tags$b("semaine précédente"), ".",
@@ -805,13 +806,13 @@ ui_conso_bieres <- function() {
     layout_columns(
       col_widths = c(7, 5),
       card(full_screen = TRUE,
-           card_header("Top bières — litres servis vs S-1"),
+           card_header("Top boisson — litres servis vs S-1"),
            plotlyOutput("conso_top", height = "420px")),
       card(full_screen = TRUE,
-           card_header("Tendance des principales bières"),
+           card_header("Tendance des principales boissons"),
            plotlyOutput("conso_tendance", height = "420px"),
            div(class = "small text-muted",
-               "Les 5 bières les plus servies cette semaine, suivies sur ",
+               "Les 5 boissons les plus servies cette semaine, suivies sur ",
                "12 semaines."))
     ),
     layout_columns(
@@ -832,7 +833,7 @@ ui_conso_bieres <- function() {
     ),
     card(
       full_screen = TRUE,
-      card_header("Détail par bière"),
+      card_header("Détail par boisson"),
       DTOutput("conso_table")
     )
   )
