@@ -147,8 +147,14 @@ acc_futs <- function(db_bieres, db_predict = NULL) {
 acc_bieres <- function(db_ticket, db_produits, unite_tva = "HTVA") {
   sem <- suppressWarnings(max(semaines_dispo(db_produits), na.rm = TRUE))
   if (!is.finite(sem)) return(corps_vide())
-  ref <- ref_bieres(db_produits)
-  c1 <- conso_bieres(db_ticket, ref, sem, sem + 6, unite_tva)
+  
+  ref <- db_produits %>%
+      filter(str_detect(toupper(replace_na(CATEGORIE, "")), "BIÈRES"), 
+             !is.na(BOISSON), BOISSON != "") %>%
+      distinct(BOISSON) %>%
+      pull(BOISSON)
+  
+  c1 <- conso_boissons(db_ticket, ref, sem, sem + 6, unite_tva)
   if (is.null(c1) || !nrow(c1)) return(corps_vide("Aucune bière servie."))
 
   top <- c1 %>% slice_max(LITRES, n = 1)
