@@ -34,3 +34,32 @@ datatable_simple <- function(table){
     rownames= FALSE
   )
 }
+
+change_cursor_plotly <- function(p){
+  p |> htmlwidgets::onRender(
+    paste0(
+      "function(el, x) {",
+      "  function setCursor() {",
+      "    var dragLayer = el.getElementsByClassName('nsewdrag')[0];",
+      "    if (dragLayer) {",
+      "      dragLayer.style.cursor = 'default';",
+      "      el.on('plotly_hover', function(data) {",
+      "        dragLayer.style.cursor = 'pointer';",
+      "      });",
+      "      el.on('plotly_unhover', function(data) {",
+      "        dragLayer.style.cursor = 'default';",
+      "      });",
+      "      return true;",
+      "    }",
+      "    return false;",
+      "  }",
+      "  if (!setCursor()) {",
+      "    var observer = new MutationObserver(function(mutations) {",
+      "      if (setCursor()) { observer.disconnect(); }",
+      "    });",
+      "    observer.observe(el, { childList: true, subtree: true });",
+      "  }",
+      "}"
+    )
+  )
+}

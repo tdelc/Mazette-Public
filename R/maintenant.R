@@ -26,7 +26,8 @@ evolution_produits_semaine <- function(db_produits, date_debut_semaine, n = 10,
   
   agrege <- function(d1, d2) {
     db_produits %>%
-      filter(DATE >= d1, DATE <= d2, !est_biere(CATEGORIE)) %>%
+      filter(!str_detect(toupper(replace_na(CATEGORIE, "")), "BIÈRES"), 
+             DATE >= d1, DATE <= d2) %>%
       group_by(PRODUIT) %>%
       summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE), .groups = "drop")
   }

@@ -5,8 +5,8 @@ prepa_simulation <- function(db_produits, d1, d2) {
     filter(DATE >= d1, DATE <= d2) %>%
     group_by(CATEGORIE, PRODUIT = PRODUIT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(CA_HTVA, na.rm = TRUE), .groups = "drop") %>%
-    mutate(PRIX_MOYEN = round(CA / QUANTITE, 2)) %>%
+              CA = sum(CA_TVAC, na.rm = TRUE), .groups = "drop") %>%
+    mutate(PRIX_MOYEN = CA / QUANTITE) %>%
     arrange(CATEGORIE, desc(CA))
 }
 
@@ -28,7 +28,7 @@ table_simulation_aff <- function(sim) {
     transmute(Catégorie = CATEGORIE,
               Produit = tronque_nom(PRODUIT),
               Quantité = QUANTITE,
-              `Prix moyen` = PRIX_MOYEN,
+              `Prix moyen` = round(PRIX_MOYEN, 2),
               `Prix simulé` = round(PRIX_SIMU, 2),
               `CA HTVA actuel` = round(CA),
               `CA HTVA simulé` = round(CA_SIMU),

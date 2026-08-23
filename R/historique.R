@@ -56,7 +56,20 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
   dat <- agrege_historique(db_kpi, db_obj, unite) %>%
     filter(ventes > 0)
   
+  dat <- dat |> arrange(PERIODE)
+  dat$id = 1:nrow(dat)
+  
+  p <- ggplot(dat, aes(x = id, y = ventes)) + 
+    geom_smooth(method = "loess", xseq = sort(unique(dat$id)))
+  
+  # 2. Extraire les données construites
+  build_data <- ggplot_build(p)
+  loess_data <- build_data$data[[1]]
+  
   dat$ma <- forecast::ma(dat$ventes,5)
+  dat$loess <- loess_data$y
+  dat$min   <- loess_data$ymin
+  dat$max   <- loess_data$ymax
   
   lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
   else format(dat$PERIODE, "%B %Y")
@@ -66,22 +79,17 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
     add_lines(x = ~PERIODE, y = ~ventes, name = "CA réalisé",
               line = list(color = "#d98236"),
               hovertemplate = ~paste0(lbl, "<br>CA ", format_CA(ventes, -1), "<extra></extra>")) %>%
-    add_lines(x = ~PERIODE, y = ~ma, name = "",
+    add_lines(x = ~PERIODE, y = ~loess, name = "Tendance",
               line = list(color = "#5B7BAA")) %>%
+    add_ribbons(
+      x = ~ PERIODE,
+      ymin = ~min,
+      ymax = ~max,
+      name = "Intervalle",
+      fillcolor = "#5B7BAA50", # Couleur transparente
+      line = list(color = "transparent")   # Pas de bordure sur le ruban
+    ) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
            bargap = 0.3, legend = list(orientation = "h"),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
-  
-  # p <- dat %>% 
-  #   ggplot() +
-  #   aes(x = PERIODE, y = ventes) +
-  #   geom_line()+
-  #   scale_x_date(breaks = "years")+
-  #   labs(x = "", y = "CA (€)")+
-  #   geom_smooth(method = "loess",formula = 'y ~ x')
-  # 
-  # ggplotly(p) %>% 
-  #   layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
-  #          bargap = 0.3, legend = list(orientation = "h"),
-  #          paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }

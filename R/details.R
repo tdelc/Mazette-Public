@@ -21,7 +21,8 @@ graph_ca_jour <- function(db_kpi, db_obj, d1, d2, source = "detail_jour") {
               line = list(color = "#260b01", dash = "dot", width = 1)) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
            bargap = 0.3, legend = list(orientation = "h"),
-           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)") |> 
+    change_cursor_plotly()
 }
 
 # Graphe du CA agrégé par semaine ou par mois (barres cliquables).
@@ -59,7 +60,8 @@ graph_ca_periode <- function(db_kpi, db_obj, d1, d2,
               line = list(color = "#260b01", dash = "dot", width = 1)) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "CA (€)"),
            bargap = 0.3, legend = list(orientation = "h"),
-           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)") |> 
+    change_cursor_plotly()
 }
 
 # Répartition du CA à l'intérieur d'une période (jours d'une semaine, ou

@@ -124,7 +124,7 @@ ui_app <- function() {
     ),
     nav_panel(
       value = "tab_detail",
-      title = "Détail",
+      title = "Chiffre d'affaires",
       icon = icon("magnifying-glass-chart"),
       ui_detail()
     ),
@@ -723,29 +723,33 @@ ui_simulation <- function() {
                 showcase = icon("arrow-right-arrow-left"),
                 theme = value_box_theme(bg = "#efe7d8", fg = MZ_BRUN))
     ),
-    card(
-      card_header("Paramètres"),
-      layout_columns(
-        fill = FALSE,
-        col_widths = c(4, 3, 2, 3),
-        dateRangeInput("sim_periode", "Période de référence",
-                       start = NULL, end = NULL,
-                       separator = " → ", language = "fr",
-                       weekstart = 1, format = "dd/mm/yyyy"),
-        selectInput("sim_categorie", "Catégorie à ajuster", choices = NULL),
-        numericInput("sim_pct", "Variation (%)", value = 0,
-                     min = -100, max = 100, step = 1),
-        div(class = "d-flex gap-2 align-items-end",
-            actionButton("sim_apply", "Appliquer", class = "btn-primary"),
-            actionButton("sim_reset", "↺ Réinitialiser"))
+    layout_columns(
+      col_widths = c(6, 6),
+      card(
+        card_header("Paramètres"),
+        layout_columns(
+          fill = FALSE,
+          col_widths = c(6, 6),
+          dateRangeInput("sim_periode", "Période de référence",
+                         start = NULL, end = NULL,
+                         separator = " → ", language = "fr",
+                         weekstart = 1, format = "dd/mm/yyyy"),
+          selectInput("sim_categorie", "Catégorie à ajuster", choices = NULL),
+          numericInput("sim_pct", "Variation (%)", value = 0,
+                       min = -100, max = 100, step = 1),
+          
+            div(class = "d-flex gap-2 align-items-end",
+                actionButton("sim_apply", "Appliquer", class = "btn-primary"),
+                actionButton("sim_reset", "↺ Réinitialiser"))
+        ),
+        div(class = "small text-muted",
+            "Hypothèse : quantités inchangées. Modifiez aussi un prix directement",
+            " dans la colonne « Prix simulé » du tableau. Tous les prix sont TVAC.")
       ),
-      div(class = "small text-muted",
-          "Hypothèse : quantités inchangées. Modifiez aussi un prix directement",
-          " dans la colonne « Prix simulé » du tableau.")
-    ),
-    card(
-      card_header("Produits dont le prix a changé"),
-      DTOutput("sim_table_diff")
+      card(
+        card_header("Produits dont le prix a changé"),
+        DTOutput("sim_table_diff")
+      )
     ),
     card(
       full_screen = TRUE,
@@ -1048,7 +1052,9 @@ ui_historique <- function() {
 
 ui_detail <- function() {
   navset_card_tab(
+    selected = "sem",
     nav_panel(
+      value = 'jour',
       title = "Par jour",
       icon = icon("calendar-day"),
       layout_columns(
@@ -1082,16 +1088,19 @@ ui_detail <- function() {
       )
     ),
     nav_panel(
+      value = 'sem',
       title = "Par semaine",
       icon = icon("calendar-week"),
       ui_detail_periode("sem")
     ),
     nav_panel(
+      value = 'mois',
       title = "Par mois",
       icon = icon("calendar-days"),
       ui_detail_periode("mois")
     ),
     nav_panel(
+      value = 'produit',
       title = "Par produit",
       icon = icon("box"),
       layout_columns(
