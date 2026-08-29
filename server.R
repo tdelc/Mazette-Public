@@ -904,6 +904,18 @@ server <- function(input, output, session) {
     if (!nrow(a))
       return(plotly_empty(type = "scatter", mode = "markers") %>%
                layout(title = list(text = "Aucune réservation à venir")))
+    a <- creer_db_date() |> 
+      rename(JOUR = JOUR_SEMAINE) |> 
+      left_join(a |> select(-JOUR), by = "DATE") |> 
+      mutate(
+        SALLE = replace_na(SALLE,0),
+        MIDI = replace_na(MIDI,0),
+        TERRASSE = replace_na(TERRASSE,0),
+        SOIR = replace_na(SOIR,0)
+      ) |> 
+      filter(DATE >= now(), DATE <= now() + days(21))
+    
+    test <<- a
     lab <- paste0(substr(as.character(a$JOUR), 1, 3), " ", format(a$DATE, "%d/%m"))
     ordre <- factor(lab, levels = lab)
     # Deux découpages du même total : par lieu (où installer) ou par créneau
