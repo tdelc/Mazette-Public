@@ -17,6 +17,16 @@ server <- function(input, output, session) {
   USER <- reactiveValues(logged = FALSE, nom = NULL, role = NULL,
                          onglets = character(0))
 
+  # Vrai une fois que les onglets autorisés sont VRAIMENT dans la page.
+  #
+  # Les sélecteurs d'un onglet — périodes, années, semaines, brassins — sont
+  # garnis depuis le serveur par des observateurs qui ne dépendent que des
+  # données. Tant que l'onglet n'est pas inséré, leur update*Input() vise un
+  # champ inexistant : le message est perdu sans erreur, et l'observateur, qui
+  # n'a plus aucune raison d'être invalidé, ne rejoue jamais. Le sélecteur
+  # reste vide pour de bon. Ils attendent donc ce drapeau.
+  ONGLETS_PRETS <- reactiveVal(FALSE)
+
   #### Données préparées ####
   UPD_JOURS <- reactive({
     req(input$unite_tva)
@@ -86,6 +96,14 @@ server <- function(input, output, session) {
                  position = "after", session = session)
       precedent <- cle
     }
+
+    # Le drapeau ne passe pas à TRUE ici, mais au flush SUIVANT. Côté
+    # navigateur, Shiny traite ses messages dans l'ordre où leurs gestionnaires
+    # sont enregistrés, et « inputMessages » (3e) passe avant
+    # « shiny-insert-tab » (19e) : garnir dans le même flush que l'insertion
+    # remplirait des champs pas encore créés. onFlushed() décale d'un cycle,
+    # donc les onglets existent quand les valeurs arrivent.
+    session$onFlushed(function() ONGLETS_PRETS(TRUE), once = TRUE)
 
     # Une carte d'accueil qui renverrait vers un onglet interdit n'a pas de
     # sens : seules celles des onglets autorisés sont révélées.
@@ -259,6 +277,7 @@ server <- function(input, output, session) {
   
   # Liste des mois disponibles (du plus récent au plus ancien)
   observe({
+    req(ONGLETS_PRETS())
     mois_dispo <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       distinct(PREMIER_JOUR_MOIS) %>%
@@ -340,6 +359,7 @@ server <- function(input, output, session) {
 
   # Période par défaut : 8 dernières semaines jusqu'à la veille
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "detail_periode",
                          start = date_veille - weeks(8),
                          end   = date_veille)
@@ -443,6 +463,7 @@ server <- function(input, output, session) {
     src <- paste0("detail_", sfx)
 
     observe({
+      req(ONGLETS_PRETS())
       updateDateRangeInput(session, id("periode"),
                            start = defaut_debut, end = date_veille)
     })
@@ -603,6 +624,7 @@ server <- function(input, output, session) {
   #### Volet "Détail" — Par produit ####
   
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "detail_produit_periode",
                          start = date_veille - weeks(8),
                          end   = date_veille)
@@ -716,6 +738,7 @@ server <- function(input, output, session) {
 
   # Sélecteur de brassin pour le rapport
   observe({
+    req(ONGLETS_PRETS())
     brassins <- DB_BRASSINS %>% arrange(desc(DT_BRASSIN))
     choix <- setNames(brassins$ID_BRASSIN, brassins$NOM_BRASSIN)
     updateSelectInput(session, "brassin_choisi", choices = choix)
@@ -731,6 +754,7 @@ server <- function(input, output, session) {
 
   # Période par défaut : 8 dernières semaines
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "sim_periode",
                          start = date_veille - weeks(8), end = date_veille)
   })
@@ -749,7 +773,11 @@ server <- function(input, output, session) {
   sim_prix <- reactiveVal(NULL)
 
   # (Ré)initialise les prix simulés quand la base change + remplit les catégories
-  observeEvent(sim_base(), {
+  # Le drapeau est dans l'expression déclenchante, pas dans le corps :
+  # observeEvent() isole son corps, donc une dépendance posée là ne rejouerait
+  # jamais l'observateur au moment où le drapeau bascule — et sim_categorie
+  # resterait vide. C'est le seul observeEvent parmi les garnissages.
+  observeEvent({ req(ONGLETS_PRETS()); sim_base() }, {
     sim_prix(sim_base()$PRIX_MOYEN)
     updateSelectInput(session, "sim_categorie",
                       choices = sort(unique(sim_base()$CATEGORIE)))
@@ -850,6 +878,7 @@ server <- function(input, output, session) {
   })
 
   observe({
+    req(ONGLETS_PRETS())
     p <- expl_postes()
     req(nrow(p) > 0)
     dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
@@ -890,6 +919,7 @@ server <- function(input, output, session) {
   # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
 
   observe({
+    req(ONGLETS_PRETS())
     req(exists("DB_COMPTA"))
     p <- periodes_compta(DB_COMPTA)
     updateSelectizeInput(session, "cg_periodes",
@@ -1002,6 +1032,7 @@ server <- function(input, output, session) {
 
   # --- Statistiques
   observe({
+    req(ONGLETS_PRETS())
     r <- RESA()
     req(nrow(r) > 0)
     updateDateRangeInput(session, "resa_periode",
@@ -1074,6 +1105,7 @@ server <- function(input, output, session) {
   # Met à jour la liste des périodes disponibles selon la granularité choisie ;
   # sélectionne par défaut les 2 plus récentes.
   observe({
+    req(ONGLETS_PRETS())
     req(input$comp_unite)
     dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE(), input$comp_unite)
     choix <- setNames(as.character(dispo), label_periode(dispo, input$comp_unite))
@@ -1101,6 +1133,7 @@ server <- function(input, output, session) {
   #### Volet "Année" ####
 
   observe({
+    req(ONGLETS_PRETS())
     annees <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       pull(DATE) %>% year() %>% unique() %>% sort(decreasing = TRUE)
@@ -1110,8 +1143,12 @@ server <- function(input, output, session) {
   })
 
   annee_val <- reactive({
-    if (is.null(input$annee_choisie)) year(today())
-    else as.integer(input$annee_choisie)
+    # Entre l'insertion de l'onglet et son garnissage, le select existe mais
+    # est vide : input$annee_choisie vaut "" et non NULL, et as.integer("")
+    # vaut NA — que serie_annuelle() finit par passer à as.Date(), d'où un
+    # « format standard non ambigu » très loin de sa cause.
+    a <- suppressWarnings(as.integer(input$annee_choisie))
+    if (length(a) != 1 || is.na(a)) year(today()) else a
   })
 
   serie_annee <- reactive({
@@ -1151,6 +1188,7 @@ server <- function(input, output, session) {
   # semaine, comme dans l'étude de rentabilité)
   debut_travail <- floor_date(date_veille, "month") %m-% months(12)
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "trav_periode",
                          start = debut_travail, end = date_veille)
     updateDateRangeInput(session, "cren_periode",
@@ -1256,6 +1294,7 @@ server <- function(input, output, session) {
   #### Volet "Boisson" — consommation ####
   
   observe({
+    req(ONGLETS_PRETS())
     updateSelectInput(session,"conso_categorie",
                       choices=c("Bières","Softs","Alcools & Vins"))
   })
@@ -1274,6 +1313,7 @@ server <- function(input, output, session) {
 
   # Semaines proposées (la semaine en cours, partielle, est exclue)
   observe({
+    req(ONGLETS_PRETS())
     sems <- semaines_dispo(DB_JOURS)
     req(length(sems) > 0)
     updateSelectInput(session, "conso_semaine",
@@ -1339,6 +1379,7 @@ server <- function(input, output, session) {
   SOIREES_PIZZWANZE <- soirees_pizzwanze(DB_PRODUITS)
 
   observe({
+    req(ONGLETS_PRETS())
     req(length(SOIREES_PIZZWANZE) > 0)
     choix <- rev(SOIREES_PIZZWANZE)   # la plus récente en tête
     updateSelectInput(session, "pizz_soiree",
@@ -1388,6 +1429,7 @@ server <- function(input, output, session) {
   #### Volet "Focaccias" ####
 
   observe({
+    req(ONGLETS_PRETS())
     sems <- semaines_dispo(DB_PRODUITS)
     req(length(sems) > 0)
     updateSelectInput(session, "foca_semaine",

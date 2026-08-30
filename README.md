@@ -50,11 +50,20 @@ quitte pas le serveur et leurs calculs ne sont jamais déclenchés.
 Conséquence à connaître en développant : **les inputs d'un onglet n'existent
 qu'après son insertion**, donc après la connexion. Les sorties (`render*`) ne
 s'en aperçoivent pas — Shiny ne les calcule que lorsqu'elles sont visibles ;
-mais un `observe()` tourne dès le premier flush, avant la connexion. Un
-observateur qui lit un input d'onglet doit donc le protéger par `req()`, ou
-prévoir un repli explicite comme le fait `sim_periode_val()`. Sinon il part sur
-`NULL` — et `1 + NULL/100` vaut `numeric(0)`, pas `NA`, ce qui produit des
-erreurs de longueur loin de leur cause.
+mais un `observe()` tourne dès le premier flush, avant la connexion. D'où deux
+règles, selon le sens :
+
+- **Lire** un input d'onglet → le protéger par `req()`, ou prévoir un repli
+  explicite comme le fait `sim_periode_val()`. Sinon le calcul part sur `NULL`
+  — et `1 + NULL/100` vaut `numeric(0)`, pas `NA`, ce qui produit des erreurs
+  de longueur loin de leur cause.
+- **Garnir** un input d'onglet (`update*Input`) → attendre `ONGLETS_PRETS()`.
+  Sinon le message vise un champ inexistant : il est perdu **sans erreur**, et
+  l'observateur ne rejoue jamais. Le sélecteur reste vide pour de bon.
+
+Dans un `observeEvent`, ce garde-fou va dans l'expression déclenchante, pas
+dans le corps : le corps est isolé, une dépendance posée là ne rejouerait
+jamais l'observateur.
 
 ### Se déconnecter
 

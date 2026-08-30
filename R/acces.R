@@ -22,11 +22,24 @@
 #
 # Les sorties (render*) ne s'en aperçoivent pas : Shiny ne les calcule que
 # lorsqu'elles sont visibles. Les observateurs, eux, tournent dès le premier
-# flush, donc AVANT la connexion. Un observe() qui lit un input d'onglet doit
-# donc le protéger — req(input$x), ou une valeur de repli explicite comme le
-# fait sim_periode_val(). Sans quoi le calcul part sur NULL, ce qui donne des
-# erreurs de longueur bien loin de leur cause (`1 + NULL/100` vaut numeric(0),
-# et non NA).
+# flush, donc AVANT la connexion. D'où deux règles, selon le sens :
+#
+#   LIRE un input d'onglet dans un observe() -> le protéger : req(input$x), ou
+#   une valeur de repli explicite comme le fait sim_periode_val(). Sans quoi le
+#   calcul part sur NULL, ce qui donne des erreurs de longueur bien loin de
+#   leur cause (`1 + NULL/100` vaut numeric(0), et non NA).
+#
+#   GARNIR un input d'onglet (update*Input) -> attendre ONGLETS_PRETS(), le
+#   drapeau posé par server.R. Sinon le message vise un champ qui n'existe pas
+#   encore : il est perdu SANS ERREUR, et l'observateur, n'ayant plus de raison
+#   d'être invalidé, ne rejoue jamais — le sélecteur reste vide pour de bon.
+#   Le drapeau ne bascule qu'au flush suivant l'insertion : côté navigateur,
+#   Shiny traite « inputMessages » (3e gestionnaire) avant « shiny-insert-tab »
+#   (19e), donc garnir dans le même flush arriverait encore trop tôt.
+#
+#   Dans un observeEvent, ce garde-fou va dans l'EXPRESSION DÉCLENCHANTE et non
+#   dans le corps : le corps est isolé, une dépendance posée là ne rejouerait
+#   jamais l'observateur quand le drapeau bascule.
 
 #### Catalogue des onglets ####
 
