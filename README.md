@@ -2,6 +2,19 @@
 
 Tableau de bord de la brasserie Mazette (R / Shiny).
 
+## Documentation
+
+**[`docs/index.html`](docs/index.html)** — la documentation complète : ce que fait
+l'application, d'où viennent ses données, la gestion des accès, et un volet
+**Administration** qui explique comment remonter le dashboard de zéro.
+
+La page est autonome : elle s'ouvre par double-clic, sans serveur ni build. Elle
+propose deux niveaux de lecture, « j'ai cinq minutes » et « je veux tout savoir ».
+Pour la publier en ligne : *Settings → Pages*, source *Deploy from a branch*,
+dossier `/docs`.
+
+Ce README ne garde que le résumé de la gestion des accès, qui change souvent.
+
 ## Accès et mots de passe
 
 Les mots de passe viennent d'un onglet du Google Sheet, comme avant —

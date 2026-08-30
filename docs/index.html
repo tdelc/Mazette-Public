@@ -1,0 +1,1059 @@
+<meta charset="utf-8">
+<title>Mazette Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --brun:#732c02; --ambre:#d98236; --creme:#f2efe6; --noir:#260b01;
+  --beige:#d3c0ac; --neutre:#8d7b68;
+  --vert:#5b7b5a; --rouge:#c0392b;
+
+  --fond:#faf8f3;
+  --fond-2:#f2efe6;
+  --carte:#ffffff;
+  --trait:#e2d9c9;
+  --trait-fort:#cdbfa7;
+  --texte:#2e1a0d;
+  --texte-doux:#7a6a58;
+  --accent:#8a3606;
+  --accent-doux:#d98236;
+  --code-fond:#f4efe4;
+  --ombre:0 1px 2px rgba(38,11,1,.05), 0 8px 24px -16px rgba(38,11,1,.28);
+
+  --pas:clamp(1.1rem,.6rem + 1.4vw,1.7rem);
+  --lecture:68ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --fond:#18100a; --fond-2:#211710; --carte:#241a12; --trait:#3a2b1e;
+    --trait-fort:#54402e; --texte:#f0e7da; --texte-doux:#b3a08a;
+    --accent:#eda05c; --accent-doux:#d98236; --code-fond:#1e150e;
+    --vert:#8fb08d; --rouge:#e08074;
+    --ombre:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --fond:#18100a; --fond-2:#211710; --carte:#241a12; --trait:#3a2b1e;
+  --trait-fort:#54402e; --texte:#f0e7da; --texte-doux:#b3a08a;
+  --accent:#eda05c; --accent-doux:#d98236; --code-fond:#1e150e;
+  --vert:#8fb08d; --rouge:#e08074;
+  --ombre:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--fond); color:var(--texte);
+  font-family:Inter,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{
+  /* Repli en grotesque, pas en serif : hors ligne, la page doit garder
+     l'allure voulue plutôt que basculer dans un autre registre. */
+  font-family:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",
+              system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  text-wrap:balance; line-height:1.12; margin:0; font-weight:600;
+}
+a{color:var(--accent); text-underline-offset:.18em}
+a:hover{text-decoration-thickness:2px}
+:focus-visible{outline:2px solid var(--accent-doux); outline-offset:3px; border-radius:3px}
+code,kbd{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em}
+p code,li code,td code{
+  background:var(--code-fond); padding:.12em .38em; border-radius:4px;
+  border:1px solid var(--trait);
+}
+/* Les identifiants courts tiennent d'eux-mêmes sur une ligne ; seule une URL
+   ou un chemin trop long se coupe, plutôt que de déborder sur mobile. */
+p code,li code{overflow-wrap:anywhere}
+td code{white-space:nowrap}
+
+/* ---------- ossature ---------- */
+.enveloppe{max-width:1240px; margin:0 auto; padding:0 var(--pas)}
+.bandeau{
+  border-bottom:1px solid var(--trait); background:var(--fond-2);
+  position:relative; overflow:hidden;
+}
+.bandeau::after{
+  content:""; position:absolute; inset:auto 0 0 0; height:3px;
+  background:linear-gradient(90deg,var(--brun) 0%,var(--ambre) 55%,var(--beige) 100%);
+}
+.bandeau-i{
+  display:flex; flex-wrap:wrap; gap:1.5rem 2rem;
+  align-items:flex-end; justify-content:space-between;
+  padding:clamp(1.8rem,4vw,3.2rem) 0 clamp(1.6rem,3vw,2.4rem);
+}
+.marque{display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem}
+.pastille{width:.7rem; height:.7rem; border-radius:2px; background:var(--ambre)}
+.marque span{
+  font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--texte-doux); font-weight:600;
+}
+h1{font-size:clamp(2.1rem,1.2rem + 3.4vw,3.4rem); letter-spacing:-.02em}
+.sous-titre{
+  margin:.7rem 0 0; max-width:52ch; color:var(--texte-doux); font-size:1.02rem;
+}
+
+/* ---------- sélecteur de mode ---------- */
+.modes{display:flex; flex-direction:column; gap:.5rem; align-items:flex-start}
+.modes-l{
+  font-size:.7rem; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--texte-doux); font-weight:600;
+}
+.bascule{
+  display:inline-flex; background:var(--carte); border:1px solid var(--trait-fort);
+  border-radius:9px; padding:3px; gap:3px; box-shadow:var(--ombre);
+}
+.bascule button{
+  font:inherit; font-size:.87rem; font-weight:500; cursor:pointer;
+  border:0; background:transparent; color:var(--texte-doux);
+  padding:.5rem .95rem; border-radius:6px; white-space:nowrap;
+  transition:background .15s, color .15s;
+}
+.bascule button:hover{color:var(--texte)}
+.bascule button[aria-pressed="true"]{background:var(--brun); color:#fdf9f2}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .bascule button[aria-pressed="true"]{
+    background:var(--ambre); color:#1b1008;
+  }
+}
+:root[data-theme="dark"] .bascule button[aria-pressed="true"]{
+  background:var(--ambre); color:#1b1008;
+}
+
+/* ---------- colonnes ---------- */
+.colonnes{display:grid; grid-template-columns:230px minmax(0,1fr); gap:clamp(2rem,4vw,4rem); align-items:start}
+@media (max-width:900px){.colonnes{grid-template-columns:1fr; gap:1.5rem}}
+
+.sommaire{position:sticky; top:1.2rem; padding:1.6rem 0; font-size:.9rem}
+@media (max-width:900px){
+  .sommaire{position:static; border-bottom:1px solid var(--trait); padding-bottom:1.2rem}
+}
+.sommaire h2{
+  font-size:.7rem; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--texte-doux); font-family:Inter,sans-serif; font-weight:600;
+  margin-bottom:.8rem;
+}
+.sommaire ol{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.1rem}
+.sommaire a{
+  display:block; padding:.34rem .6rem; border-radius:6px;
+  color:var(--texte-doux); text-decoration:none; border-left:2px solid transparent;
+}
+.sommaire a:hover{color:var(--texte); background:var(--fond-2)}
+.sommaire a.actif{color:var(--accent); border-left-color:var(--ambre); font-weight:500}
+
+main{padding:1.6rem 0 5rem; min-width:0}
+section{scroll-margin-top:1.5rem; padding-bottom:.5rem}
+section + section{margin-top:clamp(2.6rem,5vw,4.2rem)}
+.eyebrow{
+  font-size:.7rem; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--ambre); font-weight:600; margin-bottom:.55rem;
+}
+h2.titre{font-size:clamp(1.5rem,1.1rem + 1.3vw,2rem); letter-spacing:-.015em}
+h3{font-size:1.12rem; margin:2.2rem 0 .6rem; letter-spacing:-.01em}
+h4{font-size:.97rem; margin:1.5rem 0 .4rem; font-family:Inter,sans-serif; font-weight:600}
+p,ul,ol{max-width:var(--lecture)}
+p{margin:.85rem 0}
+ul,ol{margin:.85rem 0; padding-left:1.15rem}
+li{margin:.34rem 0}
+li::marker{color:var(--neutre)}
+hr{border:0; border-top:1px solid var(--trait); margin:2.4rem 0}
+
+/* ---------- blocs ---------- */
+.resume{
+  background:var(--carte); border:1px solid var(--trait);
+  border-left:3px solid var(--ambre); border-radius:0 10px 10px 0;
+  padding:1.1rem 1.3rem; margin:1.2rem 0; box-shadow:var(--ombre); max-width:var(--lecture);
+}
+.resume p:first-child{margin-top:0} .resume p:last-child{margin-bottom:0}
+.resume .l{
+  font-size:.68rem; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--texte-doux); font-weight:600; display:block; margin-bottom:.4rem;
+}
+.note{
+  border:1px dashed var(--trait-fort); border-radius:9px;
+  padding:.95rem 1.15rem; margin:1.2rem 0; max-width:var(--lecture);
+  background:var(--fond-2); font-size:.94rem;
+}
+.note.attention{border-style:solid; border-color:var(--rouge); background:transparent}
+.note.attention .l{color:var(--rouge)}
+.note .l{
+  font-size:.68rem; letter-spacing:.14em; text-transform:uppercase;
+  font-weight:600; display:block; margin-bottom:.35rem; color:var(--texte-doux);
+}
+.note p:first-of-type{margin-top:0} .note p:last-child{margin-bottom:0}
+
+pre{
+  background:var(--code-fond); border:1px solid var(--trait); border-radius:9px;
+  padding:.95rem 1.1rem; overflow-x:auto; margin:1.1rem 0; font-size:.855rem;
+  line-height:1.55;
+}
+pre code{white-space:pre}
+.cmt{color:var(--texte-doux); font-style:italic}
+
+.tableau{overflow-x:auto; margin:1.2rem 0; border:1px solid var(--trait); border-radius:9px; background:var(--carte)}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:520px}
+th,td{text-align:left; padding:.6rem .85rem; border-bottom:1px solid var(--trait); vertical-align:top}
+thead th{
+  font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--texte-doux); font-weight:600; background:var(--fond-2);
+  border-bottom:1px solid var(--trait-fort); white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+.num{font-variant-numeric:tabular-nums; text-align:right}
+
+/* runbook : une vraie séquence, donc numérotée */
+.etapes{list-style:none; padding:0; margin:1.4rem 0; counter-reset:e; max-width:none}
+.etapes > li{
+  counter-increment:e; position:relative; padding-left:3rem;
+  margin:0 0 1.7rem; max-width:none;
+}
+.etapes > li::before{
+  content:counter(e,decimal-leading-zero); position:absolute; left:0; top:.05rem;
+  font-family:"JetBrains Mono",monospace; font-size:.78rem; font-weight:600;
+  color:var(--ambre); border:1px solid var(--trait-fort); border-radius:6px;
+  width:2.1rem; height:1.7rem; display:grid; place-items:center; background:var(--carte);
+}
+.etapes h4{margin-top:0}
+
+.grille{display:grid; gap:.9rem; grid-template-columns:repeat(auto-fit,minmax(195px,1fr)); margin:1.3rem 0}
+.tuile{
+  background:var(--carte); border:1px solid var(--trait); border-radius:10px;
+  padding:.95rem 1.05rem; box-shadow:var(--ombre);
+}
+.tuile .k{
+  font-family:"JetBrains Mono",monospace; font-size:.74rem; color:var(--ambre);
+  font-weight:600; display:block; margin-bottom:.3rem;
+}
+.tuile .v{font-size:.9rem; color:var(--texte-doux); line-height:1.5}
+/* Un chemin de fichier n'a pas d'espace : sans ceci il déborde de sa carte. */
+.tuile .v code{overflow-wrap:anywhere}
+.tuile strong{color:var(--texte); font-weight:600}
+
+figure{margin:1.6rem 0; max-width:none}
+figure svg{display:block; width:100%; height:auto; max-width:760px}
+figcaption{font-size:.84rem; color:var(--texte-doux); margin-top:.5rem; max-width:var(--lecture)}
+
+.pill{
+  display:inline-block; font-size:.68rem; letter-spacing:.08em; text-transform:uppercase;
+  font-weight:600; padding:.15rem .45rem; border-radius:4px; vertical-align:.1em;
+  border:1px solid currentColor;
+}
+.pill.ok{color:var(--vert)} .pill.non{color:var(--neutre)} .pill.att{color:var(--rouge)}
+
+/* ---------- modes de lecture ---------- */
+:root[data-mode="rapide"] [data-profondeur="detail"]{display:none}
+.marqueur-detail{
+  display:none; font-size:.83rem; color:var(--texte-doux);
+  border-left:2px solid var(--trait-fort); padding:.3rem 0 .3rem .8rem; margin:1rem 0;
+  max-width:var(--lecture);
+}
+:root[data-mode="rapide"] .marqueur-detail{display:block}
+
+footer{border-top:1px solid var(--trait); background:var(--fond-2); padding:2rem 0 3rem; margin-top:2rem}
+footer p{font-size:.87rem; color:var(--texte-doux); margin:.3rem 0}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important; scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+
+<header class="bandeau">
+  <div class="enveloppe bandeau-i">
+    <div>
+      <div class="marque"><span class="pastille"></span><span>Mazette &middot; Documentation technique</span></div>
+      <h1>Le tableau de bord, de bout en bout</h1>
+      <p class="sous-titre">
+        Ce que fait l&rsquo;application, d&rsquo;o&ugrave; viennent ses donn&eacute;es, et comment la
+        remonter enti&egrave;rement si quelqu&rsquo;un d&rsquo;autre doit reprendre le travail.
+      </p>
+    </div>
+    <div class="modes">
+      <span class="modes-l" id="l-mode">Niveau de d&eacute;tail</span>
+      <div class="bascule" role="group" aria-labelledby="l-mode">
+        <button type="button" id="b-rapide" aria-pressed="false">J&rsquo;ai cinq minutes</button>
+        <button type="button" id="b-complet" aria-pressed="true">Je veux tout savoir</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="enveloppe colonnes">
+  <nav class="sommaire" aria-label="Sommaire">
+    <h2>Sommaire</h2>
+    <ol>
+      <li><a href="#essentiel">L&rsquo;essentiel</a></li>
+      <li><a href="#onglets">Les onglets</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#donnees">Les donn&eacute;es</a></li>
+      <li><a href="#acces">Acc&egrave;s et mots de passe</a></li>
+      <li><a href="#administration">Administration</a></li>
+      <li><a href="#pieges">Pi&egrave;ges connus</a></li>
+      <li><a href="#dette">&Eacute;tat des lieux</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <!-- ================= ESSENTIEL ================= -->
+  <section id="essentiel">
+    <p class="eyebrow">Point de d&eacute;part</p>
+    <h2 class="titre">L&rsquo;essentiel</h2>
+
+    <div class="resume">
+      <span class="l">En une phrase</span>
+      <p>
+        Une application <strong>R&nbsp;/&nbsp;Shiny</strong> qui lit les fichiers Google&nbsp;Drive de la
+        brasserie, les transforme en une douzaine de tables, les met en cache dans un
+        <code>.RData</code>, et les affiche en quatorze onglets derri&egrave;re un mot de passe qui
+        d&eacute;cide de ce que chacun voit.
+      </p>
+    </div>
+
+    <div class="grille">
+      <div class="tuile"><span class="k">Langage</span>
+        <span class="v"><strong>R 4.5.1</strong>, Shiny + bslib 5. Aucun build, aucun JavaScript &agrave; compiler.</span></div>
+      <div class="tuile"><span class="k">Source de v&eacute;rit&eacute;</span>
+        <span class="v">Des classeurs <strong>Google&nbsp;Drive</strong>, dont un fichier d&rsquo;index qui liste tous les autres.</span></div>
+      <div class="tuile"><span class="k">Cache</span>
+        <span class="v"><code>outputs/R_new_env_&lt;date&gt;.RData</code>, reconstruit quand il manque.</span></div>
+      <div class="tuile"><span class="k">Authentification</span>
+        <span class="v">Un mot de passe par personne, lu dans le classeur, qui ouvre un jeu d&rsquo;onglets.</span></div>
+    </div>
+
+    <h3>Lancer l&rsquo;application en local</h3>
+    <pre><code><span class="cmt"># 1. Un .Renviron a la racine, avec les trois variables (cf. Administration)</span>
+<span class="cmt"># 2. Puis, depuis la racine du projet :</span>
+R -e 'shiny::runApp()'</code></pre>
+    <p>
+      Au premier lancement sans cache local, l&rsquo;application va chercher le <code>.RData</code> sur
+      Drive&nbsp;; s&rsquo;il n&rsquo;y est pas non plus, elle reconstruit tout depuis les classeurs. Comptez
+      quelques minutes dans ce dernier cas.
+    </p>
+
+    <h3>Les cinq fichiers qui comptent</h3>
+    <div class="tableau"><table>
+      <thead><tr><th>Fichier</th><th>R&ocirc;le</th></tr></thead>
+      <tbody>
+        <tr><td><code>global.R</code></td><td>Charge les paquets, source tout <code>R/</code>, d&eacute;finit les constantes partag&eacute;es (couleurs, seuils, ingr&eacute;dients).</td></tr>
+        <tr><td><code>import.R</code></td><td>Reconstruit toutes les tables depuis Drive. Ne tourne que lorsqu&rsquo;aucun cache n&rsquo;est disponible.</td></tr>
+        <tr><td><code>server.R</code></td><td>Charge les donn&eacute;es au d&eacute;marrage, puis toute la logique r&eacute;active.</td></tr>
+        <tr><td><code>ui.R</code></td><td>La coquille et les constructeurs d&rsquo;interface de chaque onglet.</td></tr>
+        <tr><td><code>R/acces.R</code></td><td>Catalogue des onglets, profils d&rsquo;acc&egrave;s, et construction des onglets &agrave; la demande.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="marqueur-detail">
+      Le mode &laquo;&nbsp;Je veux tout savoir&nbsp;&raquo; ajoute&nbsp;: le d&eacute;tail de chaque table, la
+      m&eacute;canique de chargement, le runbook d&rsquo;installation complet et les pi&egrave;ges connus.
+    </div>
+  </section>
+
+  <!-- ================= ONGLETS ================= -->
+  <section id="onglets">
+    <p class="eyebrow">Ce que voit l&rsquo;utilisateur</p>
+    <h2 class="titre">Les onglets</h2>
+    <p>
+      Quatorze onglets, d&eacute;clar&eacute;s une seule fois dans la table <code>ONGLETS</code> de
+      <code>R/acces.R</code>&nbsp;: cl&eacute;, titre, ic&ocirc;ne, et nom du constructeur d&rsquo;interface.
+      La barre de navigation, les droits d&rsquo;acc&egrave;s et les cartes d&rsquo;accueil s&rsquo;y r&eacute;f&egrave;rent tous.
+      <strong>Ajouter un onglet, c&rsquo;est ajouter une ligne.</strong>
+    </p>
+
+    <div class="tableau"><table>
+      <thead><tr><th>Onglet</th><th>Cl&eacute;</th><th>Ce qu&rsquo;il montre</th></tr></thead>
+      <tbody>
+        <tr><td>Accueil</td><td><code>tab_accueil</code></td><td>Une carte par onglet, avec l&rsquo;information marquante de chacun.</td></tr>
+        <tr><td>Maintenant</td><td><code>tab_maintenant</code></td><td>CA de la veille, de la semaine et du mois, face aux objectifs.</td></tr>
+        <tr><td>Chiffre d&rsquo;affaires</td><td><code>tab_detail</code></td><td>D&eacute;tail du CA par p&eacute;riode, cr&eacute;neau et produit.</td></tr>
+        <tr><td>Historique</td><td><code>tab_historique</code></td><td>S&eacute;ries longues et comparaisons dans le temps.</td></tr>
+        <tr><td>Ann&eacute;e</td><td><code>tab_annee</code></td><td>Vue annuelle&nbsp;: &eacute;cart aux objectifs, marge cumul&eacute;e, ann&eacute;e pr&eacute;c&eacute;dente.</td></tr>
+        <tr><td>F&ucirc;ts</td><td><code>tab_futs</code></td><td>Suivi des volumes par brassin et pr&eacute;diction d&rsquo;&eacute;puisement.</td></tr>
+        <tr><td>Boissons</td><td><code>tab_boissons</code></td><td>Consommation par cat&eacute;gorie, semaine et heure de service.</td></tr>
+        <tr><td>Focaccias</td><td><code>tab_focaccias</code></td><td>Ventes, options (fromage, viande, spicy) et carte de production.</td></tr>
+        <tr><td>Pizzwanze</td><td><code>tab_pizzwanze</code></td><td>Analyse des soir&eacute;es pizza, d&eacute;tect&eacute;es automatiquement.</td></tr>
+        <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
+        <tr><td>Compta</td><td><code>tab_compta</code></td><td>Compte d&rsquo;exploitation et comptabilit&eacute; g&eacute;n&eacute;rale, d&eacute;riv&eacute;s de <code>DB_COMPTA</code>.</td></tr>
+        <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
+        <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
+        <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Un onglet n&rsquo;est pas une page</span>
+      <p>
+        Chaque onglet est un <code>nav_panel</code> construit par une fonction <code>ui_*()</code> de
+        <code>ui.R</code>. Les gros onglets (Compta, Travail, D&eacute;tail) contiennent eux-m&ecirc;mes des
+        sous-onglets via <code>navset_card_tab</code>. Les droits d&rsquo;acc&egrave;s ne descendent
+        <strong>jamais</strong> &agrave; ce niveau&nbsp;: on ouvre ou on ferme un onglet entier.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= ARCHITECTURE ================= -->
+  <section id="architecture">
+    <p class="eyebrow">Comment c&rsquo;est fait</p>
+    <h2 class="titre">Architecture</h2>
+
+    <div class="resume">
+      <span class="l">L&rsquo;id&eacute;e</span>
+      <p>
+        Une application Shiny au format <code>global.R</code>&nbsp;/&nbsp;<code>ui.R</code>&nbsp;/&nbsp;<code>server.R</code>.
+        Les donn&eacute;es sont charg&eacute;es <strong>une fois par processus R</strong>, pas par visiteur&nbsp;: le
+        chargement est en t&ecirc;te de <code>server.R</code>, hors de la fonction serveur.
+      </p>
+    </div>
+
+    <h3>Arborescence</h3>
+    <pre><code>Mazette-Public/
+├── global.R          <span class="cmt"># paquets, source de R/, constantes partagées</span>
+├── ui.R              <span class="cmt"># coquille + un constructeur ui_*() par onglet</span>
+├── server.R          <span class="cmt"># chargement des données puis logique réactive</span>
+├── import.R          <span class="cmt"># reconstruction complète depuis Google Drive</span>
+├── R/                <span class="cmt"># 29 modules, sourcés par global.R (ordre alphabétique)</span>
+├── www/              <span class="cmt"># style.css, icônes, manifest PWA</span>
+├── logos/            <span class="cmt"># logos des brassins</span>
+├── outputs/          <span class="cmt"># cache .RData (ignoré par git)</span>
+├── docs/             <span class="cmt"># cette documentation</span>
+└── manifest.json     <span class="cmt"># manifeste de déploiement Posit Connect</span></code></pre>
+
+    <h3>Les modules de <code>R/</code></h3>
+    <p>
+      <code>global.R</code> source tout <code>R/*.R</code> par ordre alphab&eacute;tique. Aucun module n&rsquo;a
+      d&rsquo;effet de bord au chargement&nbsp;: ce sont des d&eacute;finitions de fonctions et de constantes.
+    </p>
+    <div class="tableau" data-profondeur="detail"><table>
+      <thead><tr><th>Module</th><th>R&ocirc;le</th></tr></thead>
+      <tbody>
+        <tr><td><code>acces.R</code></td><td>Catalogue des onglets, cartes d&rsquo;accueil, profils, r&eacute;solution des droits.</td></tr>
+        <tr><td><code>connect.R</code></td><td>Chargement des donn&eacute;es en trois &eacute;tages et liste des tables du cache.</td></tr>
+        <tr><td><code>donnees.R</code></td><td>Forme r&eacute;duite de <code>DB_TICKET</code> et reconstruction au chargement.</td></tr>
+        <tr><td><code>date.R</code></td><td>Calendrier de r&eacute;f&eacute;rence (<code>creer_db_date</code>) et jointure avec unit&eacute; de TVA.</td></tr>
+        <tr><td><code>helpers.R</code>, <code>theme.R</code>, <code>box.R</code>, <code>kpi.R</code></td><td>Formatage, palette, tuiles et cartes r&eacute;utilis&eacute;es partout.</td></tr>
+        <tr><td><code>objectifs.R</code></td><td>Convention de couleur CA&nbsp;/&nbsp;objectif (vert, ambre, rouge).</td></tr>
+        <tr><td><code>accueil.R</code>, <code>maintenant.R</code>, <code>details.R</code>, <code>historique.R</code>, <code>année.R</code>, <code>comparaison.R</code></td><td>Un module par volet de pilotage.</td></tr>
+        <tr><td><code>brassins.R</code>, <code>boissons.R</code>, <code>consommation.R</code></td><td>F&ucirc;ts, pr&eacute;diction d&rsquo;&eacute;puisement, consommation par cat&eacute;gorie.</td></tr>
+        <tr><td><code>focaccia.R</code>, <code>pizzwanze.R</code>, <code>produits.R</code></td><td>D&eacute;composition des recettes, d&eacute;tection des soir&eacute;es, carte de production.</td></tr>
+        <tr><td><code>compta.R</code>, <code>exploitation.R</code>, <code>plan_comptable.R</code>, <code>couts.R</code></td><td>Agr&eacute;gation comptable, compte d&rsquo;exploitation, classement des comptes, co&ucirc;ts mati&egrave;re.</td></tr>
+        <tr><td><code>travail.R</code></td><td>Heures, co&ucirc;ts, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
+        <tr><td><code>reservations.R</code></td><td>R&eacute;servations, croisement avec le CA.</td></tr>
+        <tr><td><code>simulation.R</code></td><td>Base de simulation de prix.</td></tr>
+        <tr><td><code>sql.R</code></td><td>Aides Cloudflare&nbsp;D1. <span class="pill non">inutilis&eacute;</span> &mdash; cf. &Eacute;tat des lieux.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Un point non &eacute;vident&nbsp;: <code>ui.R</code> et <code>server.R</code> ne se voient pas</h3>
+    <p>
+      Shiny &eacute;value ces deux fichiers dans <strong>deux environnements fr&egrave;res</strong>, tous deux
+      enfants de l&rsquo;environnement global. Une fonction d&eacute;finie dans <code>ui.R</code> est donc
+      invisible depuis <code>server.R</code>.
+    </p>
+    <p>
+      C&rsquo;est g&ecirc;nant ici, parce que <code>server.R</code> doit appeler les constructeurs
+      <code>ui_*()</code> pour ins&eacute;rer un onglet apr&egrave;s la connexion. D&rsquo;o&ugrave; le petit registre de
+      <code>R/acces.R</code>&nbsp;: <code>ui.R</code> y d&eacute;pose ses constructeurs, <code>server.R</code> les y
+      reprend.
+    </p>
+    <pre data-profondeur="detail"><code><span class="cmt"># tout en bas de ui.R</span>
+enregistre_constructeurs_onglets(environment())
+
+<span class="cmt"># puis, depuis server.R</span>
+nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)</code></pre>
+    <p data-profondeur="detail">
+      Corollaire pratique&nbsp;: tout ce qui doit &ecirc;tre partag&eacute; entre l&rsquo;interface et le serveur
+      appartient &agrave; <code>global.R</code> ou &agrave; <code>R/</code>, jamais &agrave; <code>ui.R</code>.
+    </p>
+  </section>
+
+  <!-- ================= DONNEES ================= -->
+  <section id="donnees">
+    <p class="eyebrow">D&rsquo;o&ugrave; vient ce qui s&rsquo;affiche</p>
+    <h2 class="titre">Les donn&eacute;es</h2>
+
+    <div class="resume">
+      <span class="l">Le chemin complet</span>
+      <p>
+        Classeurs Google&nbsp;Drive &rarr; <code>import.R</code> les transforme en une douzaine de tables
+        &rarr; celles-ci sont enregistr&eacute;es dans un <code>.RData</code>, gard&eacute; en local et d&eacute;pos&eacute; sur
+        Drive &rarr; l&rsquo;application recharge ce fichier au d&eacute;marrage.
+      </p>
+    </div>
+
+    <h3>Le chargement se fait en trois &eacute;tages</h3>
+    <figure>
+      <svg viewBox="0 0 720 232" role="img" aria-labelledby="t-flux">
+        <title id="t-flux">Chargement en trois étages : cache local, puis Drive, puis reconstruction complète</title>
+        <defs>
+          <marker id="fl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--trait-fort)"/>
+          </marker>
+        </defs>
+        <g font-family="Inter, sans-serif" font-size="12.5">
+          <!-- étage 1 -->
+          <rect x="8" y="16" width="196" height="58" rx="9" fill="var(--carte)" stroke="var(--trait-fort)"/>
+          <text x="24" y="39" fill="var(--texte)" font-weight="600">1 &middot; Cache local</text>
+          <text x="24" y="58" fill="var(--texte-doux)" font-size="11.5">outputs/R_new_env_*.RData</text>
+          <!-- étage 2 -->
+          <rect x="8" y="92" width="196" height="58" rx="9" fill="var(--carte)" stroke="var(--trait-fort)"/>
+          <text x="24" y="115" fill="var(--texte)" font-weight="600">2 &middot; Le m&ecirc;me, sur Drive</text>
+          <text x="24" y="134" fill="var(--texte-doux)" font-size="11.5">t&eacute;l&eacute;charg&eacute; puis mis en cache</text>
+          <!-- étage 3 -->
+          <rect x="8" y="168" width="196" height="58" rx="9" fill="var(--carte)" stroke="var(--ambre)" stroke-width="1.5"/>
+          <text x="24" y="191" fill="var(--texte)" font-weight="600">3 &middot; Reconstruction</text>
+          <text x="24" y="210" fill="var(--texte-doux)" font-size="11.5">import.R, depuis les classeurs</text>
+          <!-- chutes -->
+          <path d="M106,74 L106,90" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <path d="M106,150 L106,166" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <text x="118" y="87" fill="var(--texte-doux)" font-size="10.5" font-style="italic">absent</text>
+          <text x="118" y="163" fill="var(--texte-doux)" font-size="10.5" font-style="italic">absent</text>
+          <!-- sortie -->
+          <path d="M204,45 L268,45 L268,116 L300,116" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <path d="M204,121 L300,121" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <path d="M204,197 L268,197 L268,126 L300,126" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <rect x="304" y="92" width="180" height="58" rx="9" fill="var(--fond-2)" stroke="var(--trait-fort)"/>
+          <text x="320" y="115" fill="var(--texte)" font-weight="600">Tables en m&eacute;moire</text>
+          <text x="320" y="134" fill="var(--texte-doux)" font-size="11.5">12 tables du dashboard</text>
+          <path d="M484,121 L520,121" stroke="var(--trait-fort)" fill="none" marker-end="url(#fl)"/>
+          <rect x="524" y="80" width="188" height="82" rx="9" fill="var(--carte)" stroke="var(--trait-fort)"/>
+          <text x="540" y="103" fill="var(--texte)" font-weight="600">Remise en forme</text>
+          <text x="540" y="122" fill="var(--texte-doux)" font-size="11.5">hydrate_dans()</text>
+          <text x="540" y="140" fill="var(--texte-doux)" font-size="11.5">normalise_password()</text>
+          <text x="540" y="156" fill="var(--texte-doux)" font-size="10.5" font-style="italic">quel que soit l&rsquo;&eacute;tage</text>
+        </g>
+      </svg>
+      <figcaption>
+        L&rsquo;&eacute;tage&nbsp;3 r&eacute;&eacute;crit ensuite le cache, en local et sur Drive&nbsp;: la reconstruction
+        n&rsquo;arrive donc qu&rsquo;une fois par jour au plus.
+      </figcaption>
+    </figure>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Forcer une reconstruction</span>
+      <p>
+        Passez <code>force_dl = TRUE</code> &agrave; l&rsquo;appel de <code>connexion_ou_creation()</code>, en t&ecirc;te
+        de <code>server.R</code>. C&rsquo;est le geste &agrave; faire apr&egrave;s avoir modifi&eacute; un classeur, si
+        vous ne voulez pas attendre le cache du lendemain.
+      </p>
+    </div>
+
+    <h3>Les fichiers sources</h3>
+    <p>
+      Rien n&rsquo;est cod&eacute; en dur&nbsp;: un <strong>classeur d&rsquo;index</strong> (variable
+      <code>ID_DRIVE_PATHS</code>) contient un onglet <code>PATHS</code> &agrave; deux colonnes,
+      <code>Path</code> et <code>Link</code>. <code>import.R</code> y lit l&rsquo;identifiant de chaque
+      fichier. D&eacute;placer une source, c&rsquo;est modifier une ligne de ce classeur.
+    </p>
+    <div class="tableau"><table>
+      <thead><tr><th>Cl&eacute; dans <code>PATHS</code></th><th>Contenu</th><th>Utilis&eacute;</th></tr></thead>
+      <tbody>
+        <tr><td><code>ID_DRIVE_MAZETTE</code></td><td>Le classeur principal&nbsp;: ventes, tickets, brassins, objectifs, mots de passe.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ID_DRIVE_HEURES</code></td><td>Heures de travail (onglets <code>Rapport</code> et <code>Cout</code>).</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ID_DB_COMPTA</code></td><td><code>DB_COMPTA.rds</code>, la comptabilit&eacute; g&eacute;n&eacute;rale d&eacute;j&agrave; consolid&eacute;e.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ID_DRIVE_RESA</code></td><td>Historique des r&eacute;servations (onglet <code>RESA</code>).</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ICS_SALLE</code> / <code>ICS_TERRASSE</code></td><td>Deux calendriers iCal, lus par <code>calendar::ic_read()</code>.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ID_MAZETTE_2023</code>, <code>ID_MAZETTE_2025</code>, <code>ID_OLD_COMPTA</code></td><td>Archives historiques, reprises une fois puis fig&eacute;es.</td><td><span class="pill non">comment&eacute;</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h4 data-profondeur="detail">Les onglets du classeur principal</h4>
+    <div class="tableau" data-profondeur="detail"><table>
+      <thead><tr><th>Onglet</th><th>Sert &agrave;</th></tr></thead>
+      <tbody>
+        <tr><td><code>DB JOURS</code></td><td>CA par jour&nbsp;: la base des objectifs et de tous les KPI.</td></tr>
+        <tr><td><code>IMPORT TICKET</code></td><td>Grain ticket&nbsp;: chaque ligne vendue, avec horodatage.</td></tr>
+        <tr><td><code>IMPORT LIGHTSPEED</code></td><td>Ventes par jour et par produit, base de <code>DB_PRODUITS</code>.</td></tr>
+        <tr><td><code>IMPORT CAISSE</code>, <code>IMPORT OLD DATA</code></td><td>Compl&eacute;ments et reprise d&rsquo;historique.</td></tr>
+        <tr><td><code>IMPORT BRASSINS</code></td><td>R&eacute;f&eacute;rentiel des brassins.</td></tr>
+        <tr><td><code>CORRESPONDANCE BIERES</code></td><td>Nom commercial &rarr; boisson &rarr; logo.</td></tr>
+        <tr><td><code>IMPORT OBJECTIFS</code> (+&nbsp;<code>2025</code>, <code>2026</code>)</td><td>Objectifs mensuels. Une nouvelle ann&eacute;e = un nouvel onglet, &agrave; ajouter dans <code>import.R</code>.</td></tr>
+        <tr><td><code>IMPORT PASS NEW</code></td><td>Mots de passe et droits. Le nom vit dans <code>SHEET_PASS</code>, en t&ecirc;te d&rsquo;<code>import.R</code>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 data-profondeur="detail">Les tables mises en cache</h3>
+    <p data-profondeur="detail">
+      La constante <code>TABLES_DASHBOARD</code> de <code>R/connect.R</code> fait autorit&eacute;&nbsp;: ce sont
+      les seules tables enregistr&eacute;es, et l&rsquo;import &eacute;choue bruyamment si l&rsquo;une manque, plut&ocirc;t
+      que d&rsquo;&eacute;crire un cache incomplet.
+    </p>
+    <div class="tableau" data-profondeur="detail"><table>
+      <thead><tr><th>Table</th><th>Contenu</th></tr></thead>
+      <tbody>
+        <tr><td><code>DB_JOURS</code></td><td>CA par jour.</td></tr>
+        <tr><td><code>DB_KPI_SIMPLE</code></td><td>CA par jour &times; midi/soir, semaine/week-end, boisson/nourriture.</td></tr>
+        <tr><td><code>DB_OBJECTIFS</code></td><td>Objectifs journaliers, calcul&eacute;s depuis les objectifs mensuels.</td></tr>
+        <tr><td><code>DB_PRODUITS</code></td><td>Ventes par jour &times; produit, avec le brassin rattach&eacute;.</td></tr>
+        <tr><td><code>DB_TICKET</code></td><td>Grain ticket, sous forme <strong>r&eacute;duite</strong> (voir ci-dessous).</td></tr>
+        <tr><td><code>REF_PRODUITS</code></td><td>R&eacute;f&eacute;rentiel produit&nbsp;: nom, cat&eacute;gorie, TVA, volume.</td></tr>
+        <tr><td><code>DB_BIERES</code></td><td>Volumes cumul&eacute;s par brassin, pour le suivi des f&ucirc;ts.</td></tr>
+        <tr><td><code>DB_BRASSINS</code></td><td>R&eacute;f&eacute;rentiel des brassins.</td></tr>
+        <tr><td><code>DB_COMPTA</code></td><td>Comptabilit&eacute; g&eacute;n&eacute;rale.</td></tr>
+        <tr><td><code>DB_COUTS_TRAVAIL</code></td><td>Heures et co&ucirc;ts par jour &times; secteur &times; cr&eacute;neau.</td></tr>
+        <tr><td><code>DB_RESA</code></td><td>R&eacute;servations&nbsp;: d&eacute;but, fin, nombre de personnes.</td></tr>
+        <tr><td><code>DB_PASSWORD</code></td><td>Mots de passe valides et droits associ&eacute;s.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Pourquoi <code>DB_TICKET</code> est stock&eacute; en deux morceaux</span>
+      <p>
+        Six colonnes de <code>DB_TICKET</code> sont enti&egrave;rement d&eacute;termin&eacute;es par
+        <code>ID_PRODUIT</code>. Les r&eacute;p&eacute;ter sur 245&nbsp;000 lignes co&ucirc;tait 1,2&nbsp;Mo&nbsp;; le
+        r&eacute;f&eacute;rentiel tient en 843 lignes. Le cache ne garde donc que la forme r&eacute;duite, et
+        <code>hydrate_dans()</code> refait la jointure au d&eacute;marrage.
+      </p>
+      <p>
+        La fonction sait reconna&icirc;tre un ancien <code>.RData</code> qui contient d&eacute;j&agrave; la forme
+        compl&egrave;te, et le laisse tel quel.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= ACCES ================= -->
+  <section id="acces">
+    <p class="eyebrow">Qui voit quoi</p>
+    <h2 class="titre">Acc&egrave;s et mots de passe</h2>
+
+    <div class="resume">
+      <span class="l">Le principe</span>
+      <p>
+        Un mot de passe ne r&eacute;pond pas &laquo;&nbsp;oui&nbsp;/&nbsp;non&nbsp;&raquo;&nbsp;: il d&eacute;signe un profil, donc une
+        liste d&rsquo;onglets. L&rsquo;acc&egrave;s se joue &agrave; <strong>l&rsquo;onglet entier</strong>, jamais &agrave; l&rsquo;int&eacute;rieur
+        d&rsquo;un onglet.
+      </p>
+    </div>
+
+    <h3>Les colonnes du classeur</h3>
+    <div class="tableau"><table>
+      <thead><tr><th>Colonne</th><th>R&ocirc;le</th><th>Exemple</th></tr></thead>
+      <tbody>
+        <tr><td><code>Date_debut</code>, <code>Date_fin</code></td><td>P&eacute;riode de validit&eacute;.</td><td>01/09/2026 &rarr; 31/12/2026</td></tr>
+        <tr><td><code>pass</code></td><td>Le mot de passe. Comparaison sensible &agrave; la casse, espaces rogn&eacute;s.</td><td><code>mazette2026</code></td></tr>
+        <tr><td><code>nom</code></td><td>&Agrave; qui il appartient. Affich&eacute; en haut &agrave; droite une fois connect&eacute;.</td><td>Boris</td></tr>
+        <tr><td><code>role</code></td><td>Le profil, qui donne une liste d&rsquo;onglets.</td><td><code>gestion</code></td></tr>
+        <tr><td><code>onglets</code></td><td>Onglets <strong>en plus</strong> du profil, ou <code>*</code> pour tout. Vide dans le cas g&eacute;n&eacute;ral.</td><td><code>compta, travail</code></td></tr>
+        <tr><td><code>actif</code></td><td><code>non</code> coupe l&rsquo;acc&egrave;s sans effacer la ligne.</td><td><code>oui</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Les profils</h3>
+    <p>
+      D&eacute;finis dans la constante <code>PROFILS</code> de <code>R/acces.R</code>&nbsp;: c&rsquo;est l&agrave; qu&rsquo;on
+      ajuste la politique d&rsquo;acc&egrave;s, sans toucher au tableur.
+    </p>
+    <div class="tableau"><table>
+      <thead><tr><th>Profil</th><th>Onglets</th></tr></thead>
+      <tbody>
+        <tr><td><code>admin</code></td><td>Tout, compta et co&ucirc;t du personnel compris.</td></tr>
+        <tr><td><code>gestion</code></td><td>Tout l&rsquo;op&eacute;rationnel, sans la compta g&eacute;n&eacute;rale.</td></tr>
+        <tr><td><code>equipe</code></td><td>L&rsquo;activit&eacute;, sans les co&ucirc;ts (ni compta, ni masse salariale).</td></tr>
+        <tr><td><code>salle</code></td><td>Maintenant, F&ucirc;ts, Boissons, R&eacute;servations.</td></tr>
+        <tr><td><code>brasserie</code></td><td>Maintenant, F&ucirc;ts, Boissons.</td></tr>
+        <tr><td><code>public</code></td><td>Maintenant, Historique, Ann&eacute;e &mdash; pour pr&eacute;senter &agrave; l&rsquo;ext&eacute;rieur.</td></tr>
+        <tr><td><code>invite</code></td><td>L&rsquo;accueil et rien d&rsquo;autre.</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      Tout le monde a l&rsquo;<strong>Accueil</strong>&nbsp;: c&rsquo;est la page d&rsquo;atterrissage. Sa grille ne
+      contient que les cartes des onglets autoris&eacute;s. Un <code>role</code> vide, inconnu ou mal
+      orthographi&eacute; ne donne que l&rsquo;accueil&nbsp;: <strong>une faute de frappe ferme la porte, elle ne
+      l&rsquo;ouvre pas.</strong>
+    </p>
+
+    <h3>Ce qui se passe c&ocirc;t&eacute; serveur</h3>
+    <p>
+      Un onglet interdit n&rsquo;est pas masqu&eacute; dans le navigateur&nbsp;: il n&rsquo;est <strong>jamais
+      ins&eacute;r&eacute;</strong>. Seul l&rsquo;accueil part avec la page&nbsp;; apr&egrave;s la connexion, le serveur ajoute
+      un &agrave; un les onglets autoris&eacute;s. Le HTML des autres ne quitte pas le serveur et leurs
+      calculs ne se d&eacute;clenchent jamais.
+    </p>
+    <div class="note attention">
+      <span class="l">Ce que &ccedil;a n&rsquo;est pas</span>
+      <p>
+        Un contr&ocirc;le d&rsquo;acc&egrave;s applicatif, pas un secret cryptographique. Les mots de passe sont
+        en clair dans un Google Sheet, partag&eacute;s entre personnes, et transitent en clair si
+        l&rsquo;application n&rsquo;est pas servie en HTTPS. C&rsquo;est adapt&eacute; &agrave; un tableau de bord interne&nbsp;;
+        ce ne serait pas adapt&eacute; &agrave; des donn&eacute;es personnelles ou &agrave; un acc&egrave;s public.
+      </p>
+    </div>
+    <p data-profondeur="detail">
+      La d&eacute;connexion (bouton &agrave; c&ocirc;t&eacute; du nom) <strong>recharge la page</strong> plut&ocirc;t que de
+      d&eacute;faire l&rsquo;insertion. D&eacute;faire &agrave; la main demanderait de retirer chaque onglet, remasquer
+      les cartes, et de se souvenir de tout ce que la session a accumul&eacute;&nbsp;: p&eacute;riodes saisies,
+      prix simul&eacute;s, lignes s&eacute;lectionn&eacute;es. Le rechargement ne peut rien oublier, et ne co&ucirc;te
+      rien puisque les donn&eacute;es sont charg&eacute;es par processus et non par session.
+    </p>
+
+    <h3 data-profondeur="detail">R&eacute;trocompatibilit&eacute;</h3>
+    <p data-profondeur="detail">
+      Les quatre colonnes <code>nom</code>, <code>role</code>, <code>onglets</code> et
+      <code>actif</code> sont facultatives. Tant qu&rsquo;elles n&rsquo;existent pas dans le classeur &mdash; ou
+      tant que le <code>.RData</code> en cache date d&rsquo;avant &mdash; chaque mot de passe conserve
+      <strong>tous</strong> les droits. C&rsquo;est <code>colonne_optionnelle()</code> &agrave; l&rsquo;import et
+      <code>normalise_password()</code> au chargement qui s&rsquo;en chargent.
+    </p>
+  </section>
+
+  <!-- ================= ADMINISTRATION ================= -->
+  <section id="administration">
+    <p class="eyebrow">Reprendre le travail</p>
+    <h2 class="titre">Administration</h2>
+
+    <div class="resume">
+      <span class="l">Objectif de cette section</span>
+      <p>
+        Permettre &agrave; quelqu&rsquo;un qui n&rsquo;a jamais vu le projet de le remonter enti&egrave;rement&nbsp;: acc&egrave;s
+        Google, variables d&rsquo;environnement, ex&eacute;cution locale, d&eacute;ploiement, et quoi faire quand
+        &ccedil;a casse.
+      </p>
+    </div>
+
+    <h3>Ce qu&rsquo;il faut avoir sous la main</h3>
+    <ul>
+      <li>Un acc&egrave;s <strong>&eacute;diteur</strong> aux classeurs Google Drive de la brasserie.</li>
+      <li>Un <strong>compte de service Google</strong> (fichier JSON) autoris&eacute; sur ces fichiers.</li>
+      <li><strong>R 4.5.1</strong> ou proche, et de quoi compiler les paquets.</li>
+      <li>Un h&eacute;bergement Shiny&nbsp;: Posit Connect, shinyapps.io, ou un Shiny Server.</li>
+    </ul>
+
+    <h3>Installation, pas &agrave; pas</h3>
+    <ol class="etapes">
+      <li>
+        <h4>R&eacute;cup&eacute;rer le code</h4>
+        <pre><code>git clone https://github.com/tdelc/Mazette-Public.git
+cd Mazette-Public
+git checkout sql   <span class="cmt"># branche de référence actuelle</span>
+mkdir -p outputs   <span class="cmt"># le cache y sera écrit ; le dossier est ignoré par git</span></code></pre>
+      </li>
+
+      <li>
+        <h4>Installer les paquets R</h4>
+        <p>
+          Vingt paquets sont charg&eacute;s par <code>global.R</code>, et cinq de plus sont
+          appel&eacute;s par <code>::</code> sans <code>library()</code> &mdash; faciles &agrave; oublier.
+        </p>
+        <pre><code>install.packages(c(
+  <span class="cmt"># chargés par global.R</span>
+  "shiny","bslib","shinyjs","shinyWidgets","shinybusy","dplyr","ggplot2",
+  "tidyr","purrr","stringr","tibble","lubridate","googledrive","readxl",
+  "scales","plotly","forecast","DT","zoo","patchwork",
+  <span class="cmt"># utilisés via :: uniquement</span>
+  "cli","httr","calendar","janitor","htmlwidgets"))</code></pre>
+      </li>
+
+      <li>
+        <h4>Pr&eacute;parer le compte de service Google</h4>
+        <p>
+          Dans la console Google Cloud&nbsp;: cr&eacute;er un compte de service, activer l&rsquo;API Drive,
+          g&eacute;n&eacute;rer une cl&eacute; JSON. Puis <strong>partager chaque fichier Drive</strong> avec
+          l&rsquo;adresse du compte de service, comme on partagerait avec un coll&egrave;gue.
+        </p>
+        <p>
+          L&rsquo;application ne lit pas ce JSON depuis le disque&nbsp;: elle le
+          <strong>t&eacute;l&eacute;charge</strong> depuis l&rsquo;URL <code>LINK_JSON</code>, l&rsquo;&eacute;crit dans
+          <code>connect.json</code>, puis appelle <code>drive_auth()</code>. Cette URL doit donc
+          &ecirc;tre atteignable par le serveur, et rester priv&eacute;e.
+        </p>
+        <div class="note attention">
+          <span class="l">Attention</span>
+          <p>
+            <code>connect.json</code> contient une cl&eacute; priv&eacute;e. Il est d&eacute;j&agrave; dans
+            <code>.gitignore</code>&nbsp;: v&eacute;rifiez qu&rsquo;il y reste. Toute personne qui obtient cette
+            URL obtient l&rsquo;acc&egrave;s aux fichiers.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <h4>Cr&eacute;er le classeur d&rsquo;index <code>PATHS</code></h4>
+        <p>
+          Un classeur Drive avec un onglet nomm&eacute; <code>PATHS</code>, deux colonnes&nbsp;:
+        </p>
+        <div class="tableau"><table>
+          <thead><tr><th>Path</th><th>Link</th></tr></thead>
+          <tbody>
+            <tr><td><code>ID_DRIVE_MAZETTE</code></td><td>identifiant Drive du classeur principal</td></tr>
+            <tr><td><code>ID_DRIVE_HEURES</code></td><td>identifiant du classeur des heures</td></tr>
+            <tr><td><code>ID_DB_COMPTA</code></td><td>identifiant de <code>DB_COMPTA.rds</code></td></tr>
+            <tr><td><code>ID_DRIVE_RESA</code></td><td>identifiant du classeur des r&eacute;servations</td></tr>
+            <tr><td><code>ICS_SALLE</code></td><td>URL du calendrier iCal &laquo;&nbsp;salle&nbsp;&raquo;</td></tr>
+            <tr><td><code>ICS_TERRASSE</code></td><td>URL du calendrier iCal &laquo;&nbsp;terrasse&nbsp;&raquo;</td></tr>
+          </tbody>
+        </table></div>
+      </li>
+
+      <li>
+        <h4>D&eacute;clarer les variables d&rsquo;environnement</h4>
+        <p>Dans un fichier <code>.Renviron</code> &agrave; la racine (d&eacute;j&agrave; ignor&eacute; par git)&nbsp;:</p>
+        <pre><code>LINK_JSON=https://.../compte-de-service.json
+PATH_DRIVE=&lt;id du dossier Drive où déposer le cache .RData&gt;
+ID_DRIVE_PATHS=&lt;id du classeur qui contient l'onglet PATHS&gt;</code></pre>
+        <p>
+          En production, ce sont les variables d&rsquo;environnement de l&rsquo;h&eacute;bergeur (sur Posit
+          Connect&nbsp;: <em>Vars</em>, dans les r&eacute;glages du contenu).
+        </p>
+        <div class="note" data-profondeur="detail">
+          <span class="l">Trois autres variables, sans effet aujourd&rsquo;hui</span>
+          <p>
+            <code>CF_ACCOUNT_ID</code>, <code>CF_D1_ID</code> et <code>CF_API_TOKEN</code> sont lues
+            par <code>R/sql.R</code> (base Cloudflare&nbsp;D1). Aucune fonction de ce module n&rsquo;est
+            appel&eacute;e ailleurs dans le projet&nbsp;: l&rsquo;application tourne sans elles.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <h4>Premier lancement</h4>
+        <pre><code>R -e 'shiny::runApp(launch.browser = TRUE)'</code></pre>
+        <p>
+          Sans cache, la reconstruction compl&egrave;te d&eacute;marre. La console trace chaque &eacute;tape
+          (<code>cli::cli_h2</code>). &Agrave; la fin, un <code>.RData</code> appara&icirc;t dans
+          <code>outputs/</code> et une copie est d&eacute;pos&eacute;e sur Drive.
+        </p>
+      </li>
+
+      <li>
+        <h4>D&eacute;ployer</h4>
+        <p>
+          Le d&eacute;p&ocirc;t contient un <code>manifest.json</code> au format Posit Connect. Il est
+          <strong>obsol&egrave;te</strong> (il r&eacute;f&eacute;rence <code>functions.R</code>, supprim&eacute; depuis) et doit
+          &ecirc;tre r&eacute;g&eacute;n&eacute;r&eacute; avant tout d&eacute;ploiement&nbsp;:
+        </p>
+        <pre><code>install.packages("rsconnect")
+rsconnect::writeManifest()        <span class="cmt"># régénère manifest.json</span>
+<span class="cmt"># puis publication depuis RStudio, ou :</span>
+rsconnect::deployApp()</code></pre>
+        <p>
+          Pensez &agrave; reporter les variables d&rsquo;environnement c&ocirc;t&eacute; serveur&nbsp;: elles ne sont
+          jamais dans le d&eacute;p&ocirc;t.
+        </p>
+      </li>
+    </ol>
+
+    <h3>Exploitation courante</h3>
+    <div class="tableau"><table>
+      <thead><tr><th>Situation</th><th>Geste</th></tr></thead>
+      <tbody>
+        <tr><td>Ajouter ou retirer un acc&egrave;s</td><td>Une ligne dans l&rsquo;onglet <code>IMPORT PASS NEW</code>. Effet au prochain import.</td></tr>
+        <tr><td>Changer ce que voit un profil</td><td>Modifier <code>PROFILS</code> dans <code>R/acces.R</code>, puis red&eacute;ployer.</td></tr>
+        <tr><td>Ajouter une ann&eacute;e d&rsquo;objectifs</td><td>Nouvel onglet dans le classeur, puis l&rsquo;ajouter &agrave; <code>vec_sheets</code> et &agrave; <code>DB_OBJECTIFS</code> dans <code>import.R</code>.</td></tr>
+        <tr><td>Ajouter un onglet au dashboard</td><td>Une ligne dans <code>ONGLETS</code> (<code>R/acces.R</code>) et une fonction <code>ui_*()</code> dans <code>ui.R</code>.</td></tr>
+        <tr><td>Forcer un rafra&icirc;chissement</td><td><code>force_dl = TRUE</code> en t&ecirc;te de <code>server.R</code>, ou supprimer le <code>.RData</code> local et celui de Drive.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 data-profondeur="detail">Quand &ccedil;a casse</h3>
+    <div class="tableau" data-profondeur="detail"><table>
+      <thead><tr><th>Sympt&ocirc;me</th><th>Cause la plus probable</th></tr></thead>
+      <tbody>
+        <tr><td>Aucun mot de passe n&rsquo;est accept&eacute;</td><td>L&rsquo;onglet des mots de passe a &eacute;t&eacute; renomm&eacute; sans mettre &agrave; jour <code>SHEET_PASS</code>, ou <code>Date_fin</code> est d&eacute;pass&eacute;e.</td></tr>
+        <tr><td>Un s&eacute;lecteur de p&eacute;riode reste vide</td><td>Un <code>update*Input()</code> sans le garde-fou <code>ONGLETS_PRETS()</code> &mdash; cf. Pi&egrave;ges connus.</td></tr>
+        <tr><td>L&rsquo;import &eacute;choue sur une table manquante</td><td>Un onglet du classeur a &eacute;t&eacute; renomm&eacute; ou vid&eacute;. Le message nomme la table attendue.</td></tr>
+        <tr><td>Erreur d&rsquo;authentification Drive</td><td><code>LINK_JSON</code> injoignable, cl&eacute; r&eacute;voqu&eacute;e, ou fichier plus partag&eacute; avec le compte de service.</td></tr>
+        <tr><td>Les donn&eacute;es datent d&rsquo;hier</td><td>Comportement normal&nbsp;: le cache vise la veille. Forcer si besoin.</td></tr>
+        <tr><td>Le d&eacute;ploiement installe de mauvais paquets</td><td><code>manifest.json</code> obsol&egrave;te&nbsp;: r&eacute;g&eacute;n&eacute;rer avec <code>rsconnect::writeManifest()</code>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 data-profondeur="detail">Publier cette documentation en ligne</h3>
+    <p data-profondeur="detail">
+      Le fichier <code>docs/index.html</code> est autonome&nbsp;: il s&rsquo;ouvre par double-clic, sans
+      serveur. Pour le publier, activez GitHub&nbsp;Pages dans
+      <em>Settings &rarr; Pages</em>, source <em>Deploy from a branch</em>, dossier
+      <code>/docs</code>. La page devient accessible &agrave; l&rsquo;adresse
+      <code>https://&lt;compte&gt;.github.io/Mazette-Public/</code>.
+    </p>
+    <div class="note attention" data-profondeur="detail">
+      <span class="l">Avant de publier</span>
+      <p>
+        Le d&eacute;p&ocirc;t est public. Cette page ne contient aucun identifiant, aucune URL de
+        fichier Drive et aucun mot de passe &mdash; seulement des <em>noms</em> de variables.
+        Gardez-la ainsi si vous l&rsquo;&eacute;tendez.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= PIEGES ================= -->
+  <section id="pieges">
+    <p class="eyebrow">&Agrave; savoir avant de modifier</p>
+    <h2 class="titre">Pi&egrave;ges connus</h2>
+    <p>
+      Chacun de ces points a co&ucirc;t&eacute; une session de d&eacute;bogage. Ils partagent un trait&nbsp;: ils
+      &eacute;chouent <strong>en silence</strong> ou tr&egrave;s loin de leur cause.
+    </p>
+
+    <h3>Les inputs d&rsquo;un onglet n&rsquo;existent qu&rsquo;apr&egrave;s son insertion</h3>
+    <p>
+      C&rsquo;est la cons&eacute;quence n&deg;1 du contr&ocirc;le d&rsquo;acc&egrave;s. Avant la connexion, tous les inputs des
+      onglets valent <code>NULL</code>. Les sorties (<code>render*</code>) ne s&rsquo;en aper&ccedil;oivent pas &mdash;
+      Shiny ne les calcule que visibles &mdash; mais un <code>observe()</code> tourne d&egrave;s le premier
+      flush. D&rsquo;o&ugrave; deux r&egrave;gles, selon le sens&nbsp;:
+    </p>
+    <div class="tableau"><table>
+      <thead><tr><th>Sens</th><th>R&egrave;gle</th><th>Sinon</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Lire</strong> un input d&rsquo;onglet</td>
+          <td>Le prot&eacute;ger par <code>req()</code>, ou pr&eacute;voir un repli explicite comme <code>sim_periode_val()</code>.</td>
+          <td>Le calcul part sur <code>NULL</code>&nbsp;: <code>1 + NULL/100</code> vaut <code>numeric(0)</code>, pas <code>NA</code>.</td>
+        </tr>
+        <tr>
+          <td><strong>Garnir</strong> un input d&rsquo;onglet</td>
+          <td>Attendre <code>ONGLETS_PRETS()</code>.</td>
+          <td>Le message vise un champ inexistant&nbsp;: perdu <strong>sans erreur</strong>, et l&rsquo;observateur ne rejoue jamais.</td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Pourquoi le drapeau ne monte qu&rsquo;au flush suivant</span>
+      <p>
+        C&ocirc;t&eacute; navigateur, Shiny traite ses messages dans l&rsquo;ordre d&rsquo;enregistrement de leurs
+        gestionnaires. <code>inputMessages</code> est le <strong>3<sup>e</sup></strong>,
+        <code>shiny-insert-tab</code> le <strong>19<sup>e</sup></strong>&nbsp;: garnir dans le m&ecirc;me flush
+        que l&rsquo;insertion remplirait des champs pas encore cr&eacute;&eacute;s. D&rsquo;o&ugrave;
+        <code>session$onFlushed()</code>, qui d&eacute;cale d&rsquo;un cycle.
+      </p>
+    </div>
+
+    <div class="note attention">
+      <span class="l">Dans un <code>observeEvent</code>, le garde-fou va dans le d&eacute;clencheur</span>
+      <p>
+        <code>observeEvent()</code> <strong>isole son corps</strong>. Une d&eacute;pendance pos&eacute;e l&agrave; ne
+        rejouera jamais l&rsquo;observateur quand le drapeau bascule. Elle doit &ecirc;tre dans
+        l&rsquo;expression d&eacute;clenchante.
+      </p>
+      <pre><code><span class="cmt"># ne rejoue jamais</span>
+observeEvent(base(), { req(PRET()); ... })
+
+<span class="cmt"># correct</span>
+observeEvent({ req(PRET()); base() }, { ... })</code></pre>
+    </div>
+
+    <h3 data-profondeur="detail"><code>$</code> sur une liste fait de l&rsquo;appariement partiel</h3>
+    <p data-profondeur="detail">
+      <code>DB_sheets$&#96;IMPORT PASS&#96;</code> trouvait l&rsquo;onglet <code>IMPORT PASS NEW</code> par
+      pr&eacute;fixe, en silence. &Ccedil;a marchait&nbsp;&mdash; par chance. Le jour o&ugrave; un second onglet commence
+      pareil, le pr&eacute;fixe devient ambigu et <code>$</code> renvoie <code>NULL</code> sans un mot.
+      Pour un acc&egrave;s par nom, <code>[[&nbsp;]]</code> exige une correspondance exacte.
+    </p>
+
+    <h3 data-profondeur="detail"><code>layout_columns()</code> enveloppe chaque enfant</h3>
+    <p data-profondeur="detail">
+      Chaque enfant re&ccedil;oit son propre <code>div.bslib-grid-item</code>. Masquer l&rsquo;enfant laisse
+      donc le wrapper&nbsp;&mdash; et sa cellule&nbsp;&mdash; en place&nbsp;: un trou dans la grille. Pour une grille
+      &agrave; g&eacute;om&eacute;trie variable, <strong>construisez seulement ce que vous voulez afficher</strong>
+      plut&ocirc;t que de masquer.
+    </p>
+
+    <h3 data-profondeur="detail">Un select vide renvoie <code>""</code>, pas <code>NULL</code></h3>
+    <p data-profondeur="detail">
+      Un <code>selectInput</code> ins&eacute;r&eacute; mais pas encore garni renvoie la cha&icirc;ne vide. Un test
+      <code>is.null()</code> ne l&rsquo;attrape pas, <code>as.integer("")</code> donne <code>NA</code>, et
+      l&rsquo;erreur ressort bien plus loin &mdash; typiquement un <code>charToDate</code> incompr&eacute;hensible.
+      Testez la valeur convertie, pas la pr&eacute;sence.
+    </p>
+  </section>
+
+  <!-- ================= DETTE ================= -->
+  <section id="dette">
+    <p class="eyebrow">Honn&ecirc;tet&eacute; sur l&rsquo;existant</p>
+    <h2 class="titre">&Eacute;tat des lieux</h2>
+    <p>
+      Ce qu&rsquo;une personne qui reprend le projet gagnerait &agrave; savoir tout de suite, plut&ocirc;t
+      qu&rsquo;&agrave; d&eacute;couvrir.
+    </p>
+    <div class="tableau"><table>
+      <thead><tr><th>Point</th><th>&Eacute;tat</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>manifest.json</code></td>
+          <td><span class="pill att">obsol&egrave;te</span> R&eacute;f&eacute;rence <code>functions.R</code>, supprim&eacute; depuis, et ne liste aucun fichier de <code>R/</code>. &Agrave; r&eacute;g&eacute;n&eacute;rer avant d&eacute;ploiement.</td>
+        </tr>
+        <tr>
+          <td><code>R/sql.R</code></td>
+          <td><span class="pill non">inutilis&eacute;</span> Aides pour Cloudflare&nbsp;D1&nbsp;; aucune de ses fonctions n&rsquo;est appel&eacute;e. Vestige d&rsquo;une piste de migration.</td>
+        </tr>
+        <tr>
+          <td><code>donnees_fictives_compta.R</code></td>
+          <td><span class="pill non">hors app</span> G&eacute;n&eacute;rateur de donn&eacute;es simul&eacute;es ayant servi &agrave; prototyper l&rsquo;onglet Compta. N&rsquo;est pas sourc&eacute; par l&rsquo;application.</td>
+        </tr>
+        <tr>
+          <td>Tests automatis&eacute;s</td>
+          <td><span class="pill att">absents</span> Aucun harnais dans le d&eacute;p&ocirc;t. Les v&eacute;rifications faites pendant les corrections r&eacute;centes &eacute;taient ponctuelles.</td>
+        </tr>
+        <tr>
+          <td>Branches</td>
+          <td><span class="pill non">nombreuses</span> Une trentaine de branches distantes, dont beaucoup d&rsquo;exp&eacute;rimentations termin&eacute;es. <code>sql</code> sert de r&eacute;f&eacute;rence.</td>
+        </tr>
+        <tr>
+          <td>Historique dans <code>import.R</code></td>
+          <td><span class="pill non">comment&eacute;</span> Les reprises 2023&ndash;2025 sont conserv&eacute;es en commentaire. &Agrave; ne pas supprimer sans v&eacute;rifier que l&rsquo;historique est bien fig&eacute; ailleurs.</td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">
+      <span class="l">Pour aller plus loin</span>
+      <p>
+        Les commentaires du code sont la seconde moiti&eacute; de cette documentation&nbsp;: ils
+        expliquent les <em>pourquoi</em> l&agrave; o&ugrave; ils comptent. <code>R/acces.R</code>,
+        <code>R/connect.R</code> et <code>R/donnees.R</code> sont les trois plus denses, et les
+        plus utiles &agrave; lire en premier.
+      </p>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="enveloppe">
+    <p><strong>Mazette</strong> &mdash; documentation technique du tableau de bord.</p>
+    <p>Source&nbsp;: <code>docs/index.html</code> dans le d&eacute;p&ocirc;t. Modifiez le fichier, la page suit.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var racine = document.documentElement;
+  var bRapide = document.getElementById('b-rapide');
+  var bComplet = document.getElementById('b-complet');
+  var CLE = 'mazette-doc-mode';
+
+  function applique(mode, memorise){
+    racine.setAttribute('data-mode', mode);
+    var rapide = mode === 'rapide';
+    bRapide.setAttribute('aria-pressed', String(rapide));
+    bComplet.setAttribute('aria-pressed', String(!rapide));
+    if (memorise) { try { localStorage.setItem(CLE, mode); } catch (e) {} }
+  }
+
+  var initial = 'complet';
+  try { if (localStorage.getItem(CLE) === 'rapide') initial = 'rapide'; } catch (e) {}
+  applique(initial, false);
+
+  bRapide.addEventListener('click', function(){ applique('rapide', true); });
+  bComplet.addEventListener('click', function(){ applique('complet', true); });
+
+  // Surligne la section courante dans le sommaire.
+  var liens = Array.prototype.slice.call(document.querySelectorAll('.sommaire a'));
+  var sections = liens.map(function(a){
+    return document.getElementById(a.getAttribute('href').slice(1));
+  }).filter(Boolean);
+
+  if ('IntersectionObserver' in window) {
+    var vues = new Map();
+    var obs = new IntersectionObserver(function(entrees){
+      entrees.forEach(function(e){ vues.set(e.target.id, e.isIntersecting); });
+      var actif = null;
+      for (var i = 0; i < sections.length; i++) {
+        if (vues.get(sections[i].id)) { actif = sections[i].id; break; }
+      }
+      liens.forEach(function(a){
+        a.classList.toggle('actif', a.getAttribute('href') === '#' + actif);
+      });
+    }, { rootMargin: '-8% 0px -70% 0px' });
+    sections.forEach(function(s){ obs.observe(s); });
+  }
+})();
+</script>
