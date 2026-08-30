@@ -34,8 +34,9 @@ politique, sans toucher au tableur.
 | `public` | Maintenant, Historique, Année — pour présenter à l'extérieur |
 | `invite` | l'accueil et rien d'autre |
 
-Tout le monde a l'**Accueil** : c'est la page d'atterrissage. Ses cartes sont
-filtrées, une carte ne s'affiche que si son onglet est autorisé.
+Tout le monde a l'**Accueil** : c'est la page d'atterrissage. Sa grille ne
+contient que les cartes des onglets autorisés — construites, pas masquées,
+sinon chaque carte retirée laisserait une cellule vide dans la grille.
 
 Un `role` vide, inconnu ou mal orthographié ne donne que l'accueil : une faute
 de frappe ferme la porte, elle ne l'ouvre pas.

@@ -127,40 +127,14 @@ ui_app <- function() {
 
 # Onglet "Accueil" : cards simples avec une info importante de chaque onglet
 ui_accueil <- function() {
-  # Une carte = un onglet, décrit une fois pour toutes dans CARTES_ACCUEIL
-  # (R/acces.R). Le corps est rendu côté serveur pour suivre le sélecteur
-  # HTVA/TVAC là où il a un sens.
-  #
-  # Les cartes partent masquées : le serveur ne révèle que celles dont
-  # l'onglet est autorisé. Comme l'écran d'application est lui-même masqué
-  # jusqu'à la connexion, rien ne clignote au passage.
-  #
-  # L'identifiant se pose sur la carte elle-même, pas sur un div qui
-  # l'envelopperait : c'est l'enfant direct de layout_columns qui reçoit sa
-  # cellule de grille, et une carte masquée doit disparaître de la grille —
-  # pas y laisser un trou.
-  carte <- function(i, libelle = "Aller plus loin") {
-    shinyjs::hidden(tagAppendAttributes(
-      card(
-        class = "acc-card",
-        card_header(span(icon(CARTES_ACCUEIL$ICONE[i]), " ", CARTES_ACCUEIL$TITRE[i])),
-        card_body(uiOutput(CARTES_ACCUEIL$SORTIE[i])),
-        card_footer(actionButton(CARTES_ACCUEIL$BOUTON[i], libelle,
-                                 class = "btn-sm btn-primary w-100"))),
-      id = paste0("carte_", CARTES_ACCUEIL$CLE[i])))
-  }
-
+  # La grille est rendue côté serveur : elle ne contient que les cartes des
+  # onglets auxquels le mot de passe donne droit (grille_cartes_accueil(),
+  # dans R/acces.R). Construire les huit puis masquer les interdites laissait
+  # un trou par carte masquée — layout_columns() enveloppe chaque enfant dans
+  # une cellule de grille, qui reste réservée même vide.
   tagList(
     uiOutput("accueil_kpi"),
-    # Responsive : 1 carte par ligne sur téléphone, 2 sur tablette, 4 sur grand
-    # écran. Un col_widths fixe imposerait trois colonnes même sur mobile.
-    #
-    # do.call : layout_columns attend ses enfants dans `...`, et on les
-    # construit ici à partir du catalogue.
-    do.call(layout_columns, c(
-      list(col_widths = breakpoints(sm = 12, md = 6, lg = 4, xl = 3)),
-      lapply(seq_len(nrow(CARTES_ACCUEIL)), carte)
-    ))
+    uiOutput("accueil_cartes")
   )
 }
 

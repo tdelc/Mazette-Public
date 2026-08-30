@@ -198,6 +198,43 @@ verifie_acces <- function(db_password, saisie, date = today()) {
        ONGLETS = droits_ligne(ligne))
 }
 
+#### Construction des cartes d'accueil ####
+
+# La grille des cartes, réduite aux onglets autorisés.
+#
+# On construit uniquement les cartes voulues, plutôt que les huit avec masquage
+# des interdites : layout_columns() enveloppe chaque enfant dans son propre
+# div.bslib-grid-item, et ce wrapper garde sa cellule même quand son contenu
+# est masqué — d'où des trous dans la grille. Une carte absente, elle, ne
+# réserve rien, et les suivantes remontent d'elles-mêmes.
+#
+# Vit ici, avec le catalogue : server.R doit pouvoir l'appeler, et ui.R lui est
+# invisible (cf. le registre des constructeurs, plus bas).
+grille_cartes_accueil <- function(cles_autorisees,
+                                  libelle = "Aller plus loin") {
+  lignes <- which(CARTES_ACCUEIL$CLE %in% cles_autorisees)
+
+  # Un profil sans aucune carte (« invite ») aurait une grille vide : on dit
+  # pourquoi, plutôt que de laisser une page blanche sans explication.
+  if (length(lignes) == 0)
+    return(div(class = "text-muted small p-3",
+               "Aucun onglet n'est ouvert pour ce mot de passe."))
+
+  carte <- function(i) card(
+    class = "acc-card",
+    card_header(span(icon(CARTES_ACCUEIL$ICONE[i]), " ", CARTES_ACCUEIL$TITRE[i])),
+    card_body(uiOutput(CARTES_ACCUEIL$SORTIE[i])),
+    card_footer(actionButton(CARTES_ACCUEIL$BOUTON[i], libelle,
+                             class = "btn-sm btn-primary w-100")))
+
+  # Responsive : 1 carte par ligne sur téléphone, 2 sur tablette, 4 sur grand
+  # écran. Un col_widths fixe imposerait trois colonnes même sur mobile.
+  do.call(layout_columns, c(
+    list(col_widths = breakpoints(sm = 12, md = 6, lg = 4, xl = 3)),
+    lapply(lignes, carte)
+  ))
+}
+
 #### Construction des onglets ####
 #
 # ui.R et server.R sont évalués par Shiny dans deux environnements distincts :

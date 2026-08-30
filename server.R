@@ -105,12 +105,6 @@ server <- function(input, output, session) {
     # donc les onglets existent quand les valeurs arrivent.
     session$onFlushed(function() ONGLETS_PRETS(TRUE), once = TRUE)
 
-    # Une carte d'accueil qui renverrait vers un onglet interdit n'a pas de
-    # sens : seules celles des onglets autorisés sont révélées.
-    for (i in seq_len(nrow(CARTES_ACCUEIL)))
-      if (CARTES_ACCUEIL$CLE[i] %in% acces$ONGLETS)
-        shinyjs::show(paste0("carte_", CARTES_ACCUEIL$CLE[i]))
-
     shinyjs::hide("login_screen")
     shinyjs::show("app_screen")
   })
@@ -164,6 +158,13 @@ server <- function(input, output, session) {
   # objectif. Suit le sélecteur HTVA/TVAC.
   output$accueil_kpi <- renderUI({
     kpi_accueil(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, input$unite_tva)
+  })
+
+  # La grille des cartes : seulement celles dont l'onglet est autorisé. Une
+  # carte qui renverrait vers un onglet absent de la barre n'a pas de sens.
+  output$accueil_cartes <- renderUI({
+    req(USER$logged)
+    grille_cartes_accueil(USER$onglets)
   })
 
   # Une carte par onglet. Celles qui portent des euros suivent la TVA ; les
