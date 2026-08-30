@@ -4,9 +4,11 @@ Tableau de bord de la brasserie Mazette (R / Shiny).
 
 ## Accès et mots de passe
 
-Les mots de passe viennent de l'onglet **`IMPORT PASS`** du Google Sheet, comme
-avant. Il porte maintenant quatre colonnes de plus, qui décident **des onglets
-visibles** — l'accès se joue à l'onglet entier, jamais à l'intérieur d'un onglet.
+Les mots de passe viennent d'un onglet du Google Sheet, comme avant —
+désormais **`IMPORT PASS NEW`**, refait à part pour ne pas casser l'ancien (le
+nom est défini une fois, dans `SHEET_PASS` en tête d'`import.R`). Il porte
+quatre colonnes de plus, qui décident **des onglets visibles** — l'accès se
+joue à l'onglet entier, jamais à l'intérieur d'un onglet.
 
 | Colonne | Rôle | Exemple |
 |---|---|---|
@@ -29,6 +31,7 @@ politique, sans toucher au tableur.
 | `equipe` | l'activité, sans les coûts (ni compta, ni masse salariale) |
 | `salle` | Maintenant, Fûts, Boissons, Réservations |
 | `brasserie` | Maintenant, Fûts, Boissons |
+| `public` | Maintenant, Historique, Année — pour présenter à l'extérieur |
 | `invite` | l'accueil et rien d'autre |
 
 Tout le monde a l'**Accueil** : c'est la page d'atterrissage. Ses cartes sont

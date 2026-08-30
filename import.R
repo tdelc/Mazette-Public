@@ -36,10 +36,15 @@ path_mazette <- drive_mazette$local_path
 
 IMPORT_BIERES_CORRESPONDANCE <- read_excel(path_mazette,sheet = "CORRESPONDANCE BIERES",range = cell_cols("A:D"))
 
+# L'onglet des accès a été refait à part pour ne pas casser l'ancien : son nom
+# est donc nommé ici plutôt que recopié, pour que les deux endroits qui s'y
+# réfèrent ne puissent pas diverger.
+SHEET_PASS <- "IMPORT PASS NEW"
+
 vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
                 "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
-                "IMPORT OBJECTIFS 2026","IMPORT PASS NEW")
+                "IMPORT OBJECTIFS 2026", SHEET_PASS)
 
 read_mazette <- function(sheet_name) suppressWarnings(
   read_excel(path_mazette, sheet = sheet_name, .name_repair = "unique_quiet"))
@@ -55,7 +60,11 @@ IMPORT_CAISSE        <- DB_sheets$`IMPORT CAISSE`
 IMPORT_OBJECTIF_2024 <- DB_sheets$`IMPORT OBJECTIFS`
 IMPORT_OBJECTIF_2025 <- DB_sheets$`IMPORT OBJECTIFS 2025`
 IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
-IMPORT_PASS          <- DB_sheets$`IMPORT PASS`
+# [[ ]] et non $ : `$` sur une liste fait de l'appariement PARTIEL, en silence.
+# DB_sheets$"IMPORT PASS" trouvait donc "IMPORT PASS NEW" par préfixe — ça
+# marchait, mais par chance : un second onglet commençant pareil ("IMPORT PASS
+# OLD") rendrait le préfixe ambigu et renverrait NULL, sans un mot.
+IMPORT_PASS          <- DB_sheets[[SHEET_PASS]]
 
 # Import des heures (issu du rapport pour l'AG)
 
@@ -305,7 +314,7 @@ NOMEN_BIERES <- IMPORT_BIERES_CORRESPONDANCE %>%
 
 cli::cli_h3("Import de la DB PASSWORD")
 
-# Colonnes de l'onglet « IMPORT PASS » :
+# Colonnes de l'onglet des accès (SHEET_PASS, cf. en tête de fichier) :
 #
 #   Date_debut | Date_fin | pass | nom | role | onglets | actif
 #

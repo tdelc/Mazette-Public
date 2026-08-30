@@ -1441,6 +1441,11 @@ server <- function(input, output, session) {
   # production à venir, pas celle d'une semaine consultée dans l'historique.
 
   prod_base <- reactive({
+    # Le curseur de marge vit dans l'onglet Focaccias, qui n'est inséré qu'après
+    # la connexion : avant, input$prod_multi est NULL, `1 + NULL/100` vaut
+    # numeric(0), et le case_when() de production_focaccias_base() refuse de
+    # recycler une condition de 5 lignes contre une valeur de longueur 0.
+    # L'observateur de préremplissage, lui, tourne dès le premier flush.
     req(input$prod_multi)
     production_focaccias_base(DB_PRODUITS, n_semaines = 3,
                               marge = 1 + input$prod_multi / 100)
