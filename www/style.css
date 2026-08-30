@@ -53,6 +53,22 @@ body {
 }
 .badge-utilisateur .role { opacity: 0.7; }
 
+/* Bouton de deconnexion, a cote du badge. Meme discretion que lui : c'est une
+   sortie de secours, pas une action qu'on cherche a provoquer. */
+.lien-deconnexion,
+.lien-deconnexion:visited {
+  color: var(--mz-beige);
+  font-size: 0.85rem;
+  margin-right: 0.4rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lien-deconnexion:hover,
+.lien-deconnexion:focus-visible {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
 /* ----- Cartes ----- */
 .card {
   border: 1px solid rgba(115, 44, 2, 0.10);

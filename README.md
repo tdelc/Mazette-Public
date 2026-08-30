@@ -53,6 +53,15 @@ prévoir un repli explicite comme le fait `sim_periode_val()`. Sinon il part sur
 `NULL` — et `1 + NULL/100` vaut `numeric(0)`, pas `NA`, ce qui produit des
 erreurs de longueur loin de leur cause.
 
+### Se déconnecter
+
+Un bouton à droite de la barre, à côté du nom. Il recharge la page plutôt que
+de défaire l'insertion des onglets : c'est la seule façon de garantir qu'il ne
+reste rien de la session précédente — ni onglet, ni période saisie, ni prix
+simulé. Les données étant chargées une fois par processus R (en tête de
+`server.R`, hors de la fonction serveur), le rechargement ne retouche pas au
+`.RData`.
+
 ### Ajouter un onglet
 
 Une seule ligne, dans la table `ONGLETS` de `R/acces.R` : clé, titre, icône et

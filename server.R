@@ -99,13 +99,45 @@ server <- function(input, output, session) {
 
   # Qui est connecté, discrètement, à droite de la barre : avec plusieurs mots
   # de passe en circulation, c'est la seule façon de savoir lequel on utilise
-  # — et pourquoi tel onglet manque.
+  # — et pourquoi tel onglet manque. Le bouton de déconnexion vit ici plutôt
+  # que dans la coquille : il n'a de sens qu'une fois connecté, et le req()
+  # ci-dessous suffit à le faire apparaître et disparaître avec le badge.
   output$badge_utilisateur <- renderUI({
     req(USER$logged)
-    span(class = "badge-utilisateur",
-         USER$nom,
-         if (!is.na(USER$role) && nzchar(USER$role))
-           tags$span(class = "role", paste0(" (", USER$role, ")")))
+    tagList(
+      span(class = "badge-utilisateur",
+           USER$nom,
+           if (!is.na(USER$role) && nzchar(USER$role))
+             tags$span(class = "role", paste0(" (", USER$role, ")"))),
+      actionLink(
+        "deconnexion", class = "lien-deconnexion",
+        # title = l'infobulle au survol ; aria-label = le nom annoncé, qui
+        # reprend le libellé visible (WCAG 2.5.3) et reste juste quand le mot
+        # est masqué sur téléphone.
+        title = "Se déconnecter", `aria-label` = "Déconnexion",
+        label = tagList(
+          icon("right-from-bracket"),
+          # Le mot disparaît sous 992 px : sur téléphone la barre est déjà
+          # chargée, et l'icône suffit (le title reste pour le survol).
+          tags$span(class = "d-none d-lg-inline ms-1", "Déconnexion")))
+    )
+  })
+
+  # Déconnexion : on recharge la page plutôt que de défaire l'insertion des
+  # onglets un à un.
+  #
+  # Défaire à la main voudrait dire retirer chaque onglet inséré, remasquer les
+  # cartes, revider le champ mot de passe — et surtout se souvenir de tout ce
+  # que la session a accumulé entre-temps : périodes saisies, prix simulés,
+  # lignes sélectionnées dans les tableaux. Un oubli, et la personne suivante
+  # hérite de l'état de la précédente. Le rechargement, lui, ne peut rien
+  # oublier.
+  #
+  # Il est peu coûteux : les données sont chargées en tête de server.R, hors de
+  # la fonction serveur, donc une fois par processus R et non par session. La
+  # page revient sur l'écran de connexion sans retoucher au .RData.
+  observeEvent(input$deconnexion, {
+    session$reload()
   })
 
   #### Volet "Accueil" ####
