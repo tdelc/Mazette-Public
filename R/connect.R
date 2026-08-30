@@ -81,5 +81,12 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
   if (hydrate_dans(envir))
     cli::cli_alert_success("DB_TICKET reconstruit ({nrow(get('DB_TICKET', envir = envir))} lignes)")
 
+  # Idem pour les colonnes d'accès : un .RData enregistré avant la gestion des
+  # droits n'a que DATE_DEBUT, DATE_FIN et PASS (cf. R/acces.R).
+  if (exists("DB_PASSWORD", envir = envir, inherits = FALSE))
+    assign("DB_PASSWORD",
+           normalise_password(get("DB_PASSWORD", envir = envir)),
+           envir = envir)
+
   invisible(drive_env_name)
 }

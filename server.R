@@ -12,7 +12,10 @@ connexion_ou_creation(drive_env_name, prefix, force_dl = FALSE)
 
 server <- function(input, output, session) {
 
-  USER <- reactiveValues(logged = FALSE)
+  # logged : connecté ou non. onglets : les clés auxquelles ce mot de passe
+  # donne droit (cf. R/acces.R), qui pilotent la barre de navigation.
+  USER <- reactiveValues(logged = FALSE, nom = NULL, role = NULL,
+                         onglets = character(0))
 
   #### Données préparées ####
   UPD_JOURS <- reactive({
@@ -58,18 +61,51 @@ server <- function(input, output, session) {
     pull(d)
 
   #### Login ####
+  # Le mot de passe ne dit plus seulement « oui / non » : il désigne un profil,
+  # et donc une liste d'onglets (cf. R/acces.R et l'onglet « IMPORT PASS » du
+  # Sheet). On construit la barre de navigation à partir de cette liste.
   observeEvent(input$boutton_log, {
-    password <- DB_PASSWORD %>%
-      filter(DATE_DEBUT <= today(), DATE_FIN >= today()) %>%
-      pull(PASS)
+    acces <- verifie_acces(DB_PASSWORD, input$password)
 
-    if (input$password %in% password) {
-      USER$logged <- TRUE
-      shinyjs::hide("login_screen")
-      shinyjs::show("app_screen")
-    } else {
+    if (is.null(acces)) {
       output$text_log <- renderText("Erreur dans le mot de passe")
+      return()
     }
+
+    USER$logged  <- TRUE
+    USER$nom     <- acces$NOM
+    USER$role    <- acces$ROLE
+    USER$onglets <- acces$ONGLETS
+
+    # Les onglets autorisés sont insérés à la suite de l'accueil, dans l'ordre
+    # du catalogue. Ceux qui manquent ne sont pas masqués : ils n'ont jamais
+    # été envoyés au navigateur, et leurs sorties ne seront jamais calculées.
+    precedent <- ONGLET_ACCUEIL
+    for (cle in setdiff(acces$ONGLETS, ONGLET_ACCUEIL)) {
+      nav_insert("nav", panneau_onglet(cle), target = precedent,
+                 position = "after", session = session)
+      precedent <- cle
+    }
+
+    # Une carte d'accueil qui renverrait vers un onglet interdit n'a pas de
+    # sens : seules celles des onglets autorisés sont révélées.
+    for (i in seq_len(nrow(CARTES_ACCUEIL)))
+      if (CARTES_ACCUEIL$CLE[i] %in% acces$ONGLETS)
+        shinyjs::show(paste0("carte_", CARTES_ACCUEIL$CLE[i]))
+
+    shinyjs::hide("login_screen")
+    shinyjs::show("app_screen")
+  })
+
+  # Qui est connecté, discrètement, à droite de la barre : avec plusieurs mots
+  # de passe en circulation, c'est la seule façon de savoir lequel on utilise
+  # — et pourquoi tel onglet manque.
+  output$badge_utilisateur <- renderUI({
+    req(USER$logged)
+    span(class = "badge-utilisateur",
+         USER$nom,
+         if (!is.na(USER$role) && nzchar(USER$role))
+           tags$span(class = "role", paste0(" (", USER$role, ")")))
   })
 
   #### Volet "Accueil" ####
@@ -108,24 +144,17 @@ server <- function(input, output, session) {
   })
 
   # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
-  # Une table plutôt que huit observeEvent recopiés : ajouter une carte, c'est
-  # ajouter une ligne.
-  ACCUEIL_LIENS <- c(go_maintenant  = "tab_maintenant",
-                     go_annee       = "tab_annee",
-                     go_futs        = "tab_futs",
-                     go_bieres      = "tab_bieres",
-                     go_focaccias   = "tab_focaccias",
-                     go_pizzwanze   = "tab_pizzwanze",
-                     go_reservation = "tab_reservations",
-                     go_compta      = "tab_compta")
-
-  for (bouton in names(ACCUEIL_LIENS)) {
-    # local() fige `bouton` : sans lui, les huit observeEvent partageraient la
+  # Bouton et onglet cible viennent tous deux de CARTES_ACCUEIL (R/acces.R) :
+  # ajouter une carte, c'est ajouter une ligne, et il n'y a plus deux listes à
+  # tenir d'accord (l'ancienne visait « tab_bieres », qui n'existe pas).
+  for (i in seq_len(nrow(CARTES_ACCUEIL))) {
+    # local() fige l'indice : sans lui, les huit observeEvent partageraient la
     # dernière valeur de la boucle et renverraient tous vers le même onglet.
     local({
-      b <- bouton
-      observeEvent(input[[b]], {
-        nav_select("nav", ACCUEIL_LIENS[[b]], session = session)
+      bouton <- CARTES_ACCUEIL$BOUTON[i]
+      cible  <- CARTES_ACCUEIL$CLE[i]
+      observeEvent(input[[bouton]], {
+        nav_select("nav", cible, session = session)
       }, ignoreInit = TRUE)
     })
   }
@@ -1447,20 +1476,8 @@ server <- function(input, output, session) {
     })
   }
   
-  # ===================== Navigation ========================================
-  go <- function(input_id, target) {
-    observeEvent(input[[input_id]], {
-      nav_select("nav", target, session = session)
-    })
-  }
-  
-  go("go_maintenant", "tab_maintenant")
-  go("go_annee", "tab_annee")
-  go("go_boissons", "tab_boissons")
-  go("go_futs", "tab_futs")
-  go("go_focaccias", "tab_focaccias")
-  go("go_pizzwanze",   "tab_pizzwanze")
-  go("go_compta",  "tab_compta")
-  go("go_reservations",  "tab_reservations")
+  # La navigation des cartes d'accueil est branchée plus haut, à partir de
+  # CARTES_ACCUEIL : le second jeu d'observateurs qui vivait ici faisait
+  # double emploi.
 
 }

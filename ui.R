@@ -110,91 +110,13 @@ ui_app <- function() {
                  img(src = "mazette-blanc.png", height = 30, width = 30)),
     id = "nav",
     fillable = FALSE,
-    nav_panel(
-      value = "tab_accueil",
-      title = "Accueil",
-      icon = icon("home"),
-      ui_accueil()
-    ),
-    nav_panel(
-      value = "tab_maintenant",
-      title = "Maintenant",
-      icon = icon("gauge-high"),
-      ui_maintenant()
-    ),
-    nav_panel(
-      value = "tab_detail",
-      title = "Chiffre d'affaires",
-      icon = icon("magnifying-glass-chart"),
-      ui_detail()
-    ),
-    nav_panel(
-      value = "tab_historique",
-      title = "Historique",
-      icon = icon("chart-line"),
-      ui_historique()
-    ),
-    nav_panel(
-      value = "tab_annee",
-      title = "Année",
-      icon = icon("calendar-check"),
-      ui_annee()
-    ),
-    nav_panel(
-      value = "tab_futs",
-      title = "Fûts",
-      icon = icon("boxes-stacked"),
-      ui_futs()
-    ),
-    nav_panel(
-      value = "tab_boissons",
-      title = "Boissons",
-      icon = icon("beer-mug-empty"),
-      ui_conso_boissons()
-    ),
-    nav_panel(
-      value = "tab_focaccias",
-      title = "Focaccias",
-      icon = icon("bread-slice"),
-      ui_focaccias()
-    ),
-    nav_panel(
-      value = "tab_pizzwanze",
-      title = "Pizzwanze",
-      icon = icon("pizza-slice"),
-      ui_pizzwanze()
-    ),
-    nav_panel(
-      value = "tab_simulation",
-      title = "Simulation",
-      icon = icon("sliders"),
-      ui_simulation()
-    ),
-    nav_panel(
-      value = "tab_compta",
-      title = "Compta",
-      icon = icon("calculator"),
-      ui_compta()
-    ),
-    nav_panel(
-      value = "tab_travail",
-      title = "Travail",
-      icon = icon("person-running"),
-      ui_travail()
-    ),
-    nav_panel(
-      value = "tab_reservations",
-      title = "Réservations",
-      icon = icon("calendar-check"),
-      ui_reservations()
-    ),
-    nav_panel(
-      value = "tab_comparaison",
-      title = "Comparaison",
-      icon = icon("code-compare"),
-      ui_comparaison()
-    ),
+    # Un seul onglet part avec la page : l'accueil. Les autres sont insérés
+    # après la connexion, selon les droits du mot de passe saisi (server.R).
+    # Ce n'est pas qu'un masquage : le HTML d'un onglet interdit ne quitte
+    # jamais le serveur, et ses sorties ne sont jamais calculées.
+    panneau_onglet(ONGLET_ACCUEIL),
     nav_spacer(),
+    nav_item(uiOutput("badge_utilisateur", inline = TRUE)),
     nav_item(
       radioGroupButtons("unite_tva", label = NULL,
                         choices = c("HTVA", "TVAC"), selected = "HTVA",
@@ -205,33 +127,40 @@ ui_app <- function() {
 
 # Onglet "Accueil" : cards simples avec une info importante de chaque onglet
 ui_accueil <- function() {
-  # Une carte = un onglet. Le corps est rendu côté serveur pour suivre le
-  # sélecteur HTVA/TVAC là où il a un sens.
-  carte <- function(titre, icone, sortie, bouton, libelle = "Aller plus loin") {
-    card(
-      class = "acc-card",
-      card_header(span(icon(icone), " ", titre)),
-      card_body(uiOutput(sortie)),
-      card_footer(actionButton(bouton, libelle,
-                               class = "btn-sm btn-primary w-100"))
-    )
+  # Une carte = un onglet, décrit une fois pour toutes dans CARTES_ACCUEIL
+  # (R/acces.R). Le corps est rendu côté serveur pour suivre le sélecteur
+  # HTVA/TVAC là où il a un sens.
+  #
+  # Les cartes partent masquées : le serveur ne révèle que celles dont
+  # l'onglet est autorisé. Comme l'écran d'application est lui-même masqué
+  # jusqu'à la connexion, rien ne clignote au passage.
+  #
+  # L'identifiant se pose sur la carte elle-même, pas sur un div qui
+  # l'envelopperait : c'est l'enfant direct de layout_columns qui reçoit sa
+  # cellule de grille, et une carte masquée doit disparaître de la grille —
+  # pas y laisser un trou.
+  carte <- function(i, libelle = "Aller plus loin") {
+    shinyjs::hidden(tagAppendAttributes(
+      card(
+        class = "acc-card",
+        card_header(span(icon(CARTES_ACCUEIL$ICONE[i]), " ", CARTES_ACCUEIL$TITRE[i])),
+        card_body(uiOutput(CARTES_ACCUEIL$SORTIE[i])),
+        card_footer(actionButton(CARTES_ACCUEIL$BOUTON[i], libelle,
+                                 class = "btn-sm btn-primary w-100"))),
+      id = paste0("carte_", CARTES_ACCUEIL$CLE[i])))
   }
 
   tagList(
     uiOutput("accueil_kpi"),
     # Responsive : 1 carte par ligne sur téléphone, 2 sur tablette, 4 sur grand
     # écran. Un col_widths fixe imposerait trois colonnes même sur mobile.
-    layout_columns(
-      col_widths = breakpoints(sm = 12, md = 6, lg = 4, xl = 3),
-      carte("Maintenant",   "gauge-high",             "acc_maintenant",   "go_maintenant"),
-      carte("Année",        "calendar-check",         "acc_annee",        "go_annee"),
-      carte("Fûts",         "boxes-stacked",          "acc_futs",         "go_futs"),
-      carte("Bières",       "beer-mug-empty",         "acc_bieres",       "go_boissons"),
-      carte("Focaccias",    "bread-slice",            "acc_focaccias",    "go_focaccias"),
-      carte("Pizzwanze",    "pizza-slice",            "acc_pizzwanze",    "go_pizzwanze"),
-      carte("Réservations", "calendar-check",         "acc_reservations", "go_reservation"),
-      carte("Compta",       "calculator",             "acc_compta",       "go_compta")
-    )
+    #
+    # do.call : layout_columns attend ses enfants dans `...`, et on les
+    # construit ici à partir du catalogue.
+    do.call(layout_columns, c(
+      list(col_widths = breakpoints(sm = 12, md = 6, lg = 4, xl = 3)),
+      lapply(seq_len(nrow(CARTES_ACCUEIL)), carte)
+    ))
   )
 }
 
@@ -1248,6 +1177,16 @@ ui_maintenant <- function() {
 # dépendances bslib sont livrées au démarrage). Le login est un simple overlay
 # masqué/affiché via shinyjs depuis le serveur — fini le swap renderUI, qui
 # empêchait les dépendances (grille, navbar) d'arriver côté client.
+#
+# Seul l'accueil est livré avec la page. Les autres onglets sont insérés un à
+# un après la connexion (nav_insert), ce qui laisse intacte la logique
+# ci-dessus : la coquille bslib, elle, est bien construite au chargement.
+
+# ui.R et server.R sont évalués par Shiny dans deux environnements frères :
+# les constructeurs ui_*() définis ici sont invisibles depuis server.R, qui
+# doit pourtant les appeler pour insérer un onglet. On les publie donc dans le
+# registre prévu à cet effet (R/acces.R).
+enregistre_constructeurs_onglets(environment())
 
 ui <- page_fluid(
   # `title` alimente le <title> du document : c'est le libellé de l'onglet du

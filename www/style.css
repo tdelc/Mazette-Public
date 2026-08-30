@@ -43,6 +43,16 @@ body {
   border-bottom: 2px solid var(--mz-ambre);
 }
 
+/* Qui est connecte, a droite de la barre. Discret : c'est un repere, pas une
+   information de pilotage. */
+.badge-utilisateur {
+  color: var(--mz-beige);
+  font-size: 0.85rem;
+  margin-right: 0.6rem;
+  white-space: nowrap;
+}
+.badge-utilisateur .role { opacity: 0.7; }
+
 /* ----- Cartes ----- */
 .card {
   border: 1px solid rgba(115, 44, 2, 0.10);

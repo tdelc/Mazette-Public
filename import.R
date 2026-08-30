@@ -305,11 +305,33 @@ NOMEN_BIERES <- IMPORT_BIERES_CORRESPONDANCE %>%
 
 cli::cli_h3("Import de la DB PASSWORD")
 
-DB_PASSWORD <- IMPORT_PASS |> 
+# Colonnes de l'onglet « IMPORT PASS » :
+#
+#   Date_debut | Date_fin | pass | nom | role | onglets | actif
+#
+# Les quatre dernières sont facultatives (cf. colonne_optionnelle() dans
+# R/acces.R) : tant qu'elles n'existent pas dans le tableur, chaque mot de
+# passe garde les droits complets, exactement comme avant.
+#
+#   nom     : à qui appartient ce mot de passe (affiché une fois connecté)
+#   role    : un profil de PROFILS — admin, gestion, equipe, salle, brasserie,
+#             invite. Un rôle inconnu ou vide ne donne que l'accueil.
+#   onglets : onglets supplémentaires, en plus du rôle. "compta, travail",
+#             ou "*" pour tout. Laisser vide dans le cas général.
+#   actif   : "non" coupe l'accès sans effacer la ligne (ni son historique).
+DB_PASSWORD <- IMPORT_PASS |>
   transmute(
-    DATE_DEBUT = ymd(format(Date_debut, "%Y-%m-%d")),
-    DATE_FIN = ymd(format(Date_fin, "%Y-%m-%d")),
-    PASS = pass)
+    DATE_DEBUT    = ymd(format(Date_debut, "%Y-%m-%d")),
+    DATE_FIN      = ymd(format(Date_fin, "%Y-%m-%d")),
+    PASS          = trimws(as.character(pass)),
+    NOM           = colonne_optionnelle(IMPORT_PASS, "nom",     NA_character_),
+    ROLE          = colonne_optionnelle(IMPORT_PASS, "role",    "admin"),
+    ONGLETS_LISTE = colonne_optionnelle(IMPORT_PASS, "onglets", NA_character_),
+    ACTIF         = oui_non(colonne_optionnelle(IMPORT_PASS, "actif", "oui"))
+  ) |>
+  # Une ligne sans mot de passe (ou sans période) n'ouvre rien : autant ne pas
+  # la trimballer jusqu'au .RData.
+  filter(!is.na(PASS), nzchar(PASS), !is.na(DATE_DEBUT), !is.na(DATE_FIN))
 
 ##### IMPORT_HEURES #####
 
