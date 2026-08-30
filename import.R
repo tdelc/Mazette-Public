@@ -39,7 +39,7 @@ IMPORT_BIERES_CORRESPONDANCE <- read_excel(path_mazette,sheet = "CORRESPONDANCE 
 vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
                 "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
-                "IMPORT OBJECTIFS 2026","IMPORT PASS")
+                "IMPORT OBJECTIFS 2026","IMPORT PASS NEW")
 
 read_mazette <- function(sheet_name) suppressWarnings(
   read_excel(path_mazette, sheet = sheet_name, .name_repair = "unique_quiet"))

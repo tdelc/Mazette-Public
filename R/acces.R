@@ -85,6 +85,9 @@ PROFILS <- list(
 
   # Brasserie : les fûts et ce qu'on en tire.
   brasserie = c("tab_futs", "tab_boissons", "tab_maintenant"),
+  
+  # Public : pour présenter à l'extérieur
+  public = c("tab_historique", "tab_annee", "tab_maintenant"),
 
   # Un accès de courtoisie : l'accueil et rien d'autre.
   invite    = character(0)
