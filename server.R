@@ -12,7 +12,20 @@ connexion_ou_creation(drive_env_name, prefix, force_dl = FALSE)
 
 server <- function(input, output, session) {
 
-  USER <- reactiveValues(logged = FALSE)
+  # logged : connecté ou non. onglets : les clés auxquelles ce mot de passe
+  # donne droit (cf. R/acces.R), qui pilotent la barre de navigation.
+  USER <- reactiveValues(logged = FALSE, nom = NULL, role = NULL,
+                         onglets = character(0))
+
+  # Vrai une fois que les onglets autorisés sont VRAIMENT dans la page.
+  #
+  # Les sélecteurs d'un onglet — périodes, années, semaines, brassins — sont
+  # garnis depuis le serveur par des observateurs qui ne dépendent que des
+  # données. Tant que l'onglet n'est pas inséré, leur update*Input() vise un
+  # champ inexistant : le message est perdu sans erreur, et l'observateur, qui
+  # n'a plus aucune raison d'être invalidé, ne rejoue jamais. Le sélecteur
+  # reste vide pour de bon. Ils attendent donc ce drapeau.
+  ONGLETS_PRETS <- reactiveVal(FALSE)
 
   #### Données préparées ####
   UPD_JOURS <- reactive({
@@ -58,18 +71,85 @@ server <- function(input, output, session) {
     pull(d)
 
   #### Login ####
+  # Le mot de passe ne dit plus seulement « oui / non » : il désigne un profil,
+  # et donc une liste d'onglets (cf. R/acces.R et l'onglet « IMPORT PASS » du
+  # Sheet). On construit la barre de navigation à partir de cette liste.
   observeEvent(input$boutton_log, {
-    password <- DB_PASSWORD %>%
-      filter(DATE_DEBUT <= today(), DATE_FIN >= today()) %>%
-      pull(PASS)
+    acces <- verifie_acces(DB_PASSWORD, input$password)
 
-    if (input$password %in% password) {
-      USER$logged <- TRUE
-      shinyjs::hide("login_screen")
-      shinyjs::show("app_screen")
-    } else {
+    if (is.null(acces)) {
       output$text_log <- renderText("Erreur dans le mot de passe")
+      return()
     }
+
+    USER$logged  <- TRUE
+    USER$nom     <- acces$NOM
+    USER$role    <- acces$ROLE
+    USER$onglets <- acces$ONGLETS
+
+    # Les onglets autorisés sont insérés à la suite de l'accueil, dans l'ordre
+    # du catalogue. Ceux qui manquent ne sont pas masqués : ils n'ont jamais
+    # été envoyés au navigateur, et leurs sorties ne seront jamais calculées.
+    precedent <- ONGLET_ACCUEIL
+    for (cle in setdiff(acces$ONGLETS, ONGLET_ACCUEIL)) {
+      nav_insert("nav", panneau_onglet(cle), target = precedent,
+                 position = "after", session = session)
+      precedent <- cle
+    }
+
+    # Le drapeau ne passe pas à TRUE ici, mais au flush SUIVANT. Côté
+    # navigateur, Shiny traite ses messages dans l'ordre où leurs gestionnaires
+    # sont enregistrés, et « inputMessages » (3e) passe avant
+    # « shiny-insert-tab » (19e) : garnir dans le même flush que l'insertion
+    # remplirait des champs pas encore créés. onFlushed() décale d'un cycle,
+    # donc les onglets existent quand les valeurs arrivent.
+    session$onFlushed(function() ONGLETS_PRETS(TRUE), once = TRUE)
+
+    shinyjs::hide("login_screen")
+    shinyjs::show("app_screen")
+  })
+
+  # Qui est connecté, discrètement, à droite de la barre : avec plusieurs mots
+  # de passe en circulation, c'est la seule façon de savoir lequel on utilise
+  # — et pourquoi tel onglet manque. Le bouton de déconnexion vit ici plutôt
+  # que dans la coquille : il n'a de sens qu'une fois connecté, et le req()
+  # ci-dessous suffit à le faire apparaître et disparaître avec le badge.
+  output$badge_utilisateur <- renderUI({
+    req(USER$logged)
+    tagList(
+      span(class = "badge-utilisateur",
+           USER$nom,
+           if (!is.na(USER$role) && nzchar(USER$role))
+             tags$span(class = "role", paste0(" (", USER$role, ")"))),
+      actionLink(
+        "deconnexion", class = "lien-deconnexion",
+        # title = l'infobulle au survol ; aria-label = le nom annoncé, qui
+        # reprend le libellé visible (WCAG 2.5.3) et reste juste quand le mot
+        # est masqué sur téléphone.
+        title = "Se déconnecter", `aria-label` = "Déconnexion",
+        label = tagList(
+          icon("right-from-bracket"),
+          # Le mot disparaît sous 992 px : sur téléphone la barre est déjà
+          # chargée, et l'icône suffit (le title reste pour le survol).
+          tags$span(class = "d-none d-lg-inline ms-1", "Déconnexion")))
+    )
+  })
+
+  # Déconnexion : on recharge la page plutôt que de défaire l'insertion des
+  # onglets un à un.
+  #
+  # Défaire à la main voudrait dire retirer chaque onglet inséré, remasquer les
+  # cartes, revider le champ mot de passe — et surtout se souvenir de tout ce
+  # que la session a accumulé entre-temps : périodes saisies, prix simulés,
+  # lignes sélectionnées dans les tableaux. Un oubli, et la personne suivante
+  # hérite de l'état de la précédente. Le rechargement, lui, ne peut rien
+  # oublier.
+  #
+  # Il est peu coûteux : les données sont chargées en tête de server.R, hors de
+  # la fonction serveur, donc une fois par processus R et non par session. La
+  # page revient sur l'écran de connexion sans retoucher au .RData.
+  observeEvent(input$deconnexion, {
+    session$reload()
   })
 
   #### Volet "Accueil" ####
@@ -78,6 +158,13 @@ server <- function(input, output, session) {
   # objectif. Suit le sélecteur HTVA/TVAC.
   output$accueil_kpi <- renderUI({
     kpi_accueil(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, input$unite_tva)
+  })
+
+  # La grille des cartes : seulement celles dont l'onglet est autorisé. Une
+  # carte qui renverrait vers un onglet absent de la barre n'a pas de sens.
+  output$accueil_cartes <- renderUI({
+    req(USER$logged)
+    grille_cartes_accueil(USER$onglets)
   })
 
   # Une carte par onglet. Celles qui portent des euros suivent la TVA ; les
@@ -108,24 +195,17 @@ server <- function(input, output, session) {
   })
 
   # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
-  # Une table plutôt que huit observeEvent recopiés : ajouter une carte, c'est
-  # ajouter une ligne.
-  ACCUEIL_LIENS <- c(go_maintenant  = "tab_maintenant",
-                     go_annee       = "tab_annee",
-                     go_futs        = "tab_futs",
-                     go_bieres      = "tab_bieres",
-                     go_focaccias   = "tab_focaccias",
-                     go_pizzwanze   = "tab_pizzwanze",
-                     go_reservation = "tab_reservations",
-                     go_compta      = "tab_compta")
-
-  for (bouton in names(ACCUEIL_LIENS)) {
-    # local() fige `bouton` : sans lui, les huit observeEvent partageraient la
+  # Bouton et onglet cible viennent tous deux de CARTES_ACCUEIL (R/acces.R) :
+  # ajouter une carte, c'est ajouter une ligne, et il n'y a plus deux listes à
+  # tenir d'accord (l'ancienne visait « tab_bieres », qui n'existe pas).
+  for (i in seq_len(nrow(CARTES_ACCUEIL))) {
+    # local() fige l'indice : sans lui, les huit observeEvent partageraient la
     # dernière valeur de la boucle et renverraient tous vers le même onglet.
     local({
-      b <- bouton
-      observeEvent(input[[b]], {
-        nav_select("nav", ACCUEIL_LIENS[[b]], session = session)
+      bouton <- CARTES_ACCUEIL$BOUTON[i]
+      cible  <- CARTES_ACCUEIL$CLE[i]
+      observeEvent(input[[bouton]], {
+        nav_select("nav", cible, session = session)
       }, ignoreInit = TRUE)
     })
   }
@@ -198,6 +278,7 @@ server <- function(input, output, session) {
   
   # Liste des mois disponibles (du plus récent au plus ancien)
   observe({
+    req(ONGLETS_PRETS())
     mois_dispo <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       distinct(PREMIER_JOUR_MOIS) %>%
@@ -279,6 +360,7 @@ server <- function(input, output, session) {
 
   # Période par défaut : 8 dernières semaines jusqu'à la veille
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "detail_periode",
                          start = date_veille - weeks(8),
                          end   = date_veille)
@@ -382,6 +464,7 @@ server <- function(input, output, session) {
     src <- paste0("detail_", sfx)
 
     observe({
+      req(ONGLETS_PRETS())
       updateDateRangeInput(session, id("periode"),
                            start = defaut_debut, end = date_veille)
     })
@@ -542,6 +625,7 @@ server <- function(input, output, session) {
   #### Volet "Détail" — Par produit ####
   
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "detail_produit_periode",
                          start = date_veille - weeks(8),
                          end   = date_veille)
@@ -655,6 +739,7 @@ server <- function(input, output, session) {
 
   # Sélecteur de brassin pour le rapport
   observe({
+    req(ONGLETS_PRETS())
     brassins <- DB_BRASSINS %>% arrange(desc(DT_BRASSIN))
     choix <- setNames(brassins$ID_BRASSIN, brassins$NOM_BRASSIN)
     updateSelectInput(session, "brassin_choisi", choices = choix)
@@ -670,6 +755,7 @@ server <- function(input, output, session) {
 
   # Période par défaut : 8 dernières semaines
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "sim_periode",
                          start = date_veille - weeks(8), end = date_veille)
   })
@@ -688,7 +774,11 @@ server <- function(input, output, session) {
   sim_prix <- reactiveVal(NULL)
 
   # (Ré)initialise les prix simulés quand la base change + remplit les catégories
-  observeEvent(sim_base(), {
+  # Le drapeau est dans l'expression déclenchante, pas dans le corps :
+  # observeEvent() isole son corps, donc une dépendance posée là ne rejouerait
+  # jamais l'observateur au moment où le drapeau bascule — et sim_categorie
+  # resterait vide. C'est le seul observeEvent parmi les garnissages.
+  observeEvent({ req(ONGLETS_PRETS()); sim_base() }, {
     sim_prix(sim_base()$PRIX_MOYEN)
     updateSelectInput(session, "sim_categorie",
                       choices = sort(unique(sim_base()$CATEGORIE)))
@@ -789,6 +879,7 @@ server <- function(input, output, session) {
   })
 
   observe({
+    req(ONGLETS_PRETS())
     p <- expl_postes()
     req(nrow(p) > 0)
     dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
@@ -829,6 +920,7 @@ server <- function(input, output, session) {
   # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
 
   observe({
+    req(ONGLETS_PRETS())
     req(exists("DB_COMPTA"))
     p <- periodes_compta(DB_COMPTA)
     updateSelectizeInput(session, "cg_periodes",
@@ -913,9 +1005,8 @@ server <- function(input, output, session) {
         TERRASSE = replace_na(TERRASSE,0),
         SOIR = replace_na(SOIR,0)
       ) |> 
-      filter(DATE >= now(), DATE <= now() + days(21))
+      filter(DATE >= floor_date(now(),unit="day"), DATE <= now() + days(21))
     
-    test <<- a
     lab <- paste0(substr(as.character(a$JOUR), 1, 3), " ", format(a$DATE, "%d/%m"))
     ordre <- factor(lab, levels = lab)
     # Deux découpages du même total : par lieu (où installer) ou par créneau
@@ -941,6 +1032,7 @@ server <- function(input, output, session) {
 
   # --- Statistiques
   observe({
+    req(ONGLETS_PRETS())
     r <- RESA()
     req(nrow(r) > 0)
     updateDateRangeInput(session, "resa_periode",
@@ -1013,6 +1105,7 @@ server <- function(input, output, session) {
   # Met à jour la liste des périodes disponibles selon la granularité choisie ;
   # sélectionne par défaut les 2 plus récentes.
   observe({
+    req(ONGLETS_PRETS())
     req(input$comp_unite)
     dispo <- liste_periodes_dispo(UPD_KPI_SIMPLE(), input$comp_unite)
     choix <- setNames(as.character(dispo), label_periode(dispo, input$comp_unite))
@@ -1040,6 +1133,7 @@ server <- function(input, output, session) {
   #### Volet "Année" ####
 
   observe({
+    req(ONGLETS_PRETS())
     annees <- UPD_KPI_SIMPLE() %>%
       filter(ventes > 0) %>%
       pull(DATE) %>% year() %>% unique() %>% sort(decreasing = TRUE)
@@ -1049,8 +1143,12 @@ server <- function(input, output, session) {
   })
 
   annee_val <- reactive({
-    if (is.null(input$annee_choisie)) year(today())
-    else as.integer(input$annee_choisie)
+    # Entre l'insertion de l'onglet et son garnissage, le select existe mais
+    # est vide : input$annee_choisie vaut "" et non NULL, et as.integer("")
+    # vaut NA — que serie_annuelle() finit par passer à as.Date(), d'où un
+    # « format standard non ambigu » très loin de sa cause.
+    a <- suppressWarnings(as.integer(input$annee_choisie))
+    if (length(a) != 1 || is.na(a)) year(today()) else a
   })
 
   serie_annee <- reactive({
@@ -1090,6 +1188,7 @@ server <- function(input, output, session) {
   # semaine, comme dans l'étude de rentabilité)
   debut_travail <- floor_date(date_veille, "month") %m-% months(12)
   observe({
+    req(ONGLETS_PRETS())
     updateDateRangeInput(session, "trav_periode",
                          start = debut_travail, end = date_veille)
     updateDateRangeInput(session, "cren_periode",
@@ -1195,6 +1294,7 @@ server <- function(input, output, session) {
   #### Volet "Boisson" — consommation ####
   
   observe({
+    req(ONGLETS_PRETS())
     updateSelectInput(session,"conso_categorie",
                       choices=c("Bières","Softs","Alcools & Vins"))
   })
@@ -1213,6 +1313,7 @@ server <- function(input, output, session) {
 
   # Semaines proposées (la semaine en cours, partielle, est exclue)
   observe({
+    req(ONGLETS_PRETS())
     sems <- semaines_dispo(DB_JOURS)
     req(length(sems) > 0)
     updateSelectInput(session, "conso_semaine",
@@ -1278,6 +1379,7 @@ server <- function(input, output, session) {
   SOIREES_PIZZWANZE <- soirees_pizzwanze(DB_PRODUITS)
 
   observe({
+    req(ONGLETS_PRETS())
     req(length(SOIREES_PIZZWANZE) > 0)
     choix <- rev(SOIREES_PIZZWANZE)   # la plus récente en tête
     updateSelectInput(session, "pizz_soiree",
@@ -1327,6 +1429,7 @@ server <- function(input, output, session) {
   #### Volet "Focaccias" ####
 
   observe({
+    req(ONGLETS_PRETS())
     sems <- semaines_dispo(DB_PRODUITS)
     req(length(sems) > 0)
     updateSelectInput(session, "foca_semaine",
@@ -1380,7 +1483,14 @@ server <- function(input, output, session) {
   # production à venir, pas celle d'une semaine consultée dans l'historique.
 
   prod_base <- reactive({
-    production_focaccias_base(DB_PRODUITS, n_semaines = 3, marge = 1+input$prod_multi/100, unite_tva = input$unite_tva)
+    # Le curseur de marge vit dans l'onglet Focaccias, qui n'est inséré qu'après
+    # la connexion : avant, input$prod_multi est NULL, `1 + NULL/100` vaut
+    # numeric(0), et le case_when() de production_focaccias_base() refuse de
+    # recycler une condition de 5 lignes contre une valeur de longueur 0.
+    # L'observateur de préremplissage, lui, tourne dès le premier flush.
+    req(input$prod_multi)
+    production_focaccias_base(DB_PRODUITS, n_semaines = 3,
+                              marge = 1 + input$prod_multi / 100)
   })
 
   # (Ré)applique les valeurs par défaut. La ligne libre reste vide.
@@ -1447,20 +1557,8 @@ server <- function(input, output, session) {
     })
   }
   
-  # ===================== Navigation ========================================
-  go <- function(input_id, target) {
-    observeEvent(input[[input_id]], {
-      nav_select("nav", target, session = session)
-    })
-  }
-  
-  go("go_maintenant", "tab_maintenant")
-  go("go_annee", "tab_annee")
-  go("go_boissons", "tab_boissons")
-  go("go_futs", "tab_futs")
-  go("go_focaccias", "tab_focaccias")
-  go("go_pizzwanze",   "tab_pizzwanze")
-  go("go_compta",  "tab_compta")
-  go("go_reservations",  "tab_reservations")
+  # La navigation des cartes d'accueil est branchée plus haut, à partir de
+  # CARTES_ACCUEIL : le second jeu d'observateurs qui vivait ici faisait
+  # double emploi.
 
 }
