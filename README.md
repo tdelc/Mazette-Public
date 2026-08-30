@@ -44,6 +44,15 @@ inséré**. Seul l'accueil part avec la page ; après la connexion, le serveur
 ajoute un à un les onglets autorisés (`nav_insert`). Le HTML des autres ne
 quitte pas le serveur et leurs calculs ne sont jamais déclenchés.
 
+Conséquence à connaître en développant : **les inputs d'un onglet n'existent
+qu'après son insertion**, donc après la connexion. Les sorties (`render*`) ne
+s'en aperçoivent pas — Shiny ne les calcule que lorsqu'elles sont visibles ;
+mais un `observe()` tourne dès le premier flush, avant la connexion. Un
+observateur qui lit un input d'onglet doit donc le protéger par `req()`, ou
+prévoir un repli explicite comme le fait `sim_periode_val()`. Sinon il part sur
+`NULL` — et `1 + NULL/100` vaut `numeric(0)`, pas `NA`, ce qui produit des
+erreurs de longueur loin de leur cause.
+
 ### Ajouter un onglet
 
 Une seule ligne, dans la table `ONGLETS` de `R/acces.R` : clé, titre, icône et

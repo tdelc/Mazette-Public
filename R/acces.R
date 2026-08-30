@@ -16,6 +16,17 @@
 #      Un onglet interdit n'est pas masqué côté navigateur : il n'est tout
 #      simplement jamais inséré dans la barre (cf. server.R), donc son HTML ne
 #      quitte pas le serveur et ses sorties ne sont jamais calculées.
+#
+# CONSÉQUENCE À CONNAÎTRE — les inputs d'un onglet n'existent qu'une fois
+# l'onglet inséré, c'est-à-dire après la connexion. Avant, ils valent NULL.
+#
+# Les sorties (render*) ne s'en aperçoivent pas : Shiny ne les calcule que
+# lorsqu'elles sont visibles. Les observateurs, eux, tournent dès le premier
+# flush, donc AVANT la connexion. Un observe() qui lit un input d'onglet doit
+# donc le protéger — req(input$x), ou une valeur de repli explicite comme le
+# fait sim_periode_val(). Sans quoi le calcul part sur NULL, ce qui donne des
+# erreurs de longueur bien loin de leur cause (`1 + NULL/100` vaut numeric(0),
+# et non NA).
 
 #### Catalogue des onglets ####
 
