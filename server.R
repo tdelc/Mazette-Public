@@ -1409,7 +1409,9 @@ server <- function(input, output, session) {
   # production à venir, pas celle d'une semaine consultée dans l'historique.
 
   prod_base <- reactive({
-    production_focaccias_base(DB_PRODUITS, n_semaines = 3, marge = 1+input$prod_multi/100)
+    req(input$prod_multi)
+    production_focaccias_base(DB_PRODUITS, n_semaines = 3,
+                              marge = 1 + input$prod_multi / 100)
   })
 
   # (Ré)applique les valeurs par défaut. La ligne libre reste vide.
