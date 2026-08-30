@@ -1004,9 +1004,8 @@ server <- function(input, output, session) {
         TERRASSE = replace_na(TERRASSE,0),
         SOIR = replace_na(SOIR,0)
       ) |> 
-      filter(DATE >= now(), DATE <= now() + days(21))
+      filter(DATE >= floor_date(now(),unit="day"), DATE <= now() + days(21))
     
-    test <<- a
     lab <- paste0(substr(as.character(a$JOUR), 1, 3), " ", format(a$DATE, "%d/%m"))
     ordre <- factor(lab, levels = lab)
     # Deux découpages du même total : par lieu (où installer) ou par créneau
