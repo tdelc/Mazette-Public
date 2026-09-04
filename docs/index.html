@@ -373,11 +373,27 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
         <tr><td>Compta</td><td><code>tab_compta</code></td><td>Compte d&rsquo;exploitation et comptabilit&eacute; g&eacute;n&eacute;rale, d&eacute;riv&eacute;s de <code>DB_COMPTA</code>.</td></tr>
         <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
-        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures &agrave; venir confront&eacute;es au CA qu&rsquo;elles devront produire. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
+        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
         <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
       </tbody>
     </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">La grammaire du volet Planning</span>
+      <p>
+        Ses deux graphiques suivent la m&ecirc;me r&egrave;gle&nbsp;: <strong>la barre est ce qui est
+        pr&eacute;vu, le trait est la r&eacute;f&eacute;rence</strong>. Le premier ne parle qu&rsquo;en heures
+        (heures planifi&eacute;es contre heures habituelles ce jour de semaine), le second
+        qu&rsquo;en euros (CA attendu contre objectif). Aucun ne m&eacute;lange les deux unit&eacute;s,
+        et aucune grandeur n&rsquo;est d&eacute;riv&eacute;e d&rsquo;une autre d&eacute;riv&eacute;e&nbsp;: c&rsquo;est ce qui rendait
+        la premi&egrave;re version illisible.
+      </p>
+      <p>
+        Les couverts r&eacute;serv&eacute;s apparaissent en survol seulement&nbsp;: ils expliquent
+        souvent pourquoi on met plus de monde, sans entrer dans le calcul.
+      </p>
+    </div>
 
     <div class="note" data-profondeur="detail">
       <span class="l">Un onglet n&rsquo;est pas une page</span>

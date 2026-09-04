@@ -5,15 +5,20 @@
 # question de planificateur : « si je mets ces heures-là jeudi, est-ce que la
 # journée peut être rentable ? »
 #
-# Faute de coût du travail dans DB_HEURES_PLANNING, « rentable » ne peut pas
-# s'exprimer en euros de marge. On le formule donc en PRODUCTIVITÉ :
+# Deux questions, deux graphiques, et une seule grammaire visuelle pour les
+# deux : LA BARRE EST CE QUI EST PRÉVU, LE TRAIT EST LA RÉFÉRENCE.
 #
-#   CA par heure REQUIS  = objectif de la période / heures planifiées
-#   CA par heure DE RÉFÉRENCE = ce que l'établissement fait d'habitude
+#   1. « Est-ce que je mets plus d'heures que d'habitude ? »
+#      barre = heures planifiées du jour, trait = heures habituelles ce
+#      jour-là. Rien que des heures, aucun euro.
 #
-# Si le requis dépasse la référence, le planning est tendu : ces heures ne
-# suffiront pas à tenir l'objectif au rythme habituel. L'écart se lit aussi en
-# heures, ce qui est plus parlant quand on tient un tableau de service.
+#   2. « Est-ce que ces heures vont ramener assez ? »
+#      barre = CA attendu (heures x productivité habituelle),
+#      trait = objectif du jour. Rien que des euros.
+#
+# On a délibérément retiré les grandeurs à deux dérivations, du type « heures
+# que l'objectif justifie » : elles se calculent bien mais ne se lisent pas.
+# Chaque graphique reste dans UNE unité, et la comparaison y est directe.
 #
 # Le jour où DB_HEURES_PLANNING portera un coût horaire, ce volet pourra passer
 # à une vraie marge ; rien d'autre ne changera.
@@ -104,19 +109,96 @@ planning_jour <- function(db_planning, db_kpi, date_veille) {
     arrange(DATE)
 }
 
+#### Réservations ####
+
+# Couverts réservés par jour. Les réservations ne changent pas l'objectif de
+# CA, mais elles expliquent une partie des heures : vingt couverts annoncés un
+# mardi justifient du monde en salle. On les donne donc en infobulle, comme
+# contexte, sans les mêler au calcul.
+couverts_par_jour <- function(resa) {
+  if (is.null(resa) || !is.data.frame(resa) || nrow(resa) == 0 ||
+      !all(c("DATE", "NB_PERS") %in% names(resa)))
+    return(NULL)
+  resa %>%
+    group_by(DATE) %>%
+    summarise(COUVERTS = sum(NB_PERS, na.rm = TRUE),
+              RESA = n(), .groups = "drop")
+}
+
+#### Heures habituelles ####
+
+# Heures planifiées d'un jour de semaine ordinaire, prises en médiane sur les
+# dernières semaines de référence.
+#
+# La comparaison se fait JOUR DE SEMAINE PAR JOUR DE SEMAINE : un samedi ne se
+# compare pas à un mardi, et une moyenne tous jours confondus ne dirait rien.
+# La médiane plutôt que la moyenne : une semaine de fermeture ou un banquet ne
+# doivent pas déplacer la normale.
+#
+# Comme pour la productivité, on se rabat sur les heures RÉELLEMENT
+# travaillées tant que le planning n'a pas assez de passé — sans quoi le
+# graphe serait sans repère le premier jour. La source est renvoyée pour être
+# affichée.
+heures_habituelles <- function(jour, db_couts_travail, n_semaines = 8) {
+  depuis_planning <- medianes_par_jour_semaine(
+    if (is.null(jour)) NULL else
+      jour %>% filter(STATUT == "Échu") %>% select(DATE, HEURES = H_TOTAL),
+    n_semaines)
+
+  if (!is.null(depuis_planning))
+    return(list(table = depuis_planning, source = "planning",
+                libelle = paste0("médiane des ", attr(depuis_planning, "n_sem"),
+                                 " dernières semaines planifiées")))
+
+  reelles <- medianes_par_jour_semaine(
+    if (is.null(db_couts_travail)) NULL else
+      db_couts_travail %>% group_by(DATE) %>%
+        summarise(HEURES = sum(HEURES, na.rm = TRUE), .groups = "drop"),
+    n_semaines)
+
+  if (!is.null(reelles))
+    return(list(table = reelles, source = "heures réelles",
+                libelle = paste0("médiane des ", attr(reelles, "n_sem"),
+                                 " dernières semaines réellement travaillées")))
+
+  list(table = NULL, source = "aucune", libelle = "pas encore de référence")
+}
+
+# Médiane des heures par jour de semaine, sur les n dernières semaines
+# COMPLÈTES présentes dans la table. NULL si l'historique est trop court pour
+# qu'une médiane veuille dire quelque chose.
+medianes_par_jour_semaine <- function(db, n_semaines = 8, min_semaines = 2) {
+  if (is.null(db) || nrow(db) == 0) return(NULL)
+
+  d <- db %>%
+    mutate(SEMAINE = debut_periode(DATE, "semaine")) %>%
+    filter(!is.na(HEURES))
+  semaines <- sort(unique(d$SEMAINE))
+  if (length(semaines) < min_semaines) return(NULL)
+  gardees <- tail(semaines, n_semaines)
+
+  res <- d %>%
+    filter(SEMAINE %in% gardees) %>%
+    mutate(JOUR_SEM = wday(DATE, week_start = 1)) %>%
+    group_by(JOUR_SEM) %>%
+    summarise(H_MEDIANE = median(HEURES, na.rm = TRUE),
+              N_SEMAINES = n_distinct(SEMAINE), .groups = "drop")
+
+  attr(res, "n_sem") <- length(gardees)
+  res
+}
+
 #### Productivité de référence ####
 
-# Le CA par heure « habituel », auquel on compare le planning.
+# Le CA par heure « habituel », qui convertit des heures planifiées en euros
+# attendus.
 #
 # On le prend sur les semaines COMPLÈTES du planning : une semaine à moitié
 # échue mettrait toutes ses heures face à une partie seulement de son CA, et
 # tirerait la référence vers le bas.
 #
-# Tant que le planning n'a pas d'historique — le cas au démarrage, où il ne
-# contient que les semaines à venir — on se rabat sur les heures RÉELLEMENT
-# travaillées (DB_COUTS_TRAVAIL), qui, elles, ont de l'historique. La source
-# retenue est renvoyée pour être affichée : une référence dont on ignore
-# l'origine ne vaut rien.
+# Même repli que ci-dessus sur les heures réellement travaillées tant que le
+# planning n'a pas d'historique.
 reference_productivite <- function(jour, db_couts_travail, db_kpi,
                                    n_semaines = 8) {
   vide <- list(valeur = NA_real_, source = "aucune", n_semaines = 0,
@@ -165,289 +247,278 @@ reference_heures_reelles <- function(db_couts_travail, db_kpi, n_semaines = 8) {
                         " semaines d'heures réellement travaillées"))
 }
 
-#### Agrégat par semaine ####
-
-# Heures planifiées de la semaine entière, mais CA et productivité calculés
-# sur les seuls jours échus : c'est ce qui rend une semaine en cours lisible
-# sans la faire paraître catastrophique.
+# Agrégat hebdomadaire, utilisé pour calculer la référence de productivité.
+# Heures planifiées de la semaine entière, mais CA et productivité calculés sur
+# les seuls jours échus.
 semaines_planning <- function(jour) {
   if (is.null(jour) || nrow(jour) == 0) return(NULL)
   jour %>%
     mutate(PERIODE = debut_periode(DATE, "semaine")) %>%
     group_by(PERIODE) %>%
     summarise(
-      H_PLANIFIEES = sum(H_TOTAL, na.rm = TRUE),
-      H_ECHUES     = sum(H_TOTAL[STATUT == "Échu"], na.rm = TRUE),
-      H_A_VENIR    = sum(H_TOTAL[STATUT == "À venir"], na.rm = TRUE),
-      CA           = sum(CA, na.rm = TRUE),
-      JOURS_ECHUS  = sum(STATUT == "Échu"),
+      H_PLANIFIEES  = sum(H_TOTAL, na.rm = TRUE),
+      H_ECHUES      = sum(H_TOTAL[STATUT == "Échu"], na.rm = TRUE),
+      CA            = sum(CA, na.rm = TRUE),
       JOURS_A_VENIR = sum(STATUT == "À venir"),
       .groups = "drop") %>%
-    mutate(
-      COMPLETE = JOURS_A_VENIR == 0,
-      CA_PAR_HEURE = if_else(H_ECHUES > 0, CA / H_ECHUES, NA_real_)
-    ) %>%
+    mutate(COMPLETE = JOURS_A_VENIR == 0,
+           CA_PAR_HEURE = if_else(H_ECHUES > 0, CA / H_ECHUES, NA_real_)) %>%
     arrange(PERIODE)
 }
 
-# Heures par semaine x secteur, pour l'empilement du graphe.
-semaines_secteurs <- function(db_planning) {
-  sect <- planning_secteurs(db_planning)
-  if (is.null(sect)) return(NULL)
-  sect %>%
-    mutate(PERIODE = debut_periode(DATE, "semaine")) %>%
-    group_by(PERIODE, SECTEUR) %>%
-    summarise(HEURES = sum(HEURES, na.rm = TRUE), .groups = "drop")
-}
+#### Les jours à venir ####
 
-#### Projection sur les jours à venir ####
-
-# Confronte les heures planifiées à l'objectif de CA de la même période.
+# La table qui alimente les deux graphiques et le tableau. Une ligne par jour à
+# venir, avec tout ce qu'on veut lui comparer :
 #
-#   CA_H_REQUIS = objectif / heures planifiées
-#       « avec ces heures, il faut produire tant par heure »
-#   H_SOUTENABLES = objectif / référence
-#       « à productivité habituelle, l'objectif demande tant d'heures »
-#   ECART_H = heures planifiées - heures soutenables
-#       positif = heures posées au-delà de ce que l'objectif justifie
+#   H_TOTAL / H_MEDIANE   les heures posées et les heures habituelles
+#   CA_ATTENDU / OBJECTIF les euros attendus à ce rythme, et l'objectif
+#   COUVERTS              contexte, pour l'infobulle
 #
-# TENSION exprime le même écart en pourcentage de la référence : c'est le
-# nombre à regarder en premier.
-projection_planning <- function(jour, db_objectifs, reference,
-                                date_veille) {
+# Aucune grandeur dérivée d'une autre dérivée : chaque colonne se lit seule.
+projection_planning <- function(jour, db_objectifs, reference, habituel,
+                                resa = NULL) {
   if (is.null(jour)) return(NULL)
   avenir <- jour %>% filter(STATUT == "À venir")
   if (nrow(avenir) == 0) return(NULL)
 
-  obj <- db_objectifs %>% select(DATE, OBJECTIF = ventes)
   ref <- reference$valeur
+  med <- habituel$table
+  couverts <- couverts_par_jour(resa)
 
-  avenir %>%
-    left_join(obj, by = "DATE") %>%
+  p <- avenir %>%
+    left_join(db_objectifs %>% select(DATE, OBJECTIF = ventes), by = "DATE") %>%
+    mutate(JOUR_SEM = wday(DATE, week_start = 1))
+
+  p <- if (is.null(med)) mutate(p, H_MEDIANE = NA_real_)
+       else left_join(p, med %>% select(JOUR_SEM, H_MEDIANE), by = "JOUR_SEM")
+
+  p <- if (is.null(couverts)) mutate(p, COUVERTS = 0, RESA = 0)
+       else left_join(p, couverts, by = "DATE") %>%
+              mutate(COUVERTS = replace_na(COUVERTS, 0),
+                     RESA = replace_na(RESA, 0))
+
+  p %>%
     mutate(
-      OBJECTIF      = replace_na(OBJECTIF, 0),
-      CA_ATTENDU    = if (is.na(ref)) NA_real_ else H_TOTAL * ref,
-      CA_H_REQUIS   = if_else(H_TOTAL > 0 & OBJECTIF > 0,
-                              OBJECTIF / H_TOTAL, NA_real_),
-      H_SOUTENABLES = if (is.na(ref)) NA_real_ else
-                        if_else(OBJECTIF > 0, OBJECTIF / ref, NA_real_),
-      ECART_H       = H_TOTAL - H_SOUTENABLES,
-      TENSION       = if (is.na(ref)) NA_real_ else
-                        ratio_pct(CA_H_REQUIS - ref, ref)
+      OBJECTIF     = replace_na(OBJECTIF, 0),
+      ECART_H      = H_TOTAL - H_MEDIANE,
+      ECART_H_PCT  = ratio_pct(H_TOTAL - H_MEDIANE, H_MEDIANE),
+      CA_ATTENDU   = if (is.na(ref)) NA_real_ else H_TOTAL * ref,
+      ECART_CA     = CA_ATTENDU - OBJECTIF,
+      COUVRE       = !is.na(CA_ATTENDU) & OBJECTIF > 0 & CA_ATTENDU >= OBJECTIF,
+      # vecteur_jours (global.R) plutôt que wday(label = TRUE) ou %a : ces
+      # deux-là suivent la locale du SERVEUR, et rendent « Sat » sur une
+      # machine en locale C — ce qui est le cas courant d'un serveur Shiny.
+      JOUR_LABEL   = paste0(substr(vecteur_jours[JOUR_SEM], 1, 3), " ",
+                            format(DATE, "%d/%m"))
     ) %>%
     arrange(DATE)
 }
 
-# Résumé d'une projection sur toute sa fenêtre. On additionne les objectifs et
-# les heures AVANT de faire le rapport : la moyenne des ratios journaliers
-# donnerait un poids identique à un mardi creux et à un samedi plein.
+# Résumé de la fenêtre. On additionne avant de diviser : la moyenne des ratios
+# journaliers donnerait le même poids à un mardi creux et à un samedi plein.
 resume_projection <- function(proj, reference) {
   if (is.null(proj) || nrow(proj) == 0) return(NULL)
-  h   <- sum(proj$H_TOTAL, na.rm = TRUE)
-  obj <- sum(proj$OBJECTIF, na.rm = TRUE)
-  ref <- reference$valeur
-  requis <- if (h > 0 && obj > 0) obj / h else NA_real_
+  h    <- sum(proj$H_TOTAL, na.rm = TRUE)
+  hmed <- if (all(is.na(proj$H_MEDIANE))) NA_real_
+          else sum(proj$H_MEDIANE, na.rm = TRUE)
+  obj  <- sum(proj$OBJECTIF, na.rm = TRUE)
+  ref  <- reference$valeur
 
   list(
-    jours         = nrow(proj),
-    H_TOTAL       = h,
-    OBJECTIF      = obj,
-    CA_ATTENDU    = if (is.na(ref)) NA_real_ else h * ref,
-    CA_H_REQUIS   = requis,
-    REFERENCE     = ref,
-    H_SOUTENABLES = if (is.na(ref) || obj == 0) NA_real_ else obj / ref,
-    ECART_H       = if (is.na(ref) || obj == 0) NA_real_ else h - obj / ref,
-    TENSION       = if (is.na(ref) || is.na(requis)) NA_real_ else
-                      ratio_pct(requis - ref, ref)
+    jours       = nrow(proj),
+    H_TOTAL     = h,
+    H_MEDIANE   = hmed,
+    ECART_H     = if (is.na(hmed)) NA_real_ else h - hmed,
+    ECART_H_PCT = if (is.na(hmed)) NA_real_ else ratio_pct(h - hmed, hmed),
+    COUVERTS    = sum(proj$COUVERTS, na.rm = TRUE),
+    CA_ATTENDU  = if (is.na(ref)) NA_real_ else h * ref,
+    OBJECTIF    = obj,
+    ECART_CA    = if (is.na(ref)) NA_real_ else h * ref - obj,
+    REFERENCE   = ref
   )
 }
 
 #### Présentation ####
 
-# Bandeau du volet. La tuile de tête est la TENSION : c'est le seul nombre qui
-# répond directement à « ce planning est-il tenable ? ».
-kpi_planning_tiles <- function(res, reference) {
-  if (is.null(res))
-    return(div(class = "text-muted small p-2",
-               "Aucun jour à venir dans le planning."))
-
-  # Une tension positive veut dire qu'il faudra produire plus par heure que
-  # d'habitude. On tolère 5 % avant de passer à l'ambre : la référence est une
-  # médiane, pas une promesse.
-  couleur_tension <- if (is.na(res$TENSION)) COUL_NEUTRE
-                     else if (res$TENSION <= 0)  COUL_VERT
-                     else if (res$TENSION <= 15) COUL_AMBRE
-                     else                        COUL_ROUGE
-
-  ecart <- res$ECART_H
-  libelle_ecart <- if (is.na(ecart)) "—"
-    else if (ecart >= 0) paste0("+", format(round(ecart)), " h")
-    else paste0(format(round(ecart)), " h")
-
-  div(
-    class = "kpi-grid",
-    kpi_tile(if (is.na(res$TENSION)) "—" else format_pct(res$TENSION),
-             "Écart à la productivité habituelle", couleur_tension, "gauge-high",
-             sous_titre = if (is.na(res$TENSION)) "référence inconnue"
-                          else if (res$TENSION > 0) "il faudra faire mieux que d'habitude"
-                          else "le rythme habituel suffit"),
-    kpi_tile(format(round(res$H_TOTAL)), "Heures planifiées", COUL_TRAVAIL, "clock",
-             sous_titre = paste0("sur ", res$jours, " jour",
-                                 if (res$jours > 1) "s" else "", " à venir")),
-    kpi_tile(if (is.na(res$CA_H_REQUIS)) "—" else format_CA(res$CA_H_REQUIS, -1),
-             "CA par heure à tenir", COUL_BRUN, "calculator",
-             sous_titre = if (is.na(reference$valeur)) "pas de référence"
-                          else paste0("habituel : ", format_CA(reference$valeur, -1), " / h")),
-    kpi_tile(libelle_ecart, "Écart en heures",
-             if (is.na(ecart)) COUL_NEUTRE
-             else if (ecart > 0) COUL_AMBRE else COUL_VERT, "scale-balanced",
-             sous_titre = if (is.na(ecart)) "—"
-                          else if (ecart > 0) "posées au-delà de ce que l'objectif justifie"
-                          else "marge par rapport à l'objectif"),
-    kpi_tile(format_CA(res$OBJECTIF, -1), "Objectif de la période", COUL_MATIERE, "bullseye",
-             sous_titre = if (is.na(res$CA_ATTENDU)) "—"
-                          else paste0("attendu à ce rythme : ", format_CA(res$CA_ATTENDU, -1)))
-  )
+# Infobulle commune aux deux graphiques : mêmes lignes, même ordre, quelle que
+# soit l'unité du graphe. On y glisse les couverts réservés, qui expliquent
+# souvent l'écart d'heures sans entrer dans le calcul.
+infobulle_jour <- function(d, reference) {
+  couverts <- ifelse(d$COUVERTS > 0,
+                     paste0("<br>", d$COUVERTS, " couverts réservés (",
+                            d$RESA, " résa)"),
+                     "<br>aucune réservation")
+  habituel <- ifelse(is.na(d$H_MEDIANE), "",
+                     paste0("<br>habituel : ", round(d$H_MEDIANE), " h",
+                            ifelse(is.na(d$ECART_H_PCT), "",
+                                   paste0(" (", ifelse(d$ECART_H_PCT >= 0, "+", ""),
+                                          round(d$ECART_H_PCT), " %)"))))
+  paste0("<b>", d$JOUR_LABEL, "</b>",
+         "<br>", round(d$H_TOTAL), " h planifiées", habituel,
+         couverts, "<extra></extra>")
 }
 
-# Heures par semaine, empilées par secteur, avec la productivité mesurée en
-# regard. La bande grisée marque les semaines encore à venir : leurs heures
-# sont connues, leur CA non — on ne peut pas y lire de productivité.
-graph_planning_semaine <- function(sem, sect, reference) {
-  if (is.null(sem) || nrow(sem) == 0)
-    return(plotly_empty() %>% layout(title = "Aucun planning"))
-
-  p <- plot_ly()
-  secteurs <- intersect(c(names(COULEURS_SECTEURS), "Secteur inconnu"),
-                        unique(sect$SECTEUR))
-  for (s in secteurs) {
-    sub <- sect %>% filter(SECTEUR == s)
-    if (nrow(sub) == 0) next
-    p <- p %>% add_bars(
-      data = sub, x = ~PERIODE, y = ~HEURES, name = s,
-      marker = list(color = unname(couleur_secteur(s))),
-      hovertemplate = paste0("Sem. ", format(sub$PERIODE, "%d/%m"), "<br>", s,
-                             " ", round(sub$HEURES), " h<extra></extra>"))
-  }
-
-  mesure <- sem %>% filter(!is.na(CA_PAR_HEURE))
-  if (nrow(mesure) > 0)
-    p <- p %>% add_lines(
-      data = mesure, x = ~PERIODE, y = ~CA_PAR_HEURE, yaxis = "y2",
-      name = "CA / heure mesuré", line = list(color = COUL_BRUN, width = 2.5),
-      hovertemplate = ~paste0("Sem. ", format(PERIODE, "%d/%m"), "<br>",
-                              format_CA(CA_PAR_HEURE, -1), " / h<extra></extra>"))
-
-  formes <- list()
-  # Bande sur les semaines pas encore échues.
-  avenir <- sem %>% filter(!COMPLETE)
-  if (nrow(avenir) > 0)
-    formes <- c(formes, list(list(
-      type = "rect", xref = "x", yref = "paper",
-      x0 = min(avenir$PERIODE) - 3.5, x1 = max(avenir$PERIODE) + 3.5,
-      y0 = 0, y1 = 1, layer = "below",
-      fillcolor = "rgba(141,123,104,0.10)", line = list(width = 0))))
-  if (!is.na(reference$valeur))
-    formes <- c(formes, list(list(
-      type = "line", xref = "paper", x0 = 0, x1 = 1, yref = "y2",
-      y0 = reference$valeur, y1 = reference$valeur,
-      line = list(color = COUL_BRUN, width = 1, dash = "dot"))))
-
-  p %>% layout(
-    barmode = "stack",
-    xaxis = list(title = ""),
-    yaxis = list(title = "Heures planifiées"),
-    yaxis2 = list(title = "CA par heure (€/h)", overlaying = "y", side = "right",
-                  showgrid = FALSE, rangemode = "tozero"),
-    shapes = formes,
-    legend = list(orientation = "h"),
-    paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
-}
-
-# Les jours à venir, un par barre : la hauteur donne les heures posées, la
-# couleur dit si l'objectif du jour les justifie au rythme habituel. Le trait
-# noir marque les heures que l'objectif justifie — l'écart entre la barre et le
-# trait, c'est la décision à prendre.
-graph_planning_avenir <- function(proj, reference) {
+# Graphique 1 — rien que des heures.
+# Barre : ce qui est planifié. Trait : ce qu'on met d'habitude ce jour-là.
+graph_planning_heures <- function(proj, habituel) {
   if (is.null(proj) || nrow(proj) == 0)
     return(plotly_empty() %>% layout(title = "Aucun jour à venir"))
 
-  d <- proj %>%
-    mutate(
-      JOUR = paste0(substr(as.character(wday(DATE, label = TRUE, abbr = FALSE,
-                                             week_start = 1)), 1, 3),
-                    " ", format(DATE, "%d/%m")),
-      COULEUR = case_when(
-        is.na(TENSION)  ~ COUL_NEUTRE,
-        TENSION <= 0    ~ COUL_VERT,
-        TENSION <= 15   ~ COUL_AMBRE,
-        TRUE            ~ COUL_ROUGE)
-    )
-  ordre <- factor(d$JOUR, levels = d$JOUR)
+  ordre <- factor(proj$JOUR_LABEL, levels = proj$JOUR_LABEL)
+  # Au-dessus de l'habitude en ambre, en dessous en vert : plus d'heures n'est
+  # pas une faute, c'est un point d'attention.
+  couleur <- ifelse(is.na(proj$ECART_H_PCT), COUL_NEUTRE,
+             ifelse(proj$ECART_H_PCT > 10, COUL_AMBRE, COUL_VERT))
 
   p <- plot_ly() %>%
-    add_bars(x = ordre, y = d$H_TOTAL, name = "Heures planifiées",
-             marker = list(color = d$COULEUR),
-             hovertemplate = paste0(
-               d$JOUR, "<br>", round(d$H_TOTAL), " h planifiées",
-               "<br>Objectif ", format_CA(d$OBJECTIF, -1),
-               "<br>Soit ", format_CA(d$CA_H_REQUIS, -1), " / h à tenir",
-               "<extra></extra>"))
+    add_bars(x = ordre, y = proj$H_TOTAL, name = "Heures planifiées",
+             marker = list(color = couleur),
+             hovertemplate = infobulle_jour(proj, NULL))
 
-  if (any(!is.na(d$H_SOUTENABLES)))
+  if (any(!is.na(proj$H_MEDIANE)))
     p <- p %>% add_markers(
-      x = ordre, y = d$H_SOUTENABLES, name = "Heures justifiées par l'objectif",
-      # Le noir Mazette (MZ_NOIR de ui.R) n'est pas exposé côté serveur : on le
-      # pose en clair plutôt que d'ajouter une constante pour un seul usage.
-      marker = list(symbol = "line-ew-open", size = 22,
-                    line = list(width = 2.5, color = "#260b01")),
-      hovertemplate = paste0(d$JOUR, "<br>",
-                             round(d$H_SOUTENABLES), " h au rythme habituel",
+      x = ordre, y = proj$H_MEDIANE, name = "Heures habituelles",
+      marker = list(symbol = "line-ew-open", size = 26,
+                    line = list(width = 3, color = "#260b01")),
+      hovertemplate = paste0("<b>", proj$JOUR_LABEL, "</b><br>",
+                             round(proj$H_MEDIANE), " h d'habitude",
                              "<extra></extra>"))
 
   p %>% layout(
     xaxis = list(title = "", tickangle = -35),
-    yaxis = list(title = "Heures", rangemode = "tozero"),
+    yaxis = list(title = "Heures planifiées", rangemode = "tozero"),
     legend = list(orientation = "h"),
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Détail jour par jour, pour vérifier une ligne du tableau de service.
+# Graphique 2 — rien que des euros.
+# Barre : ce que ces heures rapportent au rythme habituel. Trait : l'objectif
+# du jour. La barre passe-t-elle le trait ?
+graph_planning_rentabilite <- function(proj, reference) {
+  if (is.null(proj) || nrow(proj) == 0)
+    return(plotly_empty() %>% layout(title = "Aucun jour à venir"))
+  if (is.na(reference$valeur))
+    return(plotly_empty() %>%
+             layout(title = "Pas encore de productivité de référence"))
+
+  ordre <- factor(proj$JOUR_LABEL, levels = proj$JOUR_LABEL)
+  couleur <- ifelse(proj$OBJECTIF <= 0, COUL_NEUTRE,
+             ifelse(proj$COUVRE, COUL_VERT, COUL_ROUGE))
+
+  bulle <- paste0(
+    "<b>", proj$JOUR_LABEL, "</b>",
+    "<br>", round(proj$H_TOTAL), " h × ", format_CA(reference$valeur, -1),
+    " / h = ", format_CA(proj$CA_ATTENDU, -1),
+    "<br>objectif ", format_CA(proj$OBJECTIF, -1),
+    ifelse(proj$OBJECTIF > 0,
+           paste0("<br>", ifelse(proj$ECART_CA >= 0, "au-dessus de ", "manque "),
+                  format_CA(abs(proj$ECART_CA), -1)), ""),
+    ifelse(proj$COUVERTS > 0,
+           paste0("<br>", proj$COUVERTS, " couverts réservés (",
+                  proj$RESA, " résa)"),
+           "<br>aucune réservation"),
+    "<extra></extra>")
+
+  plot_ly() %>%
+    add_bars(x = ordre, y = proj$CA_ATTENDU, name = "CA attendu à ce rythme",
+             marker = list(color = couleur), hovertemplate = bulle) %>%
+    add_markers(x = ordre, y = proj$OBJECTIF, name = "Objectif du jour",
+                marker = list(symbol = "line-ew-open", size = 26,
+                              line = list(width = 3, color = "#260b01")),
+                hovertemplate = paste0("<b>", proj$JOUR_LABEL, "</b><br>",
+                                       "objectif ", format_CA(proj$OBJECTIF, -1),
+                                       "<extra></extra>")) %>%
+    layout(
+      xaxis = list(title = "", tickangle = -35),
+      yaxis = list(title = "Euros", rangemode = "tozero"),
+      legend = list(orientation = "h"),
+      paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+}
+
+# Quatre tuiles, dans l'ordre des deux graphiques : d'abord les heures, puis
+# les euros. Chacune répond à une question, aucune n'introduit de grandeur
+# qu'on ne retrouve pas dans un graphe.
+kpi_planning_tiles <- function(res, reference, habituel) {
+  if (is.null(res))
+    return(div(class = "text-muted small p-2",
+               "Aucun jour à venir dans le planning."))
+
+  ecart_h <- if (is.na(res$ECART_H_PCT)) "—"
+             else paste0(if (res$ECART_H_PCT >= 0) "+" else "",
+                         round(res$ECART_H_PCT), " %")
+  couleur_h <- if (is.na(res$ECART_H_PCT)) COUL_NEUTRE
+               else if (res$ECART_H_PCT > 10) COUL_AMBRE else COUL_VERT
+
+  couvre <- !is.na(res$ECART_CA) && res$ECART_CA >= 0
+
+  div(
+    class = "kpi-grid",
+    kpi_tile(format(round(res$H_TOTAL)), "Heures planifiées", COUL_TRAVAIL, "clock",
+             sous_titre = paste0("sur ", res$jours, " jour",
+                                 if (res$jours > 1) "s" else "", " à venir")),
+    kpi_tile(ecart_h, "Par rapport à l'habitude", couleur_h, "code-compare",
+             sous_titre = if (is.na(res$H_MEDIANE)) habituel$libelle
+                          else paste0("habituel : ", round(res$H_MEDIANE), " h")),
+    kpi_tile(if (is.na(res$CA_ATTENDU)) "—" else format_CA(res$CA_ATTENDU, -1),
+             "CA attendu à ce rythme", COUL_BRUN, "chart-line",
+             sous_titre = if (is.na(reference$valeur)) "pas de référence"
+                          else paste0(format_CA(reference$valeur, -1), " par heure")),
+    kpi_tile(format_CA(res$OBJECTIF, -1), "Objectif de la période",
+             if (is.na(res$ECART_CA)) COUL_NEUTRE
+             else if (couvre) COUL_VERT else COUL_ROUGE, "bullseye",
+             sous_titre = if (is.na(res$ECART_CA)) "—"
+                          else if (couvre) paste0("couvert, +",
+                                                  format_CA(res$ECART_CA, -1))
+                          else paste0("manque ", format_CA(-res$ECART_CA, -1))),
+    kpi_tile(format(res$COUVERTS), "Couverts réservés", COUL_MATIERE, "calendar-check",
+             sous_titre = "déjà annoncés sur la période")
+  )
+}
+
+# Le détail, colonne par colonne dans l'ordre de lecture des graphiques.
 table_planning_avenir <- function(proj) {
   if (is.null(proj) || nrow(proj) == 0)
     return(tibble(Info = "Aucun jour à venir dans le planning."))
   proj %>%
     transmute(
-      Jour = format(DATE, "%a %d/%m/%Y"),
-      `Heures planifiées` = round(H_TOTAL, 1),
-      `dont service`      = round(H_SERVICE, 1),
-      Objectif            = format_CA(OBJECTIF, -1),
-      `CA / h à tenir`    = format_CA(CA_H_REQUIS, -1),
-      `Heures justifiées` = ifelse(is.na(H_SOUTENABLES), "—",
-                                   as.character(round(H_SOUTENABLES))),
-      `Écart`             = ifelse(is.na(ECART_H), "—",
-                                   paste0(ifelse(ECART_H >= 0, "+", ""),
-                                          round(ECART_H), " h")))
+      # Même raison qu'au-dessus : pas de %a, qui suivrait la locale serveur.
+      Jour                  = paste0(vecteur_jours[wday(DATE, week_start = 1)],
+                                     " ", format(DATE, "%d/%m/%Y")),
+      Couverts              = COUVERTS,
+      `Heures planifiées`   = round(H_TOTAL, 1),
+      `Heures habituelles`  = ifelse(is.na(H_MEDIANE), "—",
+                                     as.character(round(H_MEDIANE, 1))),
+      `Écart`               = ifelse(is.na(ECART_H), "—",
+                                     paste0(ifelse(ECART_H >= 0, "+", ""),
+                                            round(ECART_H, 1), " h")),
+      `CA attendu`          = format_CA(CA_ATTENDU, -1),
+      Objectif              = format_CA(OBJECTIF, -1),
+      `Écart CA`            = ifelse(is.na(ECART_CA), "—",
+                                     paste0(ifelse(ECART_CA >= 0, "+", ""),
+                                            format_CA(ECART_CA, -1))))
 }
 
-# Carte d'accueil : la tension de la semaine à venir, en un coup d'œil.
+# Carte d'accueil : les heures posées, et si elles couvrent l'objectif.
 acc_planning <- function(res, reference) {
-  if (is.null(res))
-    return(corps_vide("Pas de planning à venir."))
-  if (is.na(res$TENSION))
-    return(corps_accueil(paste0(round(res$H_TOTAL), " h"),
-                         paste0("planifiées sur ", res$jours, " jours"),
-                         COUL_NEUTRE,
-                         "Pas encore de référence de productivité"))
+  if (is.null(res)) return(corps_vide("Pas de planning à venir."))
 
-  couleur <- if (res$TENSION <= 0) COUL_VERT
-             else if (res$TENSION <= 15) COUL_AMBRE else COUL_ROUGE
+  detail <- paste0(
+    if (is.na(res$ECART_H_PCT)) "" else
+      paste0(if (res$ECART_H_PCT >= 0) "+" else "", round(res$ECART_H_PCT),
+             " % vs l'habitude · "),
+    res$COUVERTS, " couverts réservés")
+
+  if (is.na(res$ECART_CA))
+    return(corps_accueil(paste0(round(res$H_TOTAL), " h"),
+                         paste0("planifiées sur ", res$jours, " jours à venir"),
+                         COUL_NEUTRE, detail))
 
   corps_accueil(
-    paste0(if (res$TENSION > 0) "+" else "", round(res$TENSION), " %"),
-    paste0("de productivité à trouver sur ", res$jours, " jours à venir"),
-    couleur,
-    paste0(round(res$H_TOTAL), " h planifiées · ",
-           format_CA(res$CA_H_REQUIS, -1), " / h à tenir contre ",
-           format_CA(reference$valeur, -1), " d'habitude"))
+    paste0(round(res$H_TOTAL), " h"),
+    paste0("planifiées sur ", res$jours, " jours à venir"),
+    if (res$ECART_CA >= 0) COUL_VERT else COUL_ROUGE,
+    paste0(detail, " · ",
+           if (res$ECART_CA >= 0) "objectif couvert" else
+             paste0("manque ", format_CA(-res$ECART_CA, -1))))
 }
