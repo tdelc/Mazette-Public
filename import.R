@@ -672,13 +672,9 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
   mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "dimanche","Midi (<17h)", CD_HEURE)) %>% 
   ungroup() |> 
   mutate(
-    SECTEUR = case_when(
-      DEPARTEMENT == "Transfo alimentaire" ~ "Transformation alimentaire",
-      DEPARTEMENT == "Fabrik de boissons" ~ "Brasserie",
-      DEPARTEMENT == "Support" ~ "Support",
-      DEPARTEMENT == "Service" ~ "Service",
-      TRUE ~ "Secteur inconnu"
-    ),
+    # La correspondance vit dans R/planning.R : le planning parle le même
+    # vocabulaire de départements, et deux copies auraient fini par diverger.
+    SECTEUR = normalise_secteur(DEPARTEMENT),
     CRENEAU = case_when(
       SECTEUR != "Service" ~ "Journée",
       CD_HEURE == "Soir (>=17h)" ~ "Soir",

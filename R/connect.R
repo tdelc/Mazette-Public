@@ -14,6 +14,14 @@ TABLES_DASHBOARD <- c(
   "DB_PASSWORD"          # mots de passe valides par période
 )
 
+# Tables enregistrées si elles existent, mais dont l'absence n'empêche pas
+# l'import d'aboutir. C'est le sas par lequel une nouvelle source entre dans le
+# dashboard : le volet qui la consomme sait se taire tant qu'elle manque, et on
+# n'a pas à livrer le code et l'import dans le même mouvement.
+TABLES_OPTIONNELLES <- c(
+  "DB_HEURES_PLANNING"   # heures planifiées par jour x service (cf. R/planning.R)
+)
+
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
                                   envir = parent.frame()){
   if (!force_dl) {
@@ -65,10 +73,12 @@ connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,
       stop("L'import n'a pas produit ces tables attendues par le dashboard : ",
            paste(absents, collapse = ", "))
 
-    save(list = TABLES_DASHBOARD, envir = envir,
+    presentes <- c(TABLES_DASHBOARD,
+                   intersect(TABLES_OPTIONNELLES, ls(envir)))
+    save(list = presentes, envir = envir,
          file = file.path("outputs", drive_env_name),
          compress = "xz", compression_level = 9)
-    cli::cli_alert_info("{length(TABLES_DASHBOARD)} tables, {round(file.size(file.path('outputs', drive_env_name))/1024^2, 2)} Mo")
+    cli::cli_alert_info("{length(presentes)} tables, {round(file.size(file.path('outputs', drive_env_name))/1024^2, 2)} Mo")
     
     cli::cli_h2("Sauvegarder le rds sur drive")
     googledrive::drive_upload(file.path("outputs", drive_env_name),

@@ -138,6 +138,59 @@ ui_accueil <- function() {
   )
 }
 
+# Onglet "Planning" : les heures qu'on s'apprête à poser, face au CA qu'elles
+# devront produire. Seul volet tourné vers l'avant — d'où un onglet à part
+# plutôt qu'un ajout à « Maintenant », qui raconte ce qui s'est passé.
+ui_planning <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Planning",
+      width = 300,
+      sliderInput("plan_ref_semaines", "Semaines de référence",
+                  min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
+      sliderInput("plan_horizon", "Horizon (jours à venir)",
+                  min = 7, max = 42, value = 21, step = 7, ticks = FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("CA par heure à tenir"), " = objectif de la période divisé par",
+          " les heures planifiées.", tags$br(), tags$br(),
+          tags$b("Référence"), " : la productivité habituelle, médiane des",
+          " dernières semaines complètes.", tags$br(), tags$br(),
+          tags$b("Écart en heures"), " = heures posées moins celles que",
+          " l'objectif justifie au rythme habituel. Positif, c'est du temps",
+          " qui devra être mieux rentabilisé que d'ordinaire.", tags$br(), tags$br(),
+          tags$b("Sans coût du travail"), ", ce volet raisonne en productivité",
+          " et non en marge : il dit si un planning est tendu, pas s'il est",
+          " rentable en euros.")
+    ),
+    uiOutput("plan_alerte"),
+    uiOutput("plan_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Heures planifiées et productivité mesurée, par semaine"),
+      plotlyOutput("plan_semaines", height = "340px"),
+      div(class = "small text-muted",
+          "Les barres empilent les heures par secteur. La courbe ne porte que",
+          " sur les jours échus : une semaine en cours n'a pas encore produit",
+          " tout son CA. La zone grisée marque les semaines à venir.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Jours à venir : heures posées et heures justifiées"),
+      plotlyOutput("plan_avenir", height = "340px"),
+      div(class = "small text-muted",
+          "Hauteur : les heures planifiées. Couleur : la productivité à",
+          " trouver pour tenir l'objectif du jour. Trait noir : les heures que",
+          " cet objectif justifie au rythme habituel.")
+    ),
+    card(
+      full_screen = TRUE, height = "420px",
+      card_header("Détail jour par jour"),
+      DTOutput("plan_table")
+    )
+  )
+}
+
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
 ui_travail <- function() {

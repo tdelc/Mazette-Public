@@ -303,7 +303,7 @@ html{scroll-behavior:smooth}
       <p>
         Une application <strong>R&nbsp;/&nbsp;Shiny</strong> qui lit les fichiers Google&nbsp;Drive de la
         brasserie, les transforme en une douzaine de tables, les met en cache dans un
-        <code>.RData</code>, et les affiche en quatorze onglets derri&egrave;re un mot de passe qui
+        <code>.RData</code>, et les affiche en quinze onglets derri&egrave;re un mot de passe qui
         d&eacute;cide de ce que chacun voit.
       </p>
     </div>
@@ -352,7 +352,7 @@ R -e 'shiny::runApp()'</code></pre>
     <p class="eyebrow">Ce que voit l&rsquo;utilisateur</p>
     <h2 class="titre">Les onglets</h2>
     <p>
-      Quatorze onglets, d&eacute;clar&eacute;s une seule fois dans la table <code>ONGLETS</code> de
+      Quinze onglets, d&eacute;clar&eacute;s une seule fois dans la table <code>ONGLETS</code> de
       <code>R/acces.R</code>&nbsp;: cl&eacute;, titre, ic&ocirc;ne, et nom du constructeur d&rsquo;interface.
       La barre de navigation, les droits d&rsquo;acc&egrave;s et les cartes d&rsquo;accueil s&rsquo;y r&eacute;f&egrave;rent tous.
       <strong>Ajouter un onglet, c&rsquo;est ajouter une ligne.</strong>
@@ -373,6 +373,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
         <tr><td>Compta</td><td><code>tab_compta</code></td><td>Compte d&rsquo;exploitation et comptabilit&eacute; g&eacute;n&eacute;rale, d&eacute;riv&eacute;s de <code>DB_COMPTA</code>.</td></tr>
         <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
+        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures &agrave; venir confront&eacute;es au CA qu&rsquo;elles devront produire. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
         <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
       </tbody>
@@ -593,6 +594,29 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
       </tbody>
     </table></div>
 
+    <h4 data-profondeur="detail">Les tables optionnelles</h4>
+    <p data-profondeur="detail">
+      <code>TABLES_OPTIONNELLES</code>, dans le m&ecirc;me fichier, liste les tables
+      <strong>enregistr&eacute;es si elles existent</strong>, mais dont l&rsquo;absence n&rsquo;emp&ecirc;che pas
+      l&rsquo;import d&rsquo;aboutir. C&rsquo;est le sas par lequel une nouvelle source entre dans le
+      dashboard&nbsp;: le volet qui la consomme sait se taire tant qu&rsquo;elle manque, et on
+      n&rsquo;est pas oblig&eacute; de livrer le code et l&rsquo;import dans le m&ecirc;me mouvement.
+    </p>
+    <div class="tableau" data-profondeur="detail"><table>
+      <thead><tr><th>Table</th><th>Contrat</th><th>&Eacute;tat</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>DB_HEURES_PLANNING</code></td>
+          <td>Une ligne par <code>DATE</code> &times; <code>SERVICE</code>, avec
+              <code>HEURES</code>. <code>SERVICE</code> emploie le m&ecirc;me vocabulaire de
+              d&eacute;partements que <code>DB_HEURES</code> (&laquo;&nbsp;Transfo alimentaire&nbsp;&raquo;,
+              &laquo;&nbsp;Service&nbsp;&raquo;, &laquo;&nbsp;Support&nbsp;&raquo;&hellip;).</td>
+          <td><span class="pill att">&agrave; produire</span> L&rsquo;onglet Planning affiche un
+              bandeau explicatif tant que l&rsquo;import ne la fabrique pas.</td>
+        </tr>
+      </tbody>
+    </table></div>
+
     <div class="note" data-profondeur="detail">
       <span class="l">Pourquoi <code>DB_TICKET</code> est stock&eacute; en deux morceaux</span>
       <p>
@@ -644,7 +668,7 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
       <thead><tr><th>Profil</th><th>Onglets</th></tr></thead>
       <tbody>
         <tr><td><code>admin</code></td><td>Tout, compta et co&ucirc;t du personnel compris.</td></tr>
-        <tr><td><code>gestion</code></td><td>Tout l&rsquo;op&eacute;rationnel, sans la compta g&eacute;n&eacute;rale.</td></tr>
+        <tr><td><code>gestion</code></td><td>Tout l&rsquo;op&eacute;rationnel, Planning compris, sans la compta g&eacute;n&eacute;rale.</td></tr>
         <tr><td><code>equipe</code></td><td>L&rsquo;activit&eacute;, sans les co&ucirc;ts (ni compta, ni masse salariale).</td></tr>
         <tr><td><code>salle</code></td><td>Maintenant, F&ucirc;ts, Boissons, R&eacute;servations.</td></tr>
         <tr><td><code>brasserie</code></td><td>Maintenant, F&ucirc;ts, Boissons.</td></tr>
