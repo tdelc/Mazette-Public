@@ -141,50 +141,56 @@ ui_accueil <- function() {
 # Onglet "Planning" : les heures qu'on s'apprête à poser, face au CA qu'elles
 # devront produire. Seul volet tourné vers l'avant — d'où un onglet à part
 # plutôt qu'un ajout à « Maintenant », qui raconte ce qui s'est passé.
+#
+# Deux graphiques, une seule grammaire : la barre est ce qui est prévu, le
+# trait est la référence. Le premier ne parle qu'en heures, le second qu'en
+# euros. Aucun ne mélange les deux.
 ui_planning <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Planning",
       width = 300,
-      sliderInput("plan_ref_semaines", "Semaines de référence",
-                  min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
       sliderInput("plan_horizon", "Horizon (jours à venir)",
                   min = 7, max = 42, value = 21, step = 7, ticks = FALSE),
+      sliderInput("plan_ref_semaines", "Semaines de référence",
+                  min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
       hr(),
       div(class = "small text-muted",
-          tags$b("CA par heure à tenir"), " = objectif de la période divisé par",
-          " les heures planifiées.", tags$br(), tags$br(),
-          tags$b("Référence"), " : la productivité habituelle, médiane des",
-          " dernières semaines complètes.", tags$br(), tags$br(),
-          tags$b("Écart en heures"), " = heures posées moins celles que",
-          " l'objectif justifie au rythme habituel. Positif, c'est du temps",
-          " qui devra être mieux rentabilisé que d'ordinaire.", tags$br(), tags$br(),
-          tags$b("Sans coût du travail"), ", ce volet raisonne en productivité",
-          " et non en marge : il dit si un planning est tendu, pas s'il est",
-          " rentable en euros.")
+          tags$b("Heures habituelles"), " : la médiane des heures posées le",
+          " même jour de semaine, sur les semaines de référence. Un samedi se",
+          " compare à un samedi.", tags$br(), tags$br(),
+          tags$b("CA attendu"), " = heures planifiées × le CA par heure",
+          " habituel. C'est ce que ces heures rapportent d'ordinaire.",
+          tags$br(), tags$br(),
+          tags$b("Les couverts réservés"), " sont donnés en survol : ils",
+          " expliquent souvent pourquoi on met plus de monde, sans entrer",
+          " dans le calcul.", tags$br(), tags$br(),
+          tags$b("Sans coût du travail"), ", ce volet dit si un planning est",
+          " inhabituel et si l'objectif est couvert — pas s'il est rentable",
+          " en euros de marge.")
     ),
     uiOutput("plan_alerte"),
     uiOutput("plan_kpi"),
     card(
       full_screen = TRUE,
-      card_header("Heures planifiées et productivité mesurée, par semaine"),
-      plotlyOutput("plan_semaines", height = "340px"),
+      card_header("Combien d'heures, comparé à d'habitude ?"),
+      plotlyOutput("plan_heures", height = "330px"),
       div(class = "small text-muted",
-          "Les barres empilent les heures par secteur. La courbe ne porte que",
-          " sur les jours échus : une semaine en cours n'a pas encore produit",
-          " tout son CA. La zone grisée marque les semaines à venir.")
+          "Barre : les heures planifiées. Trait noir : ce qu'on met",
+          " habituellement ce jour-là. En ambre au-delà de +10 %.",
+          " Survolez pour les couverts déjà réservés.")
     ),
     card(
       full_screen = TRUE,
-      card_header("Jours à venir : heures posées et heures justifiées"),
-      plotlyOutput("plan_avenir", height = "340px"),
+      card_header("Est-ce que ces heures couvrent l'objectif ?"),
+      plotlyOutput("plan_rentabilite", height = "330px"),
       div(class = "small text-muted",
-          "Hauteur : les heures planifiées. Couleur : la productivité à",
-          " trouver pour tenir l'objectif du jour. Trait noir : les heures que",
-          " cet objectif justifie au rythme habituel.")
+          "Barre : le CA que ces heures rapportent au rythme habituel.",
+          " Trait noir : l'objectif du jour. Verte, la barre passe l'objectif ;",
+          " rouge, elle reste dessous.")
     ),
     card(
-      full_screen = TRUE, height = "420px",
+      full_screen = TRUE, height = "440px",
       card_header("Détail jour par jour"),
       DTOutput("plan_table")
     )
