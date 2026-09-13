@@ -437,8 +437,11 @@ ui_exploitation <- function() {
           "Tous les pourcentages sont rapportés au ", tags$b("chiffre",
           " d'affaires seul"), ", jamais aux produits totaux.")
     ),
-    uiOutput("expl_controle"),
-    uiOutput("expl_alerte_periode"),
+    # class = "zone-alerte" : sans elle, un uiOutput vide reste un div, et la
+    # grille bslib lui accorde quand même son gap — d'où une bande blanche
+    # quand il n'y a rien à signaler (cf. www/style.css).
+    uiOutput("expl_controle", class = "zone-alerte"),
+    uiOutput("expl_alerte_periode", class = "zone-alerte"),
     uiOutput("expl_kpi"),
     card(
       full_screen = TRUE,
@@ -494,15 +497,13 @@ ui_compta_generale <- function() {
           " rémunérations, 63 amortissements, 64 autres charges, 65/75",
           " financier.", tags$br(), tags$br(),
           tags$b("Soldes"), " : calculés en cumulant les postes qui les",
-          " précèdent, selon leur définition comptable."
+          " précèdent, selon leur définition comptable.")
     ),
     uiOutput("cg_kpi"),
     card(
       full_screen = TRUE,
       card_header(textOutput("cg_titre", inline = TRUE)),
-      DTOutput("cg_table"),
-      div(class = "small text-muted mt-1",
-          "Cliquez sur une ligne de poste pour en dérouler les comptes.")
+      DTOutput("cg_table")
     ),
     navset_card_tab(
       nav_panel(

@@ -1003,27 +1003,13 @@ server <- function(input, output, session) {
 
   output$cg_table <- renderDT({
     tbl <- cg_table_data()
-    # .POSTE ne s'affiche pas : elle sert au deroule au clic, plus bas.
-    cache <- which(names(tbl) == ".POSTE") - 1L
-    chiffres <- setdiff(2:(ncol(tbl) - 1) - 1L, cache)
-    datatable(tbl, rownames = FALSE, escape = FALSE, selection = "single",
+    datatable(tbl, rownames = FALSE, escape = FALSE, selection = "none",
               options = list(pageLength = 200, dom = "ft", scrollX = TRUE,
                              ordering = FALSE,
-                             columnDefs = list(
-                               list(visible = FALSE, targets = cache),
-                               list(className = "dt-right", targets = chiffres)),
+                             columnDefs = list(list(className = "dt-right",
+                                                    targets = 2:(ncol(tbl) - 1))),
                              language = list(search = "Filtrer :"))) %>%
       formatStyle("Compte", target = "row", fontWeight = styleEqual("", "bold"))
-  })
-
-  # Deroule d'un poste : un clic sur sa ligne suffit. Les lignes de solde et
-  # les lignes de compte deja deroulees portent un .POSTE vide, et ne
-  # declenchent donc rien.
-  cg_poste_choisi <- reactive({
-    i <- input$cg_table_rows_selected
-    if (length(i) != 1) return(NULL)
-    p <- cg_table_data()$.POSTE[i]
-    if (is.na(p) || !nzchar(p)) NULL else p
   })
 
   output$cg_soldes <- renderPlotly({

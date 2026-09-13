@@ -200,9 +200,6 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
 
   lignes <- cr %>%
     transmute(ORDRE_G, PERIODE, TYPE_LIGNE, COMPTE = "",
-              # .POSTE voyage jusqu'au tableau pour que le clic sur une ligne
-              # sache quel poste dérouler. Masqué à l'affichage.
-              .POSTE = if_else(TYPE_LIGNE == "solde", NA_character_, POSTE),
               Libellé = if_else(TYPE_LIGNE == "solde", POSTE, paste0("▸ ", POSTE)),
               VALEUR = if_else(TYPE_LIGNE == "solde", VALEUR, SENS_G * VALEUR))
 
@@ -212,8 +209,7 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
       group_by(PERIODE, ORDRE_G, POSTE, COMPTE, LIBELLE, SENS_G) %>%
       summarise(VALEUR = sum(VALEUR, na.rm = TRUE), .groups = "drop") %>%
       transmute(ORDRE_G = ORDRE_G + 0.1, PERIODE, TYPE_LIGNE = "compte",
-                COMPTE, .POSTE = NA_character_,
-                Libellé = paste0("     ", LIBELLE),
+                COMPTE, Libellé = paste0("     ", LIBELLE),
                 VALEUR = SENS_G * VALEUR)
     lignes <- bind_rows(lignes, d)
   }
@@ -229,7 +225,7 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
 
   lignes %>%
     mutate(P = etiquette_periode(PERIODE, unite)) %>%
-    group_by(ORDRE_G, Libellé, COMPTE, TYPE_LIGNE, .POSTE) %>%
+    group_by(ORDRE_G, Libellé, COMPTE, TYPE_LIGNE) %>%
     summarise(across(everything(), ~NULL), .groups = "drop") %>%
     left_join(
       lignes %>% mutate(P = etiquette_periode(PERIODE, unite), V = fmt(VALEUR)) %>%
@@ -238,10 +234,7 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
       by = c("ORDRE_G", "Libellé", "COMPTE")) %>%
     arrange(ORDRE_G) %>%
     select(-ORDRE_G, -TYPE_LIGNE) %>%
-    rename(Compte = COMPTE) %>%
-    # .POSTE en dernière colonne : le serveur la masque et s'en sert pour le
-    # déroulé au clic.
-    relocate(.POSTE, .after = last_col())
+    rename(Compte = COMPTE)
 }
 
 #' Évolution des soldes intermédiaires sur les périodes retenues.
