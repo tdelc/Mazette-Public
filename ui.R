@@ -200,121 +200,85 @@ ui_planning <- function() {
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
 ui_travail <- function() {
-  navset_card_tab(
-    id = "travail_tabs",
-    nav_panel(
-      title = "Suivi",
-      icon = icon("chart-line"),
-      layout_sidebar(
-        sidebar = sidebar(
-          title = "Période",
-          width = 290,
-          dateRangeInput("trav_periode", "Fenêtre analysée",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          radioButtons("trav_unite", "Granularité",
-                       c("Par semaine" = "semaine", "Par mois" = "mois"),
-                       selected = "mois"),
-          hr(),
-          div(class = "small text-muted",
-              tags$b("Heures de service"), " : directement liées à l'ouverture",
-              " d'un créneau.", tags$br(), tags$br(),
-              tags$b("Coûts indirects"), " : transfo, brasserie et support,",
-              " mutualisés sur la semaine puis répartis entre créneaux au",
-              " prorata du CA.", tags$br(), tags$br(),
-              tags$b("Marge après travail"), " = CA HTVA − coût de service −",
-              " coûts indirects. Reste à couvrir matières, loyer et énergie.",
-              tags$br(), tags$br(),
-              tags$b("Remarque"), " Les coûts indirects sont d'abord agrégés par 
-              semaine. L'analyse par mois de ces coûts peut donc légèrement 
-              différer de la somme par semaine.")
-        ),
-        uiOutput("trav_kpi"),
-        card(
-          full_screen = TRUE,
-          card_header("Décomposition du CA : marge et coûts du travail"),
-          plotlyOutput("trav_structure", height = "340px")
-        ),
-        card(
-          full_screen = TRUE, height = "350px",
-          card_header("Décomposition des heures de travail"),
-          DTOutput("trav_heures_decomp"),
-          div(class = "small text-muted",
-              "Cliquez sur un mois sur le graphique pour avoir la 
-              décomposition des heures.")
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("Productivité : heures de service et CA par heure"),
-          plotlyOutput("trav_productivite", height = "340px"),
-          div(class = "small text-muted",
-              "En pointillé : la productivité moyenne de la fenêtre.")
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("CA par créneau (midi / soir / Pizzwanze)"),
-          plotlyOutput("trav_ca_creneaux", height = "320px")
-        )
-      )
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Travail", width = 300,
+      # Même logique que la compta : la granularité d'abord, les périodes
+      # ensuite. Plus de semaine ici — la comptabilité à laquelle on se
+      # confronte est mensuelle.
+      radioButtons("trav_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectizeInput("trav_periodes", "Périodes à inclure", choices = NULL,
+                     multiple = TRUE,
+                     options = list(plugins = list("remove_button"),
+                                    placeholder = "Choisir une ou plusieurs périodes")),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Coût variable"), " : le service. Il suit l'ouverture — un",
+          " créneau de plus, des heures de plus.", tags$br(), tags$br(),
+          tags$b("Coût fixe"), " : tout le reste (transformation, brasserie,",
+          " support). Il ne suit pas l'ouverture d'un créneau ; « fixe » au",
+          " sens du pilotage, pas au sens comptable.", tags$br(), tags$br(),
+          tags$b("CA par heure"), " : rapporté aux seules heures de service.",
+          " Le rapporter au total mélangerait l'ouverture et la structure.",
+          tags$br(), tags$br(),
+          tags$b("Source"), " : les coûts viennent d'Horeko, la seule source",
+          " qui se ventile par secteur. Le total comptable est affiché à",
+          " côté comme point de contrôle — l'écart est normal, c'est sa",
+          " dérive qui compte.")
     ),
-    nav_panel(
-      title = "Créneaux",
-      icon = icon("table-cells"),
-      layout_sidebar(
-        sidebar = sidebar(
-          title = "Analyse par créneau",
-          width = 290,
-          dateRangeInput("cren_periode", "Fenêtre analysée",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          selectInput("cren_indicateur", "Indicateur de la heatmap",
-                      c("CA moyen par ouverture" = "CA_moyen",
-                        "CA par heure de service" = "CA_PAR_HEURE",
-                        "Coût du travail / CA"    = "RATIO_TOTAL",
-                        "Marge par ouverture"     = "MARGE_moyenne"),
-                      selected = "CA_PAR_HEURE"),
-          hr(),
-          div(class = "small text-muted",
-              "Chaque créneau est ramené à une ", tags$b("ouverture type"),
-              " pour comparer les jours à armes égales.", tags$br(), tags$br(),
-              "Un mardi soir avec vente de pizza est compté comme ",
-              tags$b("Pizzwanze"), ".")
-        ),
-        layout_columns(
-          col_widths = c(5, 7),
-          card(full_screen = TRUE,
-               card_header("Vue jour × créneau"),
-               plotlyOutput("cren_heatmap", height = "380px")),
-          card(full_screen = TRUE,
-               card_header("Productivité : CA vs heures de service"),
-               plotlyOutput("cren_nuage", height = "380px"),
-               div(class = "small text-muted",
-                   "Plus un créneau est haut à gauche, plus il est efficace. ",
-                   "La taille des points reflète le CA total."))
-        ),
-        layout_columns(
-          col_widths = c(6, 6),
-          card(full_screen = TRUE,
-               card_header("Classement par productivité horaire"),
-               plotlyOutput("cren_classement", height = "400px")),
-          card(full_screen = TRUE,
-               card_header("Décomposition du CA moyen par créneau"),
-               plotlyOutput("cren_decomposition", height = "400px"))
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("Détail par créneau"),
-          DTOutput("cren_table")
-        )
-      )
+    uiOutput("trav_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Heures posées et productivité"),
+      plotlyOutput("trav_productivite", height = "360px"),
+      div(class = "small text-muted",
+          "Les barres empilent les heures variables et fixes. La courbe donne",
+          " le CA par heure de service, en pointillé sa moyenne sur la",
+          " fenêtre. ", tags$b("Cliquez une barre"), " pour en détailler les",
+          " heures ci-dessous.")
+    ),
+    card(
+      full_screen = TRUE, height = "420px",
+      card_header(textOutput("trav_decomp_titre", inline = TRUE)),
+      DTOutput("trav_heures_decomp")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(
+        div(class = "d-flex flex-wrap gap-3 align-items-center justify-content-between",
+            span("Créneaux types"),
+            # Le sélecteur vit dans la carte : c'est lui qui pilote cette
+            # vue-là, et personne d'autre.
+            div(class = "flex-shrink-0",
+                selectInput("cren_indicateur", NULL,
+                            c("CA par heure de service" = "CA_PAR_HEURE",
+                              "CA moyen par ouverture"  = "CA_moyen",
+                              "Coût variable / CA"      = "RATIO_VARIABLE"),
+                            selected = "CA_PAR_HEURE", width = "260px")))),
+      plotlyOutput("cren_heatmap", height = "330px"),
+      div(class = "small text-muted",
+          "Chaque créneau est ramené à une ", tags$b("ouverture type"),
+          " pour comparer les jours à armes égales.")
+    ),
+    layout_columns(
+      col_widths = breakpoints(sm = 12, lg = 6),
+      card(full_screen = TRUE,
+           card_header("CA et heures par ouverture"),
+           plotlyOutput("cren_nuage", height = "330px")),
+      card(full_screen = TRUE,
+           card_header("Classement par productivité"),
+           plotlyOutput("cren_classement", height = "330px"))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail des créneaux"),
+      DTOutput("cren_table")
     )
   )
 }
 
-# Onglet "Réservations" : ce qui arrive, ce qui s'est passé, et ce que la
-# réservation apporte au chiffre d'affaires.
 ui_reservations <- function() {
   navset_card_tab(
     id = "resa_tabs",
@@ -471,23 +435,36 @@ ui_exploitation <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Période", width = 300,
-      selectInput("expl_periode", "Mois analysé", choices = NULL),
-      radioButtons("expl_unite", "Granularité de la série",
+      # La granularité vient EN PREMIER : elle vaut pour tout l'onglet, et
+      # c'est elle qui détermine la liste des périodes juste en dessous.
+      radioButtons("expl_unite", "Granularité",
                    c("Par mois" = "mois", "Par trimestre" = "trimestre",
                      "Par année" = "annee"), selected = "mois"),
+      selectInput("expl_periode", "Période analysée", choices = NULL),
       sliderInput("expl_nb", "Périodes affichées", min = 4, max = 36,
                   value = 12, step = 1, ticks = FALSE),
-      checkboxInput("expl_pct", "Tableau en % du CA", FALSE),
       hr(),
       div(class = "small text-muted",
-          tags$b("Marge d'exploitation"), " = produits − matières − rémunérations",
-          " − frais généraux − amortissements.", tags$br(), tags$br(),
-          "Les charges financières et exceptionnelles sont hors de ce champ :",
-          " elles interviennent après, dans l'onglet Comptabilité générale.",
+          "Tous les chiffres présentés ici le sont HTVA",
           tags$br(), tags$br(),
-          "Les ratios sont rapportés au chiffre d'affaires seul.")
+          tags$b("Marge avant amortissements"), tags$br(),
+          "= CA + autres produits − matières − rémunérations − 
+          frais généraux + résultat financier",
+          tags$br(), tags$br(),
+          "L'amortissement est écarté : c'est une écriture comptable.",
+          tags$br(), tags$br(),
+          "C'est l'EBITDA auquel on rend le résultat financier — dans les",
+          " termes du plan comptable, le ", tags$i("résultat avant impôts"),
+          " augmenté des amortissements.",
+          tags$br(), tags$br(),
+          "Tous les pourcentages sont rapportés au ", tags$b("chiffre",
+          " d'affaires seul"), ", jamais aux produits totaux.")
     ),
-    uiOutput("expl_controle"),
+    # class = "zone-alerte" : sans elle, un uiOutput vide reste un div, et la
+    # grille bslib lui accorde quand même son gap — d'où une bande blanche
+    # quand il n'y a rien à signaler (cf. www/style.css).
+    uiOutput("expl_controle", class = "zone-alerte"),
+    uiOutput("expl_alerte_periode", class = "zone-alerte"),
     uiOutput("expl_kpi"),
     card(
       full_screen = TRUE,
@@ -502,7 +479,15 @@ ui_exploitation <- function() {
     card(
       full_screen = TRUE,
       card_header("Détail par période"),
-      DTOutput("expl_table")
+      DTOutput("expl_table"),
+      div(class = "small text-muted mt-1",
+          "Ces quatre postes sont censés être stables d'une période à l'autre.",
+          " Une cellule colorée s'écarte de plus de deux écarts-types de sa",
+          " propre série : ", tags$span(style = "color:#5B7B5A;font-weight:600",
+                                        "vert"), " si l'écart est favorable,",
+          " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+          " s'il est défavorable. À vérifier en comptabilité avant d'y lire",
+          " un fait de gestion.")
     )
   )
 }
@@ -514,14 +499,22 @@ ui_compta_generale <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Périodes", width = 310,
-      selectizeInput("cg_periodes", "Mois à comparer", choices = NULL,
+      # Même logique que le compte d'exploitation : la granularité vient en
+      # premier, et la liste des périodes en dépend. Les comptes sont
+      # consolidés directement au niveau choisi.
+      radioButtons("cg_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectizeInput("cg_periodes", "Périodes à comparer", choices = NULL,
                      multiple = TRUE,
                      options = list(plugins = list("remove_button"),
-                                    placeholder = "Choisir un ou plusieurs mois")),
-      checkboxInput("cg_detail", "Dérouler les comptes", FALSE),
+                                    placeholder = "Choisir une ou plusieurs périodes")),
+      checkboxInput("cg_detail", "Dérouler tous les comptes", FALSE),
       checkboxInput("cg_pct", "En % du chiffre d'affaires", FALSE),
       hr(),
       div(class = "small text-muted",
+          "Tous les chiffres présentés ici le sont HTVA",
+          tags$br(), tags$br(),
           "Les comptes sont classés sur leur ", tags$b("numéro"), " : 70 ventes,",
           " 60 achats (609 variations de stock), 61 services et biens, 62",
           " rémunérations, 63 amortissements, 64 autres charges, 65/75",
@@ -801,6 +794,40 @@ ui_conso_boissons <- function() {
       full_screen = TRUE,
       card_header("Détail par boisson"),
       DTOutput("conso_table")
+    )
+  )
+}
+
+# Onglet "Nourriture"
+ui_nourriture <- function() {
+  navset_card_tab(
+    id = "nourriture_tabs",
+    nav_panel(
+      title = "Focaccias",
+      icon = icon("bread-slice"),
+      ui_focaccias()
+    ),
+    nav_panel(
+      title = "Pizzwanze",
+      icon = icon("pizza-slice"),
+      ui_pizzwanze()
+    )
+  )
+}
+
+# Onglet "Boisson"
+ui_boissons <- function() {
+  navset_card_tab(
+    id = "boissons_tabs",
+    nav_panel(
+      title = "Boissons",
+      icon = icon("bread-slice"),
+      ui_conso_boissons()
+    ),
+    nav_panel(
+      title = "Fûts",
+      icon = icon("boxes-stacked"),
+      ui_futs()
     )
   )
 }

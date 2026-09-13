@@ -610,7 +610,7 @@ server <- function(input, output, session) {
         Personnel = format_CA(COUT_TRAVAIL, -1),
         `Matières` = format_CA(COUT_MATIERE, -1),
         Total = format_CA(TOTAL, -1),
-        `Chiffre d'affaires` = format_CA(CA, -1),
+        # `Chiffre d'affaires` = format_CA(CA, -1),
         `% du CA` = format_pct(PCT_CA)))
     })
 
@@ -875,39 +875,75 @@ server <- function(input, output, session) {
     postes_exploitation(DB_COMPTA)
   })
 
-  expl_serie <- reactive({
-    p <- agrege_exploitation(expl_postes(), input$expl_unite %||% "mois")
+  # La granularite pilote tout l'onglet : la serie complete est agregee une
+  # fois, et la cascade comme le tableau y puisent.
+  expl_unite <- reactive(input$expl_unite %||% "mois")
+
+  expl_serie_complete <- reactive({
+    p <- agrege_exploitation(expl_postes(), expl_unite())
     req(nrow(p) > 0)
-    n <- as.integer(input$expl_nb %||% 12)
-    tail(p, n)
+    p
+  })
+
+  expl_serie <- reactive({
+    tail(expl_serie_complete(), as.integer(input$expl_nb %||% 12))
   })
 
   observe({
     req(ONGLETS_PRETS())
-    p <- expl_postes()
-    req(nrow(p) > 0)
+    p <- expl_serie_complete()
     dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
+    # Les libelles suivent la granularite : « T3 2026 » pour un trimestre,
+    # « 2026 » pour une annee.
     updateSelectInput(session, "expl_periode",
                       choices = setNames(as.character(dispo),
-                                         format(dispo, "%B %Y")),
+                                         etiquette_periode(dispo, expl_unite())),
                       selected = as.character(dispo[1]))
   })
 
   # La cascade porte sur la periode choisie ; les autres vues sur la serie.
   expl_une <- reactive({
-    p <- expl_postes()
-    req(nrow(p) > 0)
-    d <- if (is.null(input$expl_periode)) max(p$PERIODE) else as.Date(input$expl_periode)
+    p <- expl_serie_complete()
+    choisie <- suppressWarnings(as.Date(input$expl_periode %||% NA))
+    # Changer de granularite laisse un instant l'ancienne valeur dans le select
+    # — un debut de mois qui n'est pas un debut de trimestre. Plutot que de
+    # rendre une cascade vide, on retombe sur la periode la plus recente.
+    d <- if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
+      max(p$PERIODE) else choisie
     filter(p, PERIODE == d)
   })
 
-  output$expl_kpi      <- renderUI({ kpi_exploitation(expl_une()) })
-  output$expl_cascade  <- renderPlotly({ graph_cascade_exploitation(expl_une()) })
+  output$expl_kpi <- renderUI({ kpi_exploitation(expl_une(), expl_unite()) })
+  output$expl_cascade <- renderPlotly({
+    graph_cascade_exploitation(expl_une(), expl_unite()) })
   output$expl_structure <- renderPlotly({
-    graph_structure_exploitation(expl_serie(), input$expl_unite %||% "mois") })
+    graph_structure_exploitation(expl_serie(), expl_unite()) })
+  # La période choisie est-elle close et complète ? Un trimestre à un mois sur
+  # trois se lit sinon comme un effondrement.
+  output$expl_alerte_periode <- renderUI({
+    alerte_periode(etat_periode(expl_une(), expl_unite()))
+  })
+
   output$expl_table <- renderDT({
-    datatable_simple(table_exploitation(expl_serie(), input$expl_unite %||% "mois",
-                                        en_pct = isTRUE(input$expl_pct)))
+    tbl <- table_exploitation(expl_serie(), expl_unite())
+    # Les colonnes .f_* portent le repérage des écarts (cf. R/exploitation.R) :
+    # masquées, elles ne servent qu'à colorer la cellule voisine.
+    caches <- which(startsWith(names(tbl), ".f_")) - 1L
+    dt <- datatable(
+      tbl, rownames = FALSE,
+      options = list(dom = "t", paging = FALSE, ordering = FALSE,
+                     searching = FALSE, scrollX = TRUE,
+                     columnDefs = list(list(visible = FALSE, targets = caches))))
+    for (i in seq_len(nrow(COLONNES_SURVEILLEES))) {
+      dt <- formatStyle(
+        dt, COLONNES_SURVEILLEES$COLONNE[i],
+        valueColumns = COLONNES_SURVEILLEES$DRAPEAU[i],
+        backgroundColor = styleEqual(c(-1L, 1L),
+                                     c("rgba(192,57,43,0.18)",
+                                       "rgba(91,123,90,0.18)")),
+        fontWeight = styleEqual(c(-1L, 1L), c("600", "600")))
+    }
+    dt
   })
   output$expl_controle <- renderUI({
     ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
@@ -923,10 +959,19 @@ server <- function(input, output, session) {
   # Plus de reconstruction de plan : les comptes sont classés sur leur numéro
   # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
 
+  # La granularite pilote l'onglet entier : les comptes sont consolides au
+  # niveau choisi AVANT tout regroupement (cf. consolide_periode()).
+  cg_unite <- reactive(input$cg_unite %||% "mois")
+
+  cg_dispo <- reactive({
+    req(exists("DB_COMPTA"))
+    periodes_compta(DB_COMPTA, cg_unite())
+  })
+
   observe({
     req(ONGLETS_PRETS())
-    req(exists("DB_COMPTA"))
-    p <- periodes_compta(DB_COMPTA)
+    p <- cg_dispo()
+    req(nrow(p) > 0)
     updateSelectizeInput(session, "cg_periodes",
                          choices = setNames(as.character(p$PERIODE), p$LIBELLE),
                          selected = as.character(head(p$PERIODE, 3)))
@@ -934,21 +979,35 @@ server <- function(input, output, session) {
 
   cg_periodes <- reactive({
     req(input$cg_periodes)
-    sort(as.Date(input$cg_periodes))
+    # Changer de granularite laisse un instant des valeurs perimees dans le
+    # selecteur : on ne garde que celles qui existent au niveau courant.
+    valides <- intersect(as.Date(input$cg_periodes), cg_dispo()$PERIODE)
+    req(length(valides) > 0)
+    sort(as.Date(valides, origin = "1970-01-01"))
   })
 
   output$cg_titre <- renderText({
     n <- length(cg_periodes())
-    paste0("Compte de résultat — ", n, if (n > 1) " mois comparés" else " mois")
+    mot <- switch(cg_unite(), mois = "mois", trimestre = "trimestre",
+                  annee = "année")
+    pluriel <- if (n > 1 && mot != "mois") paste0(mot, "s") else mot
+    paste0("Compte de résultat — ", n, " ", pluriel,
+           if (n > 1) " comparés" else "")
   })
 
-  output$cg_kpi <- renderUI({ kpi_compta_generale(DB_COMPTA, cg_periodes()) })
+  output$cg_kpi <- renderUI({
+    kpi_compta_generale(DB_COMPTA, cg_periodes(), cg_unite()) })
+
+  cg_table_data <- reactive({
+    table_compte_resultat(DB_COMPTA, cg_periodes(),
+                          detail = isTRUE(input$cg_detail),
+                          en_pct = isTRUE(input$cg_pct),
+                          unite = cg_unite())
+  })
 
   output$cg_table <- renderDT({
-    tbl <- table_compte_resultat(DB_COMPTA, cg_periodes(),
-                                 detail = isTRUE(input$cg_detail),
-                                 en_pct = isTRUE(input$cg_pct))
-    datatable(tbl, rownames = FALSE, escape = FALSE, selection = 'single',
+    tbl <- cg_table_data()
+    datatable(tbl, rownames = FALSE, escape = FALSE, selection = "none",
               options = list(pageLength = 200, dom = "ft", scrollX = TRUE,
                              ordering = FALSE,
                              columnDefs = list(list(className = "dt-right",
@@ -957,7 +1016,8 @@ server <- function(input, output, session) {
       formatStyle("Compte", target = "row", fontWeight = styleEqual("", "bold"))
   })
 
-  output$cg_soldes <- renderPlotly({ graph_soldes(DB_COMPTA, cg_periodes()) })
+  output$cg_soldes <- renderPlotly({
+    graph_soldes(DB_COMPTA, cg_periodes(), cg_unite()) })
 
   # Contrôle : un compte que le plan ne sait pas ranger n'entre dans aucun total.
   output$cg_controle <- renderDT({
@@ -1271,120 +1331,129 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Travail" ####
+  # Les coûts affichés sont ceux d'Horeko : c'est la seule source qui se
+  # ventile par secteur. Le total comptable sert de point de contrôle, jamais
+  # de correcteur (cf. import.R et R/travail.R).
 
-  # Fenêtre par défaut : 12 mois glissants (une occurrence de chaque jour de
-  # semaine, comme dans l'étude de rentabilité)
-  debut_travail <- floor_date(date_veille, "month") %m-% months(12)
-  observe({
-    req(ONGLETS_PRETS())
-    updateDateRangeInput(session, "trav_periode",
-                         start = debut_travail, end = date_veille)
-    updateDateRangeInput(session, "cren_periode",
-                         start = debut_travail, end = date_veille)
+  trav_unite <- reactive(input$trav_unite %||% "mois")
+
+  # Toutes les périodes couvertes par les heures, à la granularité choisie.
+  trav_dispo <- reactive({
+    d <- debut_periode_travail(DB_COUTS_TRAVAIL$DATE, trav_unite())
+    sort(unique(d), decreasing = TRUE)
   })
 
-  fenetre_travail <- function(rng) {
-    if (is.null(rng) || any(is.na(rng))) c(debut_travail, date_veille) else rng
-  }
+  observe({
+    req(ONGLETS_PRETS())
+    p <- trav_dispo()
+    req(length(p) > 0)
+    updateSelectizeInput(session, "trav_periodes",
+                         choices = setNames(as.character(p),
+                                            etiquette_periode(p, trav_unite())),
+                         selected = as.character(head(p, 6)))
+  })
 
-  # --- Sous-onglet "Suivi" ---
+  # Bornes de la fenêtre : du début de la plus ancienne période retenue à la
+  # fin de la plus récente.
+  trav_bornes <- reactive({
+    req(input$trav_periodes)
+    p <- intersect(as.Date(input$trav_periodes), trav_dispo())
+    req(length(p) > 0)
+    p <- as.Date(p, origin = "1970-01-01")
+    fin <- switch(trav_unite(),
+                  mois      = ceiling_date(max(p), "month") - 1,
+                  trimestre = ceiling_date(max(p), "quarter") - 1,
+                  annee     = ceiling_date(max(p), "year") - 1)
+    list(d1 = min(p), d2 = fin, periodes = p)
+  })
+
   trav_base <- reactive({
-    p <- fenetre_travail(input$trav_periode)
-    base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2])
+    b <- trav_bornes()
+    base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, b$d1, b$d2)
+  })
+
+  trav_fixe <- reactive({
+    b <- trav_bornes()
+    heures_fixes(DB_COUTS_TRAVAIL, b$d1, b$d2)
+  })
+
+  # Total mensuel des rémunérations, tel que la comptabilité le publie.
+  trav_compta <- reactive({
+    if (!"COUT_COMPTA" %in% names(DB_COUTS_TRAVAIL)) return(NULL)
+    DB_COUTS_TRAVAIL %>%
+      distinct(ANNEE, MOIS, COUT_COMPTA) %>%
+      filter(!is.na(COUT_COMPTA)) %>%
+      transmute(MOIS_DEBUT = as.Date(sprintf("%04d-%02d-01", ANNEE, MOIS)),
+                COUT_COMPTA)
   })
 
   trav_agrege <- reactive({
-    agrege_travail(trav_base(), unite = input$trav_unite)
+    ag <- agrege_travail(trav_base(), trav_fixe(), trav_compta(), trav_unite())
+    # On ne garde que les périodes explicitement retenues : les bornes peuvent
+    # en couvrir d'autres si la sélection a des trous.
+    filter(ag, PERIODE %in% trav_bornes()$periodes)
   })
 
-  output$trav_kpi <- renderUI({
-    kpi_travail_tiles(trav_agrege())
-  })
-
-  output$trav_structure <- renderPlotly({
-    graph_structure_travail(trav_agrege(), unite = input$trav_unite,
-                            source = "trav_structure_graph")
-  })
+  output$trav_kpi <- renderUI({ kpi_travail(trav_agrege()) })
 
   output$trav_productivite <- renderPlotly({
-    graph_productivite_temps(trav_agrege(), unite = input$trav_unite)
+    graph_productivite_temps(trav_agrege(), trav_unite())
   })
 
-  output$trav_ca_creneaux <- renderPlotly({
-    graph_ca_creneaux_temps(
-      agrege_creneaux_periode(trav_base(), unite = input$trav_unite),
-      unite = input$trav_unite)
+  # Période détaillée : celle qu'on a cliquée, sinon la plus récente retenue.
+  trav_periode_detail <- reactive({
+    ev <- event_data("plotly_click", source = "trav_productivite_graph")
+    ag <- trav_agrege()
+    req(nrow(ag) > 0)
+
+    # Le graphe a un axe de LIBELLÉS, pas de dates : ev$x vaut « T3 2026 », et
+    # as.Date() lève dessus la même erreur « format standard non ambigu » que
+    # sur un select vide. On lit donc customdata, où chaque point porte sa
+    # période au format ISO (cf. graph_productivite_temps).
+    d <- if (is.null(ev) || is.null(ev$customdata)) NULL
+         else suppressWarnings(as.Date(as.character(ev$customdata)[1]))
+
+    # Un clic survit au changement de granularité : la période cliquée peut ne
+    # plus exister dans la série courante. On retombe alors sur la plus
+    # récente, plutôt que de vider le tableau.
+    if (is.null(d) || length(d) != 1 || is.na(d) || !d %in% ag$PERIODE)
+      d <- max(ag$PERIODE)
+    fin <- switch(trav_unite(),
+                  mois      = ceiling_date(d, "month") - 1,
+                  trimestre = ceiling_date(d, "quarter") - 1,
+                  annee     = ceiling_date(d, "year") - 1)
+    list(d1 = d, d2 = fin,
+         ca = ag$CA[ag$PERIODE == d][1])
   })
-  
-  # Mois / Semaine sélectionnée (clic sur une barre, défaut = veille)
-  selected_bar <- reactiveVal(NULL)
-  
-  observeEvent(event_data("plotly_click", source = "trav_structure_graph"), {
-    ev <- event_data("plotly_click", source = "trav_structure_graph")
-    if (!is.null(ev$x)) selected_bar(as.Date(ev$x))
+
+  output$trav_decomp_titre <- renderText({
+    paste0("Décomposition des heures — ",
+           etiquette_periode(trav_periode_detail()$d1, trav_unite()))
   })
-  
-  periode_trav <- reactive({
-    req(selected_bar())
-    j <- unique(selected_bar())
-    if (input$trav_unite == "semaine") {
-      d1 <- floor_date(j, "week")
-      d2 <- ceiling_date(j, "week")
-    }else{
-      d1 <- floor_date(j, "month")
-      d2 <- ceiling_date(j, "month")
-    }
-    return(c(d1,d2))
-  })
-  
+
   output$trav_heures_decomp <- renderDT({
-    print(periode_trav())
-    DB_COUTS_TRAVAIL |> 
-      filter(DATE >= periode_trav()[1], DATE <= periode_trav()[2]) |> 
-      group_by(SECTEUR,CRENEAU) |> 
-      summarise(
-        `Heures de travail` = round(sum(HEURES)),
-        `Coût du travail (compta)` = format_CA(sum(COUT_TRAVAIL,na.rm = T),-1),
-        `Coût du travail (horeko)` = format_CA(sum(COUT_TRAVAIL_HOREKO,na.rm = T),-1),
-        `∑ coûts du travail (compta)` = format_CA(mean(COUT_COMPTA,na.rm = T),-1), 
-        `∑ coûts du travail (horeko)` = format_CA(mean(COUT_HOREKO,na.rm = T),-1)) |> 
-      datatable(rownames = FALSE, escape = FALSE,
-                options = list(dom = "t"))
+    p <- trav_periode_detail()
+    datatable_simple(table_decomposition_travail(DB_COUTS_TRAVAIL, p$d1, p$d2,
+                                                 ca_periode = p$ca))
   })
-  
 
-  # --- Sous-onglet "Créneaux" ---
-  cren_stats <- reactive({
-    p <- fenetre_travail(input$cren_periode)
-    stats_creneaux(base_travail(TICKETS_HEURES, DB_COUTS_TRAVAIL, p[1], p[2]))
-  })
+  # --- Créneaux types, sur la même fenêtre
+  cren_stats <- reactive({ stats_creneaux(trav_base()) })
 
   output$cren_heatmap <- renderPlotly({
-    graph_heatmap_creneaux(cren_stats(), var = input$cren_indicateur)
+    graph_heatmap_creneaux(cren_stats(),
+                           var = input$cren_indicateur %||% "CA_PAR_HEURE")
   })
-
-  output$cren_nuage <- renderPlotly({
-    graph_nuage_creneaux(cren_stats())
-  })
-
-  output$cren_classement <- renderPlotly({
-    graph_productivite_creneaux(cren_stats())
-  })
-
-  output$cren_decomposition <- renderPlotly({
-    graph_decomposition_creneaux(cren_stats())
-  })
-
-  output$cren_table <- renderDT({
-    datatable_simple(table_creneaux(cren_stats()))
-  })
+  output$cren_nuage <- renderPlotly({ graph_nuage_creneaux(cren_stats()) })
+  output$cren_classement <- renderPlotly({ graph_productivite_creneaux(cren_stats()) })
+  output$cren_table <- renderDT({ datatable_simple(table_creneaux(cren_stats())) })
 
   #### Volet "Boisson" — consommation ####
   
   observe({
     req(ONGLETS_PRETS())
     updateSelectInput(session,"conso_categorie",
-                      choices=c("Bières","Softs","Alcools & Vins"))
+                      choices=c("Bières","Softs","Alcools & Vins", "Boissons chaudes"))
   })
     
   REF_BOISSONS <- reactive({

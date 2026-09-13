@@ -1,33 +1,7 @@
 ##### Tuiles KPI #####
 
-kpi_travail_tiles <- function(ag) {
-  ca    <- sum(ag$CA, na.rm = TRUE)
-  hs    <- sum(ag$H_SERVICE, na.rm = TRUE)
-  ht    <- sum(ag$H_TOTAL, na.rm = TRUE)
-  cs    <- sum(ag$COUT_SERVICE, na.rm = TRUE)
-  ct    <- sum(ag$COUT_TOTAL, na.rm = TRUE)
-  marge <- ca - ct
-  cah   <- if (hs > 0) ca / hs else NA_real_
-  
-  div(
-    class = "kpi-grid",
-    kpi_tile(if (is.na(cah)) "—" else format_CA(cah, -1), "CA par heure de service",
-             couleur_seuil_haut(cah, 90, 70), "gauge-high",
-             sous_titre = paste0(format(round(hs)), " h de service")),
-    kpi_tile(format(round(ht)), "Heures totales", "#8d7b68", "clock",
-             sous_titre = paste0(round(ratio_pct(hs, ht)), " % en service")),
-    kpi_tile(format_CA(cs, -1), "Coût de service", COUL_TRAVAIL, "person-running",
-             sous_titre = format_pct(ratio_pct(cs, ca))),
-    kpi_tile(format_CA(ct - cs, -1), "Coûts indirects", "#8d7b68", "people-roof",
-             sous_titre = format_pct(ratio_pct(ct - cs, ca))),
-    kpi_tile(format_pct(ratio_pct(ct, ca)), "Coût du travail / CA",
-             couleur_seuil(ratio_pct(ct, ca), 35, 45), "scale-balanced",
-             sous_titre = format_CA(ct, -1)),
-    kpi_tile(format_CA(marge, -1), "Marge après travail",
-             if (marge >= 0) COUL_VERT else COUL_ROUGE, "piggy-bank",
-             sous_titre = format_pct(ratio_pct(marge, ca)))
-  )
-}
+# Les tuiles du volet Travail vivent désormais dans R/travail.R
+# (kpi_travail), avec le reste du volet.
 
 ##### Tuiles KPI #####
 

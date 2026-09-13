@@ -7,6 +7,10 @@ from_product_to_boisson <- function(DB){
              PRODUIT %in% c("Pépin blanc verre",
                             "Pépin rouge verre",
                             "Hurluberlu rouge verre") ~ 12.5,
+             # CATEGORIE == "BOISSONS CHAUDES" & 
+               (str_detect(PRODUIT,"Café") | str_detect(PRODUIT,"Capuccino")
+                | str_detect(PRODUIT,"[Ll]atte") | str_detect(PRODUIT,"Espresso"))
+                ~ 4,
              PRODUIT %in% c("Cidre Rhuys","Kefir") ~ 25,
              PRODUIT %in% c("Rhum Brussels") ~ 3,
              str_detect(PRODUIT,"1L") ~ 100,

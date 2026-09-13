@@ -48,13 +48,16 @@ comparaison_periodes <- function(db_kpi, db_obj, db_compta = NULL,
   if (!is.null(db_compta) && nrow(db_compta) && unite != "semaine") {
     g <- agrege_exploitation(postes_exploitation(db_compta),
                              if (unite == "annee") "annee" else "mois") %>%
-      select(PERIODE, MATIERES, REMUNERATION, GENERAUX, AMORTISSEMENT, MARGE,
-             PCT_MATIERES, PCT_TRAVAIL, PCT_PRIME, PCT_GENERAUX, PCT_MARGE)
+      # MARGE_AA, la marge de gestion (sans amortissement, avec le financier) :
+      # c'est elle qui raconte les dynamiques de gestion. Le résultat
+      # d'exploitation comptable ne sert plus qu'à la comptabilité générale.
+      select(PERIODE, MATIERES, REMUNERATION, GENERAUX, FINANCIER, MARGE_AA,
+             PCT_MATIERES, PCT_TRAVAIL, PCT_PRIME, PCT_GENERAUX, PCT_MARGE_AA)
     res <- left_join(res, g, by = "PERIODE")
   }
-  for (col in c("MATIERES", "REMUNERATION", "GENERAUX", "AMORTISSEMENT",
-                "MARGE", "PCT_MATIERES", "PCT_TRAVAIL", "PCT_PRIME",
-                "PCT_GENERAUX", "PCT_MARGE"))
+  for (col in c("MATIERES", "REMUNERATION", "GENERAUX", "FINANCIER",
+                "MARGE_AA", "PCT_MATIERES", "PCT_TRAVAIL", "PCT_PRIME",
+                "PCT_GENERAUX", "PCT_MARGE_AA"))
     if (!col %in% names(res)) res[[col]] <- NA_real_
 
   if (!is.null(periodes))
@@ -94,8 +97,8 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
     ligne("Boisson / nourriture", ifelse(is.na(comp$PCT_BOIS), NA,
             paste0(comp$PCT_BOIS, " % / ", 100 - comp$PCT_BOIS, " %"))),
     ligne("Week-end", ifelse(is.na(comp$PCT_WE), NA, paste0(comp$PCT_WE, " % du CA"))),
-    ligne("Marge d'exploitation", ifelse(is.na(comp$MARGE), NA,
-            paste0(format_CA(comp$MARGE, -1), " — ", format_pct(comp$PCT_MARGE)))),
+    ligne("Marge av. amort.", ifelse(is.na(comp$MARGE_AA), NA,
+            paste0(format_CA(comp$MARGE_AA, -1), " — ", format_pct(comp$PCT_MARGE_AA)))),
     ligne("Prime cost", ifelse(is.na(comp$PCT_PRIME), NA, format_pct(comp$PCT_PRIME))),
     "<extra></extra>")
 
@@ -106,14 +109,14 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
              cliponaxis = FALSE, hovertemplate = hover)
 
   # La marge n'apparaît que si la comptabilité couvre les périodes comparées.
-  if (any(!is.na(comp$MARGE))) {
+  if (any(!is.na(comp$MARGE_AA))) {
     g <- g %>%
-      add_trace(x = ordre, y = comp$MARGE, name = "Marge d'exploitation",
+      add_trace(x = ordre, y = comp$MARGE_AA, name = "Marge avant amortissements",
                 type = "scatter", mode = "lines+markers", yaxis = "y2",
                 line = list(color = COUL_BRUN, width = 2, dash = "dot"),
                 marker = list(size = 9,
-                              color = ifelse(comp$MARGE >= 0, COUL_VERT, COUL_ROUGE)),
-                hovertemplate = paste0("Marge : ", format_CA(comp$MARGE, -1),
+                              color = ifelse(comp$MARGE_AA >= 0, COUL_VERT, COUL_ROUGE)),
+                hovertemplate = paste0("Marge : ", format_CA(comp$MARGE_AA, -1),
                                        "<extra></extra>")) %>%
       layout(yaxis2 = list(overlaying = "y", side = "right",
                            title = "Marge (€)", zeroline = TRUE,
@@ -153,14 +156,14 @@ table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee"),
       Matières     = format_CA(MATIERES, -1),
       `Rémunér.`   = format_CA(REMUNERATION, -1),
       `Frais gén.` = format_CA(GENERAUX, -1),
-      Marge        = format_CA(MARGE, -1),
-      `Marge %`    = format_pct(PCT_MARGE),
+      `Marge a.a.` = format_CA(MARGE_AA, -1),
+      `Marge %`    = format_pct(PCT_MARGE_AA),
       `Food %`     = format_pct(PCT_MATIERES),
       `Work %`     = format_pct(PCT_TRAVAIL),
       `Prime %`    = format_pct(PCT_PRIME))
 
-  if (all(is.na(comp$MARGE)))
-    res <- select(res, -Matières, -`Rémunér.`, -`Frais gén.`, -Marge,
+  if (all(is.na(comp$MARGE_AA)))
+    res <- select(res, -Matières, -`Rémunér.`, -`Frais gén.`, -`Marge a.a.`,
                   -`Marge %`, -`Food %`, -`Work %`, -`Prime %`)
   res
 }
@@ -189,7 +192,7 @@ tuiles_ecart_comparaison <- function(comp, unite = "mois") {
     tuile("CA par jour", a$CA_JOUR, b$CA_JOUR, icone = "calendar-day"),
     tuile("Atteinte de l'objectif", a$PCT_OBJ, b$PCT_OBJ,
           fmt = function(x) format_pct(x), icone = "bullseye"),
-    tuile("Marge d'exploitation", a$MARGE, b$MARGE, icone = "piggy-bank"),
+    tuile("Marge av. amort.", a$MARGE_AA, b$MARGE_AA, icone = "piggy-bank"),
     # Un prime cost qui baisse est une bonne nouvelle : le sens s'inverse.
     tuile("Prime cost", a$PCT_PRIME, b$PCT_PRIME,
           fmt = function(x) format_pct(x), sens_positif = FALSE,

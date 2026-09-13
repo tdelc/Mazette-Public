@@ -66,13 +66,19 @@ IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
 # OLD") rendrait le préfixe ambigu et renverrait NULL, sans un mot.
 IMPORT_PASS          <- DB_sheets[[SHEET_PASS]]
 
-# Import des heures (issu du rapport pour l'AG)
+# Import des heures
 
 cli::cli_h3("Drive Heures")
 
 drive_heures <- drive_download(drive_get(id =get_path("ID_DRIVE_HEURES")),
                                 overwrite = TRUE)
-IMPORT_HEURES <- read_excel(drive_heures$local_path,sheet = "Rapport",skip = 1)
+
+sheets <- excel_sheets(path = drive_heures$local_path)
+sheets_heures <- sheets[str_detect(sheets,"[0-9]+")]
+
+IMPORT_HEURES <- sheets_heures |> map_df(~{
+  read_excel(drive_heures$local_path,sheet = .x,skip = 1)
+})
 IMPORT_COUT <- read_excel(drive_heures$local_path,sheet = "Cout")
 
 # Import des matières premières (old issu de la compta 2022 à juin 2026)
@@ -409,8 +415,8 @@ DB_HEURES <- IMPORT_HEURES %>%
          HEURE_DEB,HEURE_FIN,debut_h,fin_h,HEURES,HEURES_PAUSE) %>%
   pivot_longer(cols = c(HEURE_MIDI,HEURE_SOIR), names_to = "CD_HEURE",values_to = "NB_HEURES") %>% 
   group_by(DATE,CONTRAT,DEPARTEMENT,CD_HEURE) %>% 
-  summarise(NB_HEURES = sum(NB_HEURES))
-
+  summarise(NB_HEURES = sum(NB_HEURES)) |> 
+  ungroup()
 
 colnames(IMPORT_COUT) <- c("CONTRAT","COUT_HEURE")
 
@@ -715,9 +721,24 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
     .groups = "drop"
   )
 
-# Lorsque la compte officielle est sortie, remplacer les coûts par les coûts
-# réels, histoire d'avoir une cohérence entre DB
-
+# Total mensuel des rémunérations, tel que la comptabilité le publie.
+#
+# On le rattache à DB_COUTS_TRAVAIL pour permettre la CONFRONTATION entre les
+# deux sources — Horeko d'un côté, comptabilité de l'autre — mais on ne s'en
+# sert plus pour corriger les coûts par secteur.
+#
+# La version précédente redressait chaque ligne par une règle de trois,
+# COUT_TRAVAIL * COUT_COMPTA / COUT_HOREKO, pour que le total Horeko retombe
+# sur le total comptable. C'était faux : cela suppose que l'écart entre les
+# deux sources se répartit proportionnellement aux heures de chaque secteur.
+# Or l'écart vient surtout de ce que la comptabilité contient (pécules,
+# provisions, charges patronales, personnel non pointé) et qui n'a aucune
+# raison de suivre les heures pointées. La règle de trois déplaçait donc du
+# coût d'un secteur vers un autre, sans fondement.
+#
+# COUT_TRAVAIL reste donc l'estimation Horeko, la seule qui se ventile par
+# secteur. COUT_COMPTA et COUT_HOREKO restent disponibles côte à côte, pour
+# que l'écran puisse afficher l'écart plutôt que de le masquer.
 DB_HEURES_COMPTA <- DB_COMPTA |> 
   filter(TYPE == "compte", CATEGORIE == "REMUNERATION") |> 
   group_by(ANNEE,MOIS) |> 
@@ -728,11 +749,5 @@ DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |>
   left_join(DB_HEURES_COMPTA) |> 
   group_by(ANNEE,MOIS) |> 
   mutate(COUT_HOREKO = sum(COUT_TRAVAIL,na.rm=TRUE)) |> 
-  ungroup() |> 
-  mutate(
-    COUT_TRAVAIL_HOREKO = COUT_TRAVAIL,
-    COUT_TRAVAIL = if_else(!is.na(COUT_COMPTA),
-                           COUT_TRAVAIL * COUT_COMPTA / COUT_HOREKO,
-                           COUT_TRAVAIL)
-  )
+  ungroup()
 
