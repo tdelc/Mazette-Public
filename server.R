@@ -1365,7 +1365,7 @@ server <- function(input, output, session) {
   observe({
     req(ONGLETS_PRETS())
     updateSelectInput(session,"conso_categorie",
-                      choices=c("Bières","Softs","Alcools & Vins"))
+                      choices=c("Bières","Softs","Alcools & Vins", "Boissons chaudes"))
   })
     
   REF_BOISSONS <- reactive({
