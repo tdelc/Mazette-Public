@@ -193,6 +193,10 @@ server <- function(input, output, session) {
   output$acc_compta <- renderUI({
     acc_compta(if (exists("DB_COMPTA")) DB_COMPTA else NULL)
   })
+  output$acc_planning <- renderUI({
+    if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
+    acc_planning(PLAN_RESUME(), PLAN_REFERENCE())
+  })
 
   # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
   # Bouton et onglet cible viennent tous deux de CARTES_ACCUEIL (R/acces.R) :
@@ -1242,6 +1246,90 @@ server <- function(input, output, session) {
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
   
+  #### Volet "Planning" ####
+  # DB_HEURES_PLANNING est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
+  # R/connect.R) : tant que l'import ne la produit pas, le volet doit le dire
+  # plutôt que planter. Tout part donc de ce reactive, qui vaut NULL en son
+  # absence, et chaque sortie en dessous sait traiter le NULL.
+  PLANNING_BRUT <- reactive({
+    p <- if (exists("DB_HEURES_PLANNING")) DB_HEURES_PLANNING else NULL
+    if (planning_valide(p)) p else NULL
+  })
+
+  PLAN_JOUR <- reactive({
+    p <- PLANNING_BRUT()
+    if (is.null(p)) return(NULL)
+    # L'horizon coupe la projection, pas l'historique : les médianes et la
+    # productivité de référence ont besoin de tout le passé disponible.
+    horizon <- date_veille + days(req(input$plan_horizon))
+    planning_jour(p %>% filter(as.Date(DATE) <= horizon),
+                  UPD_KPI_SIMPLE(), date_veille)
+  })
+
+  PLAN_HABITUEL <- reactive({
+    heures_habituelles(PLAN_JOUR(), DB_COUTS_TRAVAIL,
+                       n_semaines = req(input$plan_ref_semaines))
+  })
+
+  PLAN_REFERENCE <- reactive({
+    reference_productivite(PLAN_JOUR(), DB_COUTS_TRAVAIL, UPD_KPI_SIMPLE(),
+                           n_semaines = req(input$plan_ref_semaines))
+  })
+
+  PLAN_PROJECTION <- reactive({
+    projection_planning(PLAN_JOUR(), UPD_OBJECTIFS(), PLAN_REFERENCE(),
+                        PLAN_HABITUEL(), RESA())
+  })
+
+  PLAN_RESUME <- reactive({
+    resume_projection(PLAN_PROJECTION(), PLAN_REFERENCE())
+  })
+
+  # Deux messages distincts : pas de table du tout, ou une table sans passé à
+  # laquelle se comparer. Les confondre enverrait chercher le mauvais problème.
+  output$plan_alerte <- renderUI({
+    if (is.null(PLANNING_BRUT()))
+      return(bandeau_alerte(
+        TRUE,
+        paste0("La table DB_HEURES_PLANNING n'est pas encore produite par ",
+               "l'import. Ce volet s'allumera dès qu'elle le sera : une ligne ",
+               "par jour et par service, avec les colonnes DATE, SERVICE et ",
+               "HEURES."),
+        titre = "Pas encore de planning", couleur = COUL_NEUTRE,
+        icone = "circle-info"))
+
+    hab <- PLAN_HABITUEL()
+    bandeau_alerte(
+      identical(hab$source, "heures réelles"),
+      paste0("Le planning n'a pas encore assez de semaines écoulées pour ",
+             "servir de repère à lui-même. Les heures habituelles et le CA ",
+             "par heure viennent donc des heures RÉELLEMENT travaillées (",
+             hab$libelle, ") — on ne travaille jamais exactement ce qu'on a ",
+             "planifié, l'ordre de grandeur reste bon mais la comparaison ",
+             "n'est pas exacte."),
+      titre = "Repère de repli", couleur = COUL_AMBRE, icone = "circle-info")
+  })
+
+  output$plan_kpi <- renderUI({
+    req(PLANNING_BRUT())
+    kpi_planning_tiles(PLAN_RESUME(), PLAN_REFERENCE(), PLAN_HABITUEL())
+  })
+
+  output$plan_heures <- renderPlotly({
+    req(PLANNING_BRUT())
+    graph_planning_heures(PLAN_PROJECTION(), PLAN_HABITUEL())
+  })
+
+  output$plan_rentabilite <- renderPlotly({
+    req(PLANNING_BRUT())
+    graph_planning_rentabilite(PLAN_PROJECTION(), PLAN_REFERENCE())
+  })
+
+  output$plan_table <- renderDT({
+    req(PLANNING_BRUT())
+    datatable_simple(table_planning_avenir(PLAN_PROJECTION()))
+  })
+
   #### Volet "Travail" ####
   # Les coûts affichés sont ceux d'Horeko : c'est la seule source qui se
   # ventile par secteur. Le total comptable sert de point de contrôle, jamais
