@@ -195,7 +195,7 @@ server <- function(input, output, session) {
   })
   output$acc_planning <- renderUI({
     if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
-    acc_planning(PLAN_RESUME(), PLAN_REFERENCE())
+    acc_planning(PLAN_RESUME())
   })
 
   # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
@@ -1271,18 +1271,20 @@ server <- function(input, output, session) {
                        n_semaines = req(input$plan_ref_semaines))
   })
 
-  PLAN_REFERENCE <- reactive({
-    reference_productivite(PLAN_JOUR(), DB_COUTS_TRAVAIL, UPD_KPI_SIMPLE(),
-                           n_semaines = req(input$plan_ref_semaines))
+  # Le CA habituel de chaque jour de semaine, sur les mêmes semaines de
+  # référence que les heures : c'est lui qu'on confronte à l'objectif.
+  PLAN_CA_HABITUEL <- reactive({
+    ca_habituel(UPD_KPI_SIMPLE(), date_veille,
+                n_semaines = req(input$plan_ref_semaines))
   })
 
   PLAN_PROJECTION <- reactive({
-    projection_planning(PLAN_JOUR(), UPD_OBJECTIFS(), PLAN_REFERENCE(),
-                        PLAN_HABITUEL(), RESA())
+    projection_planning(PLAN_JOUR(), UPD_OBJECTIFS(), PLAN_HABITUEL(),
+                        PLAN_CA_HABITUEL(), RESA())
   })
 
   PLAN_RESUME <- reactive({
-    resume_projection(PLAN_PROJECTION(), PLAN_REFERENCE())
+    resume_projection(PLAN_PROJECTION())
   })
 
   # Deux messages distincts : pas de table du tout, ou une table sans passé à
@@ -1302,8 +1304,8 @@ server <- function(input, output, session) {
     bandeau_alerte(
       identical(hab$source, "heures réelles"),
       paste0("Le planning n'a pas encore assez de semaines écoulées pour ",
-             "servir de repère à lui-même. Les heures habituelles et le CA ",
-             "par heure viennent donc des heures RÉELLEMENT travaillées (",
+             "servir de repère à lui-même. Les heures habituelles viennent ",
+             "donc des heures RÉELLEMENT travaillées (",
              hab$libelle, ") — on ne travaille jamais exactement ce qu'on a ",
              "planifié, l'ordre de grandeur reste bon mais la comparaison ",
              "n'est pas exacte."),
@@ -1312,7 +1314,7 @@ server <- function(input, output, session) {
 
   output$plan_kpi <- renderUI({
     req(PLANNING_BRUT())
-    kpi_planning_tiles(PLAN_RESUME(), PLAN_REFERENCE(), PLAN_HABITUEL())
+    kpi_planning_tiles(PLAN_RESUME(), PLAN_HABITUEL(), PLAN_CA_HABITUEL())
   })
 
   output$plan_heures <- renderPlotly({
@@ -1322,7 +1324,7 @@ server <- function(input, output, session) {
 
   output$plan_rentabilite <- renderPlotly({
     req(PLANNING_BRUT())
-    graph_planning_rentabilite(PLAN_PROJECTION(), PLAN_REFERENCE())
+    graph_planning_rentabilite(PLAN_PROJECTION())
   })
 
   output$plan_table <- renderDT({

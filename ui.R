@@ -159,9 +159,9 @@ ui_planning <- function() {
           tags$b("Heures habituelles"), " : la médiane des heures posées le",
           " même jour de semaine, sur les semaines de référence. Un samedi se",
           " compare à un samedi.", tags$br(), tags$br(),
-          tags$b("CA attendu"), " = heures planifiées × le CA par heure",
-          " habituel. C'est ce que ces heures rapportent d'ordinaire.",
-          tags$br(), tags$br(),
+          tags$b("CA habituel"), " : la médiane du chiffre d'affaires du même",
+          " jour de semaine, sur les mêmes semaines de référence. Un jeudi se",
+          " compare à un jeudi.", tags$br(), tags$br(),
           tags$b("Les couverts réservés"), " sont donnés en survol : ils",
           " expliquent souvent pourquoi on met plus de monde, sans entrer",
           " dans le calcul.", tags$br(), tags$br(),
@@ -182,12 +182,13 @@ ui_planning <- function() {
     ),
     card(
       full_screen = TRUE,
-      card_header("Est-ce que ces heures couvrent l'objectif ?"),
+      card_header("L'objectif est-il à portée, vu ce que ce jour rapporte ?"),
       plotlyOutput("plan_rentabilite", height = "330px"),
       div(class = "small text-muted",
-          "Barre : le CA que ces heures rapportent au rythme habituel.",
+          "Barre : le CA que ce jour de semaine rapporte habituellement.",
           " Trait noir : l'objectif du jour. Verte, la barre passe l'objectif ;",
-          " rouge, elle reste dessous.")
+          " rouge, elle reste dessous. Survolez pour les heures posées et le",
+          " CA par heure que l'objectif imposerait.")
     ),
     card(
       full_screen = TRUE, height = "440px",
