@@ -1317,8 +1317,19 @@ server <- function(input, output, session) {
     ev <- event_data("plotly_click", source = "trav_productivite_graph")
     ag <- trav_agrege()
     req(nrow(ag) > 0)
-    d <- if (!is.null(ev$x)) as.Date(ev$x) else max(ag$PERIODE)
-    if (!d %in% ag$PERIODE) d <- max(ag$PERIODE)
+
+    # Le graphe a un axe de LIBELLÉS, pas de dates : ev$x vaut « T3 2026 », et
+    # as.Date() lève dessus la même erreur « format standard non ambigu » que
+    # sur un select vide. On lit donc customdata, où chaque point porte sa
+    # période au format ISO (cf. graph_productivite_temps).
+    d <- if (is.null(ev) || is.null(ev$customdata)) NULL
+         else suppressWarnings(as.Date(as.character(ev$customdata)[1]))
+
+    # Un clic survit au changement de granularité : la période cliquée peut ne
+    # plus exister dans la série courante. On retombe alors sur la plus
+    # récente, plutôt que de vider le tableau.
+    if (is.null(d) || length(d) != 1 || is.na(d) || !d %in% ag$PERIODE)
+      d <- max(ag$PERIODE)
     fin <- switch(trav_unite(),
                   mois      = ceiling_date(d, "month") - 1,
                   trimestre = ceiling_date(d, "quarter") - 1,

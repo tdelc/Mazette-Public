@@ -71,10 +71,10 @@ CARTES_ACCUEIL <- tibble::tribble(
   ~CLE,               ~TITRE,          ~ICONE,            ~SORTIE,            ~BOUTON,
   "tab_maintenant",   "Maintenant",    "gauge-high",      "acc_maintenant",   "go_maintenant",
   "tab_annee",        "Année",         "calendar-check",  "acc_annee",        "go_annee",
-  "tab_futs",         "Fûts",          "boxes-stacked",   "acc_futs",         "go_futs",
-  "tab_boissons",     "Bières",        "beer-mug-empty",  "acc_bieres",       "go_boissons",
-  "tab_focaccias",    "Focaccias",     "bread-slice",     "acc_focaccias",    "go_focaccias",
-  "tab_pizzwanze",    "Pizzwanze",     "pizza-slice",     "acc_pizzwanze",    "go_pizzwanze",
+  # Fûts a été absorbé par Boissons, Focaccias et Pizzwanze par Nourriture :
+  # une carte par onglet EXISTANT, sinon son bouton mènerait nulle part.
+  "tab_boissons",     "Boissons",      "champagne-glasses", "acc_bieres",     "go_boissons",
+  "tab_nourriture",   "Nourriture",    "utensils",        "acc_focaccias",    "go_nourriture",
   "tab_reservations", "Réservations",  "calendar-check",  "acc_reservations", "go_reservations",
   "tab_compta",       "Compta",        "calculator",      "acc_compta",       "go_compta"
 )
@@ -92,21 +92,20 @@ PROFILS <- list(
 
   # Pilotage quotidien : tout l'opérationnel, sans la compta générale.
   gestion   = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-                "tab_futs", "tab_boissons", "tab_nourriture",
+                "tab_boissons", "tab_nourriture",
                 "tab_simulation", "tab_travail", "tab_reservations",
                 "tab_comparaison"),
 
   # L'équipe : l'activité, pas les coûts (ni compta, ni masse salariale).
   equipe    = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-                "tab_futs", "tab_boissons", "tab_nourriture",
+                "tab_boissons", "tab_nourriture",
                 "tab_reservations"),
 
   # Salle : ce qui se passe ce soir.
-  salle     = c("tab_maintenant", "tab_futs", "tab_boissons",
-                "tab_reservations"),
+  salle     = c("tab_maintenant", "tab_boissons", "tab_reservations"),
 
-  # Brasserie : les fûts et ce qu'on en tire.
-  brasserie = c("tab_maintenant", "tab_futs", "tab_boissons"),
+  # Brasserie : les fûts et ce qu'on en tire, désormais dans Boissons.
+  brasserie = c("tab_maintenant", "tab_boissons"),
   
   # Public : pour présenter à l'extérieur
   public = c("tab_maintenant", "tab_historique", "tab_annee"),

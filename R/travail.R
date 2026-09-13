@@ -244,21 +244,30 @@ graph_productivite_temps <- function(ag, unite = "mois",
 
   lbl <- etiquette_periode(ag$PERIODE, unite)
   ordre <- factor(lbl, levels = lbl)
-  
+
+  # L'axe des x porte des LIBELLÉS et non des dates — sans quoi plotly dessine
+  # un axe temporel continu, illisible au trimestre et à l'année. Conséquence :
+  # le clic renvoie « T3 2026 », que as.Date() refuse. Chaque point transporte
+  # donc sa période dans customdata, qui est la seule identité fiable ici : elle
+  # survit au changement de libellé, et ne dépend d'aucune correspondance
+  # inverse entre texte affiché et donnée.
+  cd <- as.character(ag$PERIODE)
+
   h_service <- sum(ag$H_VARIABLE, na.rm = TRUE)
   moy <- if (h_service > 0) sum(ag$CA, na.rm = TRUE) / h_service else NA_real_
 
   p <- plot_ly(source = source) %>%
     add_bars(x = ordre, y = ag$H_VARIABLE, name = "Heures variables (service)",
-             marker = list(color = COUL_TRAVAIL),
+             customdata = cd, marker = list(color = COUL_TRAVAIL),
              hovertemplate = paste0(lbl, "<br>", round(ag$H_VARIABLE),
                                     " h de service<extra></extra>")) %>%
     add_bars(x = ordre, y = ag$H_FIXE, name = "Heures fixes (hors service)",
-             marker = list(color = COUL_MATIERE),
+             customdata = cd, marker = list(color = COUL_MATIERE),
              hovertemplate = paste0(lbl, "<br>", round(ag$H_FIXE),
                                     " h hors service<extra></extra>")) %>%
     add_lines(x = ordre, y = ag$CA_PAR_HEURE, name = "CA par heure de service",
-              yaxis = "y2", line = list(color = COUL_BRUN, width = 2.5),
+              customdata = cd, yaxis = "y2",
+              line = list(color = COUL_BRUN, width = 2.5),
               hovertemplate = paste0(lbl, "<br>", format_CA(ag$CA_PAR_HEURE, -1),
                                      " / h<extra></extra>"))
 
