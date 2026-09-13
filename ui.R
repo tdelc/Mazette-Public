@@ -141,121 +141,85 @@ ui_accueil <- function() {
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
 ui_travail <- function() {
-  navset_card_tab(
-    id = "travail_tabs",
-    nav_panel(
-      title = "Suivi",
-      icon = icon("chart-line"),
-      layout_sidebar(
-        sidebar = sidebar(
-          title = "Période",
-          width = 290,
-          dateRangeInput("trav_periode", "Fenêtre analysée",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          radioButtons("trav_unite", "Granularité",
-                       c("Par semaine" = "semaine", "Par mois" = "mois"),
-                       selected = "mois"),
-          hr(),
-          div(class = "small text-muted",
-              tags$b("Heures de service"), " : directement liées à l'ouverture",
-              " d'un créneau.", tags$br(), tags$br(),
-              tags$b("Coûts indirects"), " : transfo, brasserie et support,",
-              " mutualisés sur la semaine puis répartis entre créneaux au",
-              " prorata du CA.", tags$br(), tags$br(),
-              tags$b("Marge après travail"), " = CA HTVA − coût de service −",
-              " coûts indirects. Reste à couvrir matières, loyer et énergie.",
-              tags$br(), tags$br(),
-              tags$b("Remarque"), " Les coûts indirects sont d'abord agrégés par 
-              semaine. L'analyse par mois de ces coûts peut donc légèrement 
-              différer de la somme par semaine.")
-        ),
-        uiOutput("trav_kpi"),
-        card(
-          full_screen = TRUE,
-          card_header("Décomposition du CA : marge et coûts du travail"),
-          plotlyOutput("trav_structure", height = "340px")
-        ),
-        card(
-          full_screen = TRUE, height = "350px",
-          card_header("Décomposition des heures de travail"),
-          DTOutput("trav_heures_decomp"),
-          div(class = "small text-muted",
-              "Cliquez sur un mois sur le graphique pour avoir la 
-              décomposition des heures.")
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("Productivité : heures de service et CA par heure"),
-          plotlyOutput("trav_productivite", height = "340px"),
-          div(class = "small text-muted",
-              "En pointillé : la productivité moyenne de la fenêtre.")
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("CA par créneau (midi / soir / Pizzwanze)"),
-          plotlyOutput("trav_ca_creneaux", height = "320px")
-        )
-      )
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Travail", width = 300,
+      # Même logique que la compta : la granularité d'abord, les périodes
+      # ensuite. Plus de semaine ici — la comptabilité à laquelle on se
+      # confronte est mensuelle.
+      radioButtons("trav_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectizeInput("trav_periodes", "Périodes à inclure", choices = NULL,
+                     multiple = TRUE,
+                     options = list(plugins = list("remove_button"),
+                                    placeholder = "Choisir une ou plusieurs périodes")),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Coût variable"), " : le service. Il suit l'ouverture — un",
+          " créneau de plus, des heures de plus.", tags$br(), tags$br(),
+          tags$b("Coût fixe"), " : tout le reste (transformation, brasserie,",
+          " support). Il ne suit pas l'ouverture d'un créneau ; « fixe » au",
+          " sens du pilotage, pas au sens comptable.", tags$br(), tags$br(),
+          tags$b("CA par heure"), " : rapporté aux seules heures de service.",
+          " Le rapporter au total mélangerait l'ouverture et la structure.",
+          tags$br(), tags$br(),
+          tags$b("Source"), " : les coûts viennent d'Horeko, la seule source",
+          " qui se ventile par secteur. Le total comptable est affiché à",
+          " côté comme point de contrôle — l'écart est normal, c'est sa",
+          " dérive qui compte.")
     ),
-    nav_panel(
-      title = "Créneaux",
-      icon = icon("table-cells"),
-      layout_sidebar(
-        sidebar = sidebar(
-          title = "Analyse par créneau",
-          width = 290,
-          dateRangeInput("cren_periode", "Fenêtre analysée",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          selectInput("cren_indicateur", "Indicateur de la heatmap",
-                      c("CA moyen par ouverture" = "CA_moyen",
-                        "CA par heure de service" = "CA_PAR_HEURE",
-                        "Coût du travail / CA"    = "RATIO_TOTAL",
-                        "Marge par ouverture"     = "MARGE_moyenne"),
-                      selected = "CA_PAR_HEURE"),
-          hr(),
-          div(class = "small text-muted",
-              "Chaque créneau est ramené à une ", tags$b("ouverture type"),
-              " pour comparer les jours à armes égales.", tags$br(), tags$br(),
-              "Un mardi soir avec vente de pizza est compté comme ",
-              tags$b("Pizzwanze"), ".")
-        ),
-        layout_columns(
-          col_widths = c(5, 7),
-          card(full_screen = TRUE,
-               card_header("Vue jour × créneau"),
-               plotlyOutput("cren_heatmap", height = "380px")),
-          card(full_screen = TRUE,
-               card_header("Productivité : CA vs heures de service"),
-               plotlyOutput("cren_nuage", height = "380px"),
-               div(class = "small text-muted",
-                   "Plus un créneau est haut à gauche, plus il est efficace. ",
-                   "La taille des points reflète le CA total."))
-        ),
-        layout_columns(
-          col_widths = c(6, 6),
-          card(full_screen = TRUE,
-               card_header("Classement par productivité horaire"),
-               plotlyOutput("cren_classement", height = "400px")),
-          card(full_screen = TRUE,
-               card_header("Décomposition du CA moyen par créneau"),
-               plotlyOutput("cren_decomposition", height = "400px"))
-        ),
-        card(
-          full_screen = TRUE,
-          card_header("Détail par créneau"),
-          DTOutput("cren_table")
-        )
-      )
+    uiOutput("trav_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Heures posées et productivité"),
+      plotlyOutput("trav_productivite", height = "360px"),
+      div(class = "small text-muted",
+          "Les barres empilent les heures variables et fixes. La courbe donne",
+          " le CA par heure de service, en pointillé sa moyenne sur la",
+          " fenêtre. ", tags$b("Cliquez une barre"), " pour en détailler les",
+          " heures ci-dessous.")
+    ),
+    card(
+      full_screen = TRUE, height = "420px",
+      card_header(textOutput("trav_decomp_titre", inline = TRUE)),
+      DTOutput("trav_heures_decomp")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(
+        div(class = "d-flex flex-wrap gap-3 align-items-center justify-content-between",
+            span("Créneaux types"),
+            # Le sélecteur vit dans la carte : c'est lui qui pilote cette
+            # vue-là, et personne d'autre.
+            div(class = "flex-shrink-0",
+                selectInput("cren_indicateur", NULL,
+                            c("CA par heure de service" = "CA_PAR_HEURE",
+                              "CA moyen par ouverture"  = "CA_moyen",
+                              "Coût variable / CA"      = "RATIO_VARIABLE"),
+                            selected = "CA_PAR_HEURE", width = "260px")))),
+      plotlyOutput("cren_heatmap", height = "330px"),
+      div(class = "small text-muted",
+          "Chaque créneau est ramené à une ", tags$b("ouverture type"),
+          " pour comparer les jours à armes égales.")
+    ),
+    layout_columns(
+      col_widths = breakpoints(sm = 12, lg = 6),
+      card(full_screen = TRUE,
+           card_header("CA et heures par ouverture"),
+           plotlyOutput("cren_nuage", height = "330px")),
+      card(full_screen = TRUE,
+           card_header("Classement par productivité"),
+           plotlyOutput("cren_classement", height = "330px"))
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Détail des créneaux"),
+      DTOutput("cren_table")
     )
   )
 }
 
-# Onglet "Réservations" : ce qui arrive, ce qui s'est passé, et ce que la
-# réservation apporte au chiffre d'affaires.
 ui_reservations <- function() {
   navset_card_tab(
     id = "resa_tabs",

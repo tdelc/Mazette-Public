@@ -1,23 +1,34 @@
-#### REFONTE — Volet "Travail" ####
-# Suivi de la productivité et du coût du travail, inspiré de l'étude
-# « Réduction des jours d'ouverture » (avril 2026).
+#### Volet "Travail" ####
+# Suivi des heures et de la productivité.
 #
-# Vocabulaire (repris de l'étude) :
-#   Créneau      : une demi-journée d'ouverture — Midi (<17h) ou Soir (>=17h).
-#                  Les mardis soir avec vente de pizza forment un créneau à
-#                  part : la Pizzwanze.
-#   Heures de service : heures directement liées à l'ouverture d'un créneau.
-#   Heures indirectes : transformation alimentaire, brasserie et support. Elles
-#                  sont mutualisées sur la semaine puis réparties entre les
-#                  créneaux AU PRORATA DU CA, pour que les créneaux qui
-#                  rapportent le plus portent la plus grande part de la
-#                  structure.
-#   Marge après travail : CA HTVA − coût de service − coûts indirects. Ce qui
-#                  reste pour couvrir les matières, le loyer et l'énergie.
+# Vocabulaire, volontairement ramené à deux catégories :
 #
-# NB : on ne traite volontairement PAS la question « faut-il fermer un
-# créneau ? » — l'étude a montré qu'aucun scénario de fermeture n'améliore la
-# marge. L'objet ici est le pilotage du staffing.
+#   Créneau        : une demi-journée d'ouverture — Midi (<17h) ou Soir
+#                    (>=17h). Les mardis soir avec vente de pizza forment un
+#                    créneau à part : la Pizzwanze.
+#   Coût VARIABLE  : le service. Il suit l'ouverture — un créneau de plus, des
+#                    heures de plus.
+#   Coût FIXE      : tout le reste (transformation alimentaire, brasserie,
+#                    support). Il ne suit pas l'ouverture d'un créneau, d'où
+#                    « fixe » au sens du pilotage, pas au sens comptable.
+#
+# Le détail par secteur reste accessible là où on l'a (tableau de
+# décomposition) ; partout ailleurs on s'en tient à variable / fixe, qui est
+# ce qui se pilote.
+#
+# ---------------------------------------------------------------------------
+# Ce que ce volet ne fait PLUS, et pourquoi
+# ---------------------------------------------------------------------------
+# La « marge après travail » (CA − coûts) a été retirée. Elle reposait sur la
+# répartition des coûts indirects entre créneaux au prorata du CA : une
+# convention défendable pour une étude ponctuelle, trompeuse dans un tableau de
+# bord — elle faisait apparaître une marge par créneau qui n'existe pas, et
+# dont la valeur dépendait entièrement de la clé de répartition choisie.
+#
+# Les coûts affichés sont ceux d'HOREKO, la seule source qui se ventile par
+# secteur. Le total comptable des rémunérations reste affiché à côté, comme
+# point de contrôle : l'écart entre les deux est une information, pas une
+# erreur à corriger par une règle de trois (cf. import.R).
 
 CRENEAUX_ORDRE <- c("Midi", "Soir", "Pizzwanze")
 PAL_CRENEAU <- c("Midi" = "#e67e22", "Soir" = "#9b59b6", "Pizzwanze" = "#c0392b")
@@ -78,364 +89,367 @@ ca_par_creneau <- function(db_ventes_heure, d1 = NULL, d2 = NULL) {
     filter(CA > 0)
 }
 
-# Base de travail : une ligne par (DATE, CRENEAU) avec le CA, les heures de
-# service imputées directement, et les coûts indirects de la semaine répartis
-# au prorata du CA du créneau.
+# Base de travail : une ligne par (DATE, CRENEAU), avec le CA du créneau et les
+# heures de service qui lui sont directement imputables.
+#
+# Les heures HORS service ne sont PAS réparties entre les créneaux : elles ne
+# leur appartiennent pas. Elles sont agrégées à part, par heures_fixes().
 base_travail <- function(db_ventes_heure, db_travail, d1, d2) {
   d1 <- as.Date(d1); d2 <- as.Date(d2)
   piz <- jours_pizzwanze(db_ventes_heure)
-  
+
   # Ne garder que les jours pour lesquels on connaît aussi les heures travaillées
   db_ventes_heure <- db_ventes_heure |>
     filter(DATE %in% db_travail$DATE)
-  
+
   ca <- ca_par_creneau(db_ventes_heure, d1, d2)
-  
-  service <- db_travail %>%
+
+  variable <- db_travail %>%
     filter(SECTEUR == "Service", CRENEAU %in% c("Midi", "Soir"),
            DATE >= d1, DATE <= d2) %>%
     normalise_creneaux() %>%
     marque_pizzwanze(piz) %>%
     group_by(DATE, CRENEAU) %>%
-    summarise(H_SERVICE    = sum(HEURES, na.rm = TRUE),
-              COUT_SERVICE = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop")
-  
-  # Coûts indirects, mutualisés à la semaine
-  indirect <- db_travail %>%
-    filter(SECTEUR != "Service", DATE >= d1, DATE <= d2
-           # ,wday(DATE, week_start = 1)!= 1
-    ) %>%
-    mutate(SEMAINE = floor_date(DATE, "week", week_start = 1),
-           EST_TRANSFO = SECTEUR == "Transformation alimentaire") %>%
-    group_by(SEMAINE) %>%
-    summarise(H_TRANSFO    = sum(HEURES[EST_TRANSFO], na.rm = TRUE),
-              COUT_TRANSFO = sum(COUT_TRAVAIL[EST_TRANSFO], na.rm = TRUE),
-              H_AUTRE      = sum(HEURES[!EST_TRANSFO], na.rm = TRUE),
-              COUT_AUTRE   = sum(COUT_TRAVAIL[!EST_TRANSFO], na.rm = TRUE),
-              .groups = "drop")
-  
-  full_join(ca, service, by = c("DATE", "CRENEAU")) %>%
-    mutate(across(c(CA, H_SERVICE, COUT_SERVICE), ~replace_na(., 0)),
-           SEMAINE = floor_date(DATE, "week", week_start = 1)) %>%
-    left_join(indirect, by = "SEMAINE") %>%
-    mutate(across(c(H_TRANSFO, COUT_TRANSFO, H_AUTRE, COUT_AUTRE),
-                  ~replace_na(., 0))) %>%
-    # Répartition des coûts indirects au prorata du CA de la semaine.
-    group_by(SEMAINE) %>%
-    mutate(CA_SEMAINE = sum(CA, na.rm = TRUE),
-           PART = if_else(CA_SEMAINE > 0, CA / CA_SEMAINE, 0),
-           across(c(H_TRANSFO, COUT_TRANSFO, H_AUTRE, COUT_AUTRE), ~ . * PART)) %>%
-    ungroup() %>%
-    select(-CA_SEMAINE) %>%
-    mutate(COUT_INDIRECT = COUT_TRANSFO + COUT_AUTRE,
-           COUT_TOTAL    = COUT_SERVICE + COUT_INDIRECT,
-           MARGE         = CA - COUT_TOTAL,
-           JOUR_SEMAINE  = wday(DATE, label = TRUE, abbr = FALSE, week_start = 1),
-           CRENEAU       = factor(CRENEAU, levels = CRENEAUX_ORDRE)) %>%
+    summarise(H_VARIABLE    = sum(HEURES, na.rm = TRUE),
+              COUT_VARIABLE = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop")
+
+  full_join(ca, variable, by = c("DATE", "CRENEAU")) %>%
+    mutate(across(c(CA, H_VARIABLE, COUT_VARIABLE), ~replace_na(., 0)),
+           JOUR_SEMAINE = vecteur_jours[wday(DATE, week_start = 1)],
+           JOUR_SEMAINE = factor(JOUR_SEMAINE, levels = vecteur_jours),
+           CRENEAU      = factor(CRENEAU, levels = CRENEAUX_ORDRE)) %>%
     arrange(DATE, CRENEAU)
 }
 
-# Agrégat par période (semaine / mois / année) à partir de la base.
-agrege_travail <- function(base, unite = c("semaine", "mois", "annee")) {
+# Heures et coûts HORS service, par jour. Gardés au grain secteur : c'est le
+# seul endroit où le détail existe, et le tableau de décomposition s'en sert.
+heures_fixes <- function(db_travail, d1, d2) {
+  db_travail %>%
+    filter(SECTEUR != "Service", DATE >= as.Date(d1), DATE <= as.Date(d2)) %>%
+    group_by(DATE, SECTEUR) %>%
+    summarise(H_FIXE    = sum(HEURES, na.rm = TRUE),
+              COUT_FIXE = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop")
+}
+
+# Agrégat par période. `fixe` vient de heures_fixes(), `compta` porte le total
+# mensuel des rémunérations pour le point de contrôle.
+#
+# CA_PAR_HEURE se calcule sur les heures de SERVICE seules, comme avant : c'est
+# la productivité de l'ouverture. Rapporté au total, il mélangerait le service
+# et la structure, et bougerait à chaque brassin.
+agrege_travail <- function(base, fixe = NULL, compta = NULL,
+                           unite = c("mois", "trimestre", "annee")) {
   unite <- match.arg(unite)
-  base %>%
-    mutate(PERIODE = debut_periode(DATE, unite)) %>%
+  if (is.null(base) || !nrow(base)) return(agrege_travail_vide())
+
+  v <- base %>%
+    mutate(PERIODE = debut_periode_travail(DATE, unite)) %>%
     group_by(PERIODE) %>%
     summarise(CA            = sum(CA, na.rm = TRUE),
-              H_SERVICE     = sum(H_SERVICE, na.rm = TRUE),
-              H_INDIRECT    = sum(H_TRANSFO + H_AUTRE, na.rm = TRUE),
-              COUT_SERVICE  = sum(COUT_SERVICE, na.rm = TRUE),
-              COUT_TRANSFO  = sum(COUT_TRANSFO, na.rm = TRUE),
-              COUT_AUTRE    = sum(COUT_AUTRE, na.rm = TRUE),
-              .groups = "drop") %>%
-    mutate(COUT_INDIRECT = COUT_TRANSFO + COUT_AUTRE,
-           COUT_TOTAL    = COUT_SERVICE + COUT_INDIRECT,
-           H_TOTAL       = H_SERVICE + H_INDIRECT,
-           MARGE         = CA - COUT_TOTAL,
-           CA_PAR_HEURE  = ifelse(H_SERVICE > 0, CA / H_SERVICE, NA_real_),
-           RATIO_SERVICE = ratio_pct(COUT_SERVICE, CA),
-           RATIO_TOTAL   = ratio_pct(COUT_TOTAL, CA),
-           MARGE_PCT     = ratio_pct(MARGE, CA)) %>%
+              H_VARIABLE    = sum(H_VARIABLE, na.rm = TRUE),
+              COUT_VARIABLE = sum(COUT_VARIABLE, na.rm = TRUE),
+              .groups = "drop")
+
+  f <- if (is.null(fixe) || !nrow(fixe))
+    tibble(PERIODE = as.Date(character()), H_FIXE = numeric(),
+           COUT_FIXE = numeric())
+  else fixe %>%
+    mutate(PERIODE = debut_periode_travail(DATE, unite)) %>%
+    group_by(PERIODE) %>%
+    summarise(H_FIXE    = sum(H_FIXE, na.rm = TRUE),
+              COUT_FIXE = sum(COUT_FIXE, na.rm = TRUE), .groups = "drop")
+
+  # Le total comptable est MENSUEL : on le somme sur les mois de la période,
+  # sans jamais le ventiler.
+  c_a <- if (is.null(compta) || !nrow(compta))
+    tibble(PERIODE = as.Date(character()), COUT_COMPTA = numeric())
+  else compta %>%
+    mutate(PERIODE = debut_periode_travail(MOIS_DEBUT, unite)) %>%
+    group_by(PERIODE) %>%
+    summarise(COUT_COMPTA = sum(COUT_COMPTA, na.rm = TRUE), .groups = "drop")
+
+  v %>%
+    left_join(f, by = "PERIODE") %>%
+    left_join(c_a, by = "PERIODE") %>%
+    mutate(across(c(H_FIXE, COUT_FIXE), ~replace_na(., 0)),
+           H_TOTAL      = H_VARIABLE + H_FIXE,
+           COUT_TOTAL   = COUT_VARIABLE + COUT_FIXE,
+           CA_PAR_HEURE = if_else(H_VARIABLE > 0, CA / H_VARIABLE, NA_real_),
+           PART_FIXE    = ratio_pct(H_FIXE, H_TOTAL),
+           # Écart entre les deux sources, en % du total comptable. Positif :
+           # la comptabilité porte plus que ce qu'Horeko a pointé.
+           ECART_COMPTA = if_else(!is.na(COUT_COMPTA) & COUT_COMPTA > 0,
+                                  ratio_pct(COUT_COMPTA - COUT_TOTAL, COUT_COMPTA),
+                                  NA_real_)) %>%
     arrange(PERIODE)
 }
 
-# CA par période, ventilé par créneau (Midi / Soir / Pizzwanze).
-agrege_creneaux_periode <- function(base, unite = c("semaine", "mois", "annee")) {
-  unite <- match.arg(unite)
-  base %>%
-    mutate(PERIODE = debut_periode(DATE, unite)) %>%
-    group_by(PERIODE, CRENEAU) %>%
-    summarise(CA = sum(CA, na.rm = TRUE),
-              H_SERVICE = sum(H_SERVICE, na.rm = TRUE), .groups = "drop") %>%
-    mutate(CA_PAR_HEURE = ifelse(H_SERVICE > 0, CA / H_SERVICE, NA_real_))
+agrege_travail_vide <- function() {
+  tibble(PERIODE = as.Date(character()), CA = numeric(), H_VARIABLE = numeric(),
+         COUT_VARIABLE = numeric(), H_FIXE = numeric(), COUT_FIXE = numeric(),
+         COUT_COMPTA = numeric(), H_TOTAL = numeric(), COUT_TOTAL = numeric(),
+         CA_PAR_HEURE = numeric(), PART_FIXE = numeric(),
+         ECART_COMPTA = numeric())
 }
 
-# Statistiques par jour de semaine x créneau : moyennes par ouverture.
+# Début de période. Le volet Travail n'offre plus la semaine : la comptabilité
+# à laquelle on se confronte est mensuelle, et une semaine ne s'y compare pas.
+debut_periode_travail <- function(d, unite = c("mois", "trimestre", "annee")) {
+  unite <- match.arg(unite)
+  switch(unite,
+         mois      = floor_date(d, "month"),
+         trimestre = floor_date(d, "quarter"),
+         annee     = floor_date(d, "year"))
+}
+
+# Statistiques par jour de semaine x créneau : moyennes par OUVERTURE.
 # C'est la table qui permet de comparer les créneaux à armes égales.
+#
+# Plus de marge ici : les coûts hors service ne sont pas répartis entre
+# créneaux, donc il n'existe pas de marge par créneau. On s'en tient au coût
+# variable, qui lui est bien imputable.
 stats_creneaux <- function(base) {
+  if (is.null(base) || !nrow(base)) return(NULL)
   base %>%
-    filter(CA > 0 | H_SERVICE > 0) %>%
+    filter(CA > 0 | H_VARIABLE > 0) %>%
     group_by(JOUR_SEMAINE, CRENEAU) %>%
     summarise(nb_jours      = n_distinct(DATE),
               CA_total      = sum(CA, na.rm = TRUE),
-              H_service     = sum(H_SERVICE, na.rm = TRUE),
-              COUT_SERVICE  = sum(COUT_SERVICE, na.rm = TRUE),
-              COUT_INDIRECT = sum(COUT_INDIRECT, na.rm = TRUE),
+              H_variable    = sum(H_VARIABLE, na.rm = TRUE),
+              COUT_VARIABLE = sum(COUT_VARIABLE, na.rm = TRUE),
               .groups = "drop") %>%
-    mutate(COUT_TOTAL      = COUT_SERVICE + COUT_INDIRECT,
-           MARGE           = CA_total - COUT_TOTAL,
-           CA_moyen        = CA_total / nb_jours,
-           H_service_moyen = H_service / nb_jours,
-           MARGE_moyenne   = MARGE / nb_jours,
-           CA_PAR_HEURE    = ifelse(H_service > 0, CA_total / H_service, NA_real_),
-           RATIO_TOTAL     = ratio_pct(COUT_TOTAL, CA_total),
-           CRENEAU_LABEL   = paste0(JOUR_SEMAINE, " — ", CRENEAU)) %>%
+    mutate(CA_moyen         = CA_total / nb_jours,
+           H_variable_moyen = H_variable / nb_jours,
+           COUT_moyen       = COUT_VARIABLE / nb_jours,
+           CA_PAR_HEURE     = ifelse(H_variable > 0, CA_total / H_variable, NA_real_),
+           RATIO_VARIABLE   = ratio_pct(COUT_VARIABLE, CA_total),
+           CRENEAU_LABEL    = paste0(JOUR_SEMAINE, " — ", CRENEAU)) %>%
     arrange(desc(CA_PAR_HEURE))
 }
 
+##### Rendus #####
 
-# Décomposition du CA : marge + coût service + transfo + autre, par période.
-graph_structure_travail <- function(ag, unite = c("semaine", "mois", "annee"),
-                                    source = "trav_structure_graph") {
-  unite <- match.arg(unite)
-  if (is.null(ag) || nrow(ag) == 0)
+#' Productivité dans le temps, avec la décomposition des heures.
+#'
+#' Les barres empilent les heures VARIABLES (service) et FIXES (hors service) :
+#' on voit d'un coup combien d'heures ont été posées et dans quelle proportion
+#' elles suivent l'ouverture. La courbe donne le CA par heure de service, en
+#' pointillé sa moyenne sur la fenêtre.
+#'
+#' Cliquer une barre sélectionne la période pour le tableau de décomposition.
+graph_productivite_temps <- function(ag, unite = "mois",
+                                     source = "trav_productivite_graph") {
+  if (is.null(ag) || !nrow(ag))
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  lbl <- label_periode(ag$PERIODE, unite)
-  
-  plot_ly(ag, source = source) %>%
-    add_bars(x = ~PERIODE, y = ~COUT_SERVICE, name = "Coût service",
+
+  lbl <- etiquette_periode(ag$PERIODE, unite)
+  h_service <- sum(ag$H_VARIABLE, na.rm = TRUE)
+  moy <- if (h_service > 0) sum(ag$CA, na.rm = TRUE) / h_service else NA_real_
+
+  p <- plot_ly(source = source) %>%
+    add_bars(x = ag$PERIODE, y = ag$H_VARIABLE, name = "Heures variables (service)",
              marker = list(color = COUL_TRAVAIL),
-             hovertemplate = ~paste0(lbl, "<br>Service ", format_CA(COUT_SERVICE, -1),
-                                     "<extra></extra>")) %>%
-    add_bars(x = ~PERIODE, y = ~COUT_TRANSFO, name = "Coût transfo",
-             marker = list(color = "#a2703f"),
-             hovertemplate = ~paste0(lbl, "<br>Transfo ", format_CA(COUT_TRANSFO, -1),
-                                     "<extra></extra>")) %>%
-    add_bars(x = ~PERIODE, y = ~COUT_AUTRE, name = "Autres secteurs",
-             marker = list(color = "#8d7b68"),
-             hovertemplate = ~paste0(lbl, "<br>Autres ", format_CA(COUT_AUTRE, -1),
-                                     "<extra></extra>")) %>%
-    add_bars(x = ~PERIODE, y = ~MARGE, name = "Marge après travail",
-             marker = list(color = COUL_VERT),
-             hovertemplate = ~paste0(lbl, "<br>Marge ", format_CA(MARGE, -1),
-                                     " (", MARGE_PCT, " %)<extra></extra>")) %>%
-    layout(barmode = "stack", xaxis = list(title = ""),
-           yaxis = list(title = "€"), legend = list(orientation = "h"),
-           hovermode = "x unified",
-           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
+             hovertemplate = paste0(lbl, "<br>", round(ag$H_VARIABLE),
+                                    " h de service<extra></extra>")) %>%
+    add_bars(x = ag$PERIODE, y = ag$H_FIXE, name = "Heures fixes (hors service)",
+             marker = list(color = COUL_MATIERE),
+             hovertemplate = paste0(lbl, "<br>", round(ag$H_FIXE),
+                                    " h hors service<extra></extra>")) %>%
+    add_lines(x = ag$PERIODE, y = ag$CA_PAR_HEURE, name = "CA par heure de service",
+              yaxis = "y2", line = list(color = COUL_BRUN, width = 2.5),
+              hovertemplate = paste0(lbl, "<br>", format_CA(ag$CA_PAR_HEURE, -1),
+                                     " / h<extra></extra>"))
+
+  formes <- if (is.na(moy)) list() else list(list(
+    type = "line", xref = "paper", x0 = 0, x1 = 1, yref = "y2",
+    y0 = moy, y1 = moy,
+    line = list(color = COUL_BRUN, width = 1, dash = "dot")))
+
+  p %>% layout(
+    barmode = "stack",
+    xaxis = list(title = ""),
+    yaxis = list(title = "Heures"),
+    yaxis2 = list(title = "CA par heure (€/h)", overlaying = "y", side = "right",
+                  showgrid = FALSE, rangemode = "tozero"),
+    shapes = formes,
+    legend = list(orientation = "h", y = -0.2),
+    paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Productivité dans le temps : heures de service (barres) + CA/heure (ligne).
-graph_productivite_temps <- function(ag, unite = c("semaine", "mois", "annee")) {
-  unite <- match.arg(unite)
-  if (is.null(ag) || nrow(ag) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  lbl <- label_periode(ag$PERIODE, unite)
-  moy <- sum(ag$CA, na.rm = TRUE) / sum(ag$H_SERVICE, na.rm = TRUE)
-  
-  plot_ly(ag) %>%
-    add_bars(x = ~PERIODE, y = ~H_SERVICE, name = "Heures de service",
-             marker = list(color = "#d3c0ac"),
-             hovertemplate = ~paste0(lbl, "<br>", round(H_SERVICE),
-                                     " h<extra></extra>")) %>%
-    add_lines(x = ~PERIODE, y = ~CA_PAR_HEURE, name = "CA / heure", yaxis = "y2",
-              line = list(color = COUL_TRAVAIL, width = 2.5),
-              hovertemplate = ~paste0(lbl, "<br>", format_CA(CA_PAR_HEURE, -1),
-                                      " / h<extra></extra>")) %>%
-    layout(
-      xaxis = list(title = ""),
-      yaxis = list(title = "Heures de service"),
-      yaxis2 = list(title = "CA par heure (€/h)", overlaying = "y",
-                    side = "right", showgrid = FALSE, rangemode = "tozero"),
-      shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1,
-                         yref = "y2", y0 = moy, y1 = moy,
-                         line = list(color = COUL_TRAVAIL, width = 1, dash = "dot"))),
-      legend = list(orientation = "h"),
-      paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
-}
-
-# CA par période ventilé Midi / Soir / Pizzwanze.
-graph_ca_creneaux_temps <- function(cre, unite = c("semaine", "mois", "annee")) {
-  unite <- match.arg(unite)
-  if (is.null(cre) || nrow(cre) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  p <- plot_ly()
-  for (cr in CRENEAUX_ORDRE) {
-    sub <- cre %>% filter(CRENEAU == cr)
-    if (nrow(sub) == 0) next
-    lbl <- label_periode(sub$PERIODE, unite)
-    p <- p %>% add_bars(
-      data = sub, x = ~PERIODE, y = ~CA, name = cr,
-      marker = list(color = PAL_CRENEAU[[cr]]),
-      hovertemplate = paste0(lbl, "<br>", cr, " ", format_CA(sub$CA, -1),
-                             "<extra></extra>"))
-  }
-  p %>% layout(barmode = "stack", xaxis = list(title = ""),
-               yaxis = list(title = "CA HTVA (€)"),
-               legend = list(orientation = "h"), hovermode = "x unified",
-               paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
-}
-
-##### Graphiques — analyse par créneau #####
-
-# Nuage CA moyen vs heures de service moyennes, avec la droite de productivité
-# moyenne. Plus un créneau est haut à gauche, plus il est efficace.
+#' Nuage CA / heures de service, un point par créneau type.
 graph_nuage_creneaux <- function(stats) {
-  if (is.null(stats) || nrow(stats) == 0)
+  if (is.null(stats) || !nrow(stats))
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  dat <- stats %>% filter(H_service_moyen > 0, CA_moyen > 0)
-  if (nrow(dat) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  # Droite passant par l'origine = productivité moyenne globale
-  pente <- sum(dat$CA_total) / sum(dat$H_service)
-  xr <- c(0, max(dat$H_service_moyen) * 1.08)
-  
-  plot_ly(dat) %>%
-    add_lines(x = xr, y = pente * xr, name = "Productivité moyenne",
-              line = list(color = "#260b01", dash = "dot", width = 1.5),
-              hoverinfo = "skip") %>%
-    add_markers(x = ~H_service_moyen, y = ~CA_moyen, color = ~CRENEAU,
-                colors = PAL_CRENEAU, size = ~CA_total, sizes = c(80, 500),
-                text = ~CRENEAU_LABEL,
-                hovertemplate = ~paste0("<b>", CRENEAU_LABEL, "</b><br>",
-                                        round(H_service_moyen, 1), " h de service<br>",
-                                        format_CA(CA_moyen, -1), " de CA<br>",
-                                        format_CA(CA_PAR_HEURE, -1), " / h",
-                                        "<extra></extra>")) %>%
-    layout(xaxis = list(title = "Heures de service moyennes par ouverture",
-                        rangemode = "tozero"),
-           yaxis = list(title = "CA HTVA moyen par ouverture (€)",
-                        rangemode = "tozero"),
-           # legend = list(orientation = "h"),
-           legend = list(yref = "container", y = 0, yanchor = "bottom"),
+  plot_ly(stats, x = ~H_variable_moyen, y = ~CA_moyen,
+          type = "scatter", mode = "markers+text",
+          text = ~CRENEAU_LABEL, textposition = "top center",
+          textfont = list(size = 9),
+          color = ~CRENEAU, colors = PAL_CRENEAU,
+          marker = list(size = 12),
+          hovertemplate = ~paste0(CRENEAU_LABEL, "<br>",
+                                  round(H_variable_moyen, 1), " h par ouverture<br>",
+                                  format_CA(CA_moyen, -1), " de CA<br>",
+                                  format_CA(CA_PAR_HEURE, -1), " / h",
+                                  "<extra></extra>")) %>%
+    layout(xaxis = list(title = "Heures de service par ouverture"),
+           yaxis = list(title = "CA moyen par ouverture (€)"),
+           legend = list(orientation = "h", y = -0.2),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Classement des créneaux par productivité horaire (barres horizontales).
+#' Classement des créneaux par productivité.
 graph_productivite_creneaux <- function(stats) {
-  if (is.null(stats) || nrow(stats) == 0)
+  if (is.null(stats) || !nrow(stats))
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
   dat <- stats %>% filter(!is.na(CA_PAR_HEURE)) %>% arrange(CA_PAR_HEURE)
-  if (nrow(dat) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  dat <- dat %>% mutate(CRENEAU_LABEL = factor(CRENEAU_LABEL, levels = CRENEAU_LABEL))
-  moy <- sum(dat$CA_total) / sum(dat$H_service)
-  
-  plot_ly(dat) %>%
-    add_bars(y = ~CRENEAU_LABEL, x = ~CA_PAR_HEURE, orientation = "h",
+  ordre <- factor(dat$CRENEAU_LABEL, levels = dat$CRENEAU_LABEL)
+
+  plot_ly() %>%
+    add_bars(y = ordre, x = dat$CA_PAR_HEURE, orientation = "h",
              marker = list(color = unname(PAL_CRENEAU[as.character(dat$CRENEAU)])),
-             hovertemplate = ~paste0(CRENEAU_LABEL, "<br>",
-                                     format_CA(CA_PAR_HEURE, -1), " / h<br>",
-                                     round(H_service_moyen, 1), " h par ouverture",
-                                     "<extra></extra>")) %>%
-    layout(xaxis = list(title = "CA HTVA par heure de service (€/h)"),
+             hovertemplate = paste0(dat$CRENEAU_LABEL, "<br>",
+                                    format_CA(dat$CA_PAR_HEURE, -1), " / h<br>",
+                                    dat$nb_jours, " ouvertures<extra></extra>")) %>%
+    layout(xaxis = list(title = "CA par heure de service (€/h)"),
            yaxis = list(title = ""),
-           shapes = list(list(type = "line", yref = "paper", y0 = 0, y1 = 1,
-                              x0 = moy, x1 = moy,
-                              line = list(color = "#260b01", width = 1.5,
-                                          dash = "dot"))),
-           showlegend = FALSE, margin = list(l = 10),
+           margin = list(l = 140), showlegend = FALSE,
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Heatmap jour x créneau sur l'indicateur choisi.
+#' Heatmap jour de semaine x créneau.
 graph_heatmap_creneaux <- function(stats,
-                                   var = c("CA_moyen", "CA_PAR_HEURE",
-                                           "RATIO_TOTAL", "MARGE_moyenne")) {
+                                   var = c("CA_PAR_HEURE", "CA_moyen",
+                                           "RATIO_VARIABLE")) {
   var <- match.arg(var)
-  if (is.null(stats) || nrow(stats) == 0)
+  if (is.null(stats) || !nrow(stats))
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  titre <- c(CA_moyen      = "CA moyen par ouverture (€)",
-             CA_PAR_HEURE  = "CA par heure de service (€/h)",
-             RATIO_TOTAL   = "Coût du travail / CA (%)",
-             MARGE_moyenne = "Marge moyenne par ouverture (€)")[[var]]
-  # Pour le ratio de coût, une valeur basse est meilleure : on inverse l'échelle
-  echelle <- if (var == "RATIO_TOTAL")
+
+  titre <- c(CA_PAR_HEURE   = "CA par heure de service (€/h)",
+             CA_moyen       = "CA moyen par ouverture (€)",
+             RATIO_VARIABLE = "Coût variable / CA (%)")[[var]]
+  # Pour le ratio de coût, une valeur basse est meilleure : on inverse l'échelle.
+  echelle <- if (var == "RATIO_VARIABLE")
     list(c(0, COUL_VERT), c(1, COUL_ROUGE))
   else list(c(0, "#f2efe6"), c(1, COUL_TRAVAIL))
-  
+
   dat <- stats %>%
     mutate(VAL = .data[[var]]) %>%
     select(JOUR_SEMAINE, CRENEAU, VAL) %>%
     complete(JOUR_SEMAINE, CRENEAU)
-  
-  jours <- levels(droplevels(dat$JOUR_SEMAINE))
+
   mat <- dat %>%
     pivot_wider(names_from = CRENEAU, values_from = VAL) %>%
     arrange(JOUR_SEMAINE)
-  
   cols <- intersect(CRENEAUX_ORDRE, names(mat))
   z <- as.matrix(mat[, cols, drop = FALSE])
-  fmt <- if (var == "RATIO_TOTAL") function(x) ifelse(is.na(x), "", paste0(round(x), " %"))
+  fmt <- if (var == "RATIO_VARIABLE")
+    function(x) ifelse(is.na(x), "", paste0(round(x), " %"))
   else function(x) ifelse(is.na(x), "", format_CA(x, -1))
-  
+
   plot_ly(x = cols, y = as.character(mat$JOUR_SEMAINE), z = z,
-          type = "heatmap", colorscale = echelle,
-          hovertemplate = "%{y} — %{x}<br>%{z:.0f}<extra></extra>",
-          showscale = TRUE) %>%
+          type = "heatmap", colorscale = echelle, showscale = FALSE,
+          hovertemplate = "%{y} — %{x}<br>%{z:,.0f}<extra></extra>") %>%
     add_annotations(
-      x = rep(cols, each = nrow(z)),
-      y = rep(as.character(mat$JOUR_SEMAINE), times = length(cols)),
+      x = rep(cols, each = nrow(z)), y = rep(as.character(mat$JOUR_SEMAINE),
+                                             times = length(cols)),
       text = fmt(as.vector(z)), showarrow = FALSE,
-      font = list(size = 12, color = "#260b01")) %>%
+      font = list(size = 11, color = "#260b01")) %>%
     layout(title = list(text = titre, font = list(size = 13)),
-           xaxis = list(title = "", side = "top"),
-           yaxis = list(title = "", autorange = "reversed"),
+           xaxis = list(title = "", side = "top"), yaxis = list(title = ""),
+           margin = list(l = 90, t = 60),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Décomposition du CA moyen par créneau : marge + coût service + indirect.
-graph_decomposition_creneaux <- function(stats) {
-  if (is.null(stats) || nrow(stats) == 0)
-    return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  
-  dat <- stats %>%
-    arrange(MARGE_moyenne) %>%
-    mutate(CRENEAU_LABEL = factor(CRENEAU_LABEL, levels = CRENEAU_LABEL),
-           C_SERVICE  = COUT_SERVICE / nb_jours,
-           C_INDIRECT = COUT_INDIRECT / nb_jours)
-  
-  plot_ly(dat) %>%
-    add_bars(y = ~CRENEAU_LABEL, x = ~MARGE_moyenne, orientation = "h",
-             name = "Marge après travail", marker = list(color = COUL_VERT),
-             hovertemplate = ~paste0(CRENEAU_LABEL, "<br>Marge ",
-                                     format_CA(MARGE_moyenne, -1), "<extra></extra>")) %>%
-    add_bars(y = ~CRENEAU_LABEL, x = ~C_SERVICE, orientation = "h",
-             name = "Coût service", marker = list(color = COUL_TRAVAIL),
-             hovertemplate = ~paste0(CRENEAU_LABEL, "<br>Service ",
-                                     format_CA(C_SERVICE, -1), "<extra></extra>")) %>%
-    add_bars(y = ~CRENEAU_LABEL, x = ~C_INDIRECT, orientation = "h",
-             name = "Coûts indirects", marker = list(color = "#8d7b68"),
-             hovertemplate = ~paste0(CRENEAU_LABEL, "<br>Indirects ",
-                                     format_CA(C_INDIRECT, -1), "<extra></extra>")) %>%
-    layout(barmode = "stack", xaxis = list(title = "€ par ouverture"),
-           yaxis = list(title = ""), 
-           legend = list(yref = "container", y = 0, yanchor = "bottom"),
-           # legend = list(orientation = "h"),
-           margin = list(l = 10),
-           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
-}
-
-# Tableau récapitulatif par créneau.
+#' Tableau des créneaux types.
 table_creneaux <- function(stats) {
-  if (is.null(stats) || nrow(stats) == 0)
-    return(tibble(Créneau = character()))
+  if (is.null(stats) || !nrow(stats)) return(tibble(Créneau = character()))
   stats %>%
     arrange(desc(CA_PAR_HEURE)) %>%
-    transmute(Créneau        = CRENEAU_LABEL,
-              Ouvertures     = nb_jours,
-              `CA moyen`     = format_CA(CA_moyen, -1),
-              `Heures serv.` = round(H_service_moyen, 1),
-              `CA / heure`   = format_CA(CA_PAR_HEURE, -1),
-              `Coût travail` = format_CA(COUT_TOTAL / nb_jours, -1),
-              `Marge moy.`   = format_CA(MARGE_moyenne, -1),
-              `Coût / CA`    = ifelse(is.na(RATIO_TOTAL), "—",
-                                      paste0(RATIO_TOTAL, " %")))
+    transmute(Créneau           = CRENEAU_LABEL,
+              Ouvertures        = nb_jours,
+              `CA moyen`        = format_CA(CA_moyen, -1),
+              `Heures serv.`    = round(H_variable_moyen, 1),
+              `CA / heure`      = format_CA(CA_PAR_HEURE, -1),
+              `Coût variable`   = format_CA(COUT_moyen, -1),
+              `Coût var. / CA`  = ifelse(is.na(RATIO_VARIABLE), "—",
+                                         paste0(RATIO_VARIABLE, " %")))
+}
+
+#' Décomposition des heures d'une période, par secteur et créneau.
+#'
+#' Le seul endroit où le détail par secteur existe : on le montre donc tel
+#' quel, plutôt que de le résumer en variable / fixe.
+#'
+#' Les deux totaux de bas de tableau sont le point de contrôle entre les
+#' sources : Horeko pointe les heures, la comptabilité enregistre la paie.
+#' L'écart est normal — pécules, provisions, charges patronales, personnel non
+#' pointé — mais il doit rester stable. C'est sa DÉRIVE qui est un signal.
+table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_) {
+  if (is.null(db_couts) || !nrow(db_couts))
+    return(tibble(Info = "Aucune heure sur la période."))
+  d <- db_couts %>% filter(DATE >= as.Date(d1), DATE <= as.Date(d2))
+  if (!nrow(d)) return(tibble(Info = "Aucune heure sur la période."))
+
+  detail <- d %>%
+    group_by(Secteur = SECTEUR, Créneau = CRENEAU) %>%
+    summarise(Heures = sum(HEURES, na.rm = TRUE),
+              Cout   = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(Cout))
+
+  horeko <- sum(detail$Cout, na.rm = TRUE)
+  compta <- if ("COUT_COMPTA" %in% names(d))
+    sum(unique(d[, c("ANNEE", "MOIS", "COUT_COMPTA")])$COUT_COMPTA, na.rm = TRUE)
+  else NA_real_
+
+  bind_rows(
+    detail %>% transmute(Secteur, Créneau,
+                         Heures = round(Heures),
+                         `Coût (Horeko)` = format_CA(Cout, -1)),
+    tibble(Secteur = "Total Horeko", Créneau = "",
+           Heures = round(sum(detail$Heures, na.rm = TRUE)),
+           `Coût (Horeko)` = format_CA(horeko, -1)),
+    tibble(Secteur = "Total comptabilité", Créneau = "", Heures = NA_real_,
+           `Coût (Horeko)` = if (is.na(compta)) "—" else format_CA(compta, -1)),
+    tibble(Secteur = "CA de la période", Créneau = "", Heures = NA_real_,
+           `Coût (Horeko)` = if (is.na(ca_periode)) "—"
+                             else format_CA(ca_periode, -1))
+  )
+}
+
+#' Tuiles du volet Travail.
+kpi_travail <- function(ag) {
+  if (is.null(ag) || !nrow(ag))
+    return(div(class = "text-muted small", "Aucune donnée sur la période."))
+
+  ca   <- sum(ag$CA, na.rm = TRUE)
+  hv   <- sum(ag$H_VARIABLE, na.rm = TRUE)
+  hf   <- sum(ag$H_FIXE, na.rm = TRUE)
+  cv   <- sum(ag$COUT_VARIABLE, na.rm = TRUE)
+  cf   <- sum(ag$COUT_FIXE, na.rm = TRUE)
+  cpt  <- if (all(is.na(ag$COUT_COMPTA))) NA_real_
+          else sum(ag$COUT_COMPTA, na.rm = TRUE)
+  cah  <- if (hv > 0) ca / hv else NA_real_
+  ecart <- if (!is.na(cpt) && cpt > 0) ratio_pct(cpt - (cv + cf), cpt) else NA_real_
+
+  div(
+    class = "kpi-grid",
+    kpi_tile(if (is.na(cah)) "—" else format_CA(cah, -1),
+             "CA par heure de service",
+             couleur_seuil_haut(cah, 90, 70), "gauge-high",
+             sous_titre = paste0(format(round(hv)), " h variables")),
+    kpi_tile(format(round(hv + hf)), "Heures totales", COUL_NEUTRE, "clock",
+             sous_titre = paste0(round(ratio_pct(hv, hv + hf)), " % en service")),
+    kpi_tile(format_CA(cv, -1), "Coût variable (service)", COUL_TRAVAIL,
+             "person-running", sous_titre = format_pct(ratio_pct(cv, ca))),
+    kpi_tile(format_CA(cf, -1), "Coût fixe (hors service)", COUL_MATIERE,
+             "people-roof", sous_titre = format_pct(ratio_pct(cf, ca))),
+    kpi_tile(format_pct(ratio_pct(cv + cf, ca)), "Coût du travail / CA",
+             couleur_seuil(ratio_pct(cv + cf, ca), 35, 45), "scale-balanced",
+             sous_titre = paste0("Horeko : ", format_CA(cv + cf, -1))),
+    kpi_tile(if (is.na(ecart)) "—" else format_pct(ecart),
+             "Écart Horeko / comptabilité",
+             if (is.na(ecart)) COUL_NEUTRE else COUL_NEUTRE, "code-compare",
+             sous_titre = if (is.na(cpt)) "pas de comptabilité"
+                          else paste0("compta : ", format_CA(cpt, -1)))
+  )
 }
