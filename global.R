@@ -29,6 +29,11 @@ vecteur_jours <- c("lundi","mardi","mercredi",
                    "jeudi","vendredi","samedi",
                    "dimanche")
 
+# Mois en français, indépendamment de la locale. format(x, "%b") suit celle du
+# SERVEUR : un serveur Shiny en locale C rend « Sep » là où on attend « sept. ».
+vecteur_mois_court <- c("janv.","févr.","mars","avr.","mai","juin",
+                        "juil.","août","sept.","oct.","nov.","déc.")
+
 #### Conventions de couleurs ####
 
 # Palette d'appréciation, partagée par tous les volets de la refonte.

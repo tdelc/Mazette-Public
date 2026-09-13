@@ -379,6 +379,39 @@ R -e 'shiny::runApp()'</code></pre>
     </table></div>
 
     <div class="note" data-profondeur="detail">
+      <span class="l">Les deux marges du volet Compta</span>
+      <p>
+        <code>postes_exploitation()</code> produit deux marges, et c&rsquo;est d&eacute;lib&eacute;r&eacute;.
+      </p>
+      <p>
+        <code>MARGE</code> est le <strong>r&eacute;sultat d&rsquo;exploitation</strong> au sens
+        comptable, amortissements compris. On le garde parce que c&rsquo;est lui que la
+        comptabilit&eacute; publie, et donc lui que <code>controle_exploitation()</code>
+        confronte au solde officiel&nbsp;: sans cette colonne, le d&eacute;coupage en postes
+        n&rsquo;aurait plus de garde-fou.
+      </p>
+      <p>
+        <code>MARGE_AA</code> est l&rsquo;indicateur de <strong>gestion</strong>, celui que le
+        volet affiche&nbsp;: CA + autres produits &minus; mati&egrave;res &minus; r&eacute;mun&eacute;rations
+        &minus; frais g&eacute;n&eacute;raux + r&eacute;sultat financier. L&rsquo;amortissement en sort (une
+        &eacute;criture, pas une sortie de caisse, et qui ne se pilote pas au mois), le
+        financier y entre (les int&eacute;r&ecirc;ts, eux, se paient). C&rsquo;est l&rsquo;EBITDA auquel on
+        rend le r&eacute;sultat financier.
+      </p>
+      <p>
+        Les deux restent r&eacute;conciliables, et les tests le v&eacute;rifient&nbsp;:
+        <code>MARGE_AA = MARGE + AMORTISSEMENT + FINANCIER</code>. Tous les
+        pourcentages du volet sont rapport&eacute;s au <strong>chiffre d&rsquo;affaires seul</strong>,
+        jamais aux produits totaux.
+      </p>
+      <p>
+        L&rsquo;onglet <strong>Comparaison</strong> continue d&rsquo;afficher <code>MARGE</code>, le
+        r&eacute;sultat d&rsquo;exploitation&nbsp;: les deux onglets ne montrent donc pas le m&ecirc;me
+        indicateur, &agrave; aligner si on le souhaite.
+      </p>
+    </div>
+
+    <div class="note" data-profondeur="detail">
       <span class="l">Un onglet n&rsquo;est pas une page</span>
       <p>
         Chaque onglet est un <code>nav_panel</code> construit par une fonction <code>ui_*()</code> de

@@ -871,39 +871,51 @@ server <- function(input, output, session) {
     postes_exploitation(DB_COMPTA)
   })
 
-  expl_serie <- reactive({
-    p <- agrege_exploitation(expl_postes(), input$expl_unite %||% "mois")
+  # La granularite pilote tout l'onglet : la serie complete est agregee une
+  # fois, et la cascade comme le tableau y puisent.
+  expl_unite <- reactive(input$expl_unite %||% "mois")
+
+  expl_serie_complete <- reactive({
+    p <- agrege_exploitation(expl_postes(), expl_unite())
     req(nrow(p) > 0)
-    n <- as.integer(input$expl_nb %||% 12)
-    tail(p, n)
+    p
+  })
+
+  expl_serie <- reactive({
+    tail(expl_serie_complete(), as.integer(input$expl_nb %||% 12))
   })
 
   observe({
     req(ONGLETS_PRETS())
-    p <- expl_postes()
-    req(nrow(p) > 0)
+    p <- expl_serie_complete()
     dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
+    # Les libelles suivent la granularite : « T3 2026 » pour un trimestre,
+    # « 2026 » pour une annee.
     updateSelectInput(session, "expl_periode",
                       choices = setNames(as.character(dispo),
-                                         format(dispo, "%B %Y")),
+                                         etiquette_periode(dispo, expl_unite())),
                       selected = as.character(dispo[1]))
   })
 
   # La cascade porte sur la periode choisie ; les autres vues sur la serie.
   expl_une <- reactive({
-    p <- expl_postes()
-    req(nrow(p) > 0)
-    d <- if (is.null(input$expl_periode)) max(p$PERIODE) else as.Date(input$expl_periode)
+    p <- expl_serie_complete()
+    choisie <- suppressWarnings(as.Date(input$expl_periode %||% NA))
+    # Changer de granularite laisse un instant l'ancienne valeur dans le select
+    # — un debut de mois qui n'est pas un debut de trimestre. Plutot que de
+    # rendre une cascade vide, on retombe sur la periode la plus recente.
+    d <- if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
+      max(p$PERIODE) else choisie
     filter(p, PERIODE == d)
   })
 
-  output$expl_kpi      <- renderUI({ kpi_exploitation(expl_une()) })
-  output$expl_cascade  <- renderPlotly({ graph_cascade_exploitation(expl_une()) })
+  output$expl_kpi <- renderUI({ kpi_exploitation(expl_une(), expl_unite()) })
+  output$expl_cascade <- renderPlotly({
+    graph_cascade_exploitation(expl_une(), expl_unite()) })
   output$expl_structure <- renderPlotly({
-    graph_structure_exploitation(expl_serie(), input$expl_unite %||% "mois") })
+    graph_structure_exploitation(expl_serie(), expl_unite()) })
   output$expl_table <- renderDT({
-    datatable_simple(table_exploitation(expl_serie(), input$expl_unite %||% "mois",
-                                        en_pct = isTRUE(input$expl_pct)))
+    datatable_simple(table_exploitation(expl_serie(), expl_unite()))
   })
   output$expl_controle <- renderUI({
     ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
