@@ -914,8 +914,32 @@ server <- function(input, output, session) {
     graph_cascade_exploitation(expl_une(), expl_unite()) })
   output$expl_structure <- renderPlotly({
     graph_structure_exploitation(expl_serie(), expl_unite()) })
+  # La période choisie est-elle close et complète ? Un trimestre à un mois sur
+  # trois se lit sinon comme un effondrement.
+  output$expl_alerte_periode <- renderUI({
+    alerte_periode(etat_periode(expl_une(), expl_unite()))
+  })
+
   output$expl_table <- renderDT({
-    datatable_simple(table_exploitation(expl_serie(), expl_unite()))
+    tbl <- table_exploitation(expl_serie(), expl_unite())
+    # Les colonnes .f_* portent le repérage des écarts (cf. R/exploitation.R) :
+    # masquées, elles ne servent qu'à colorer la cellule voisine.
+    caches <- which(startsWith(names(tbl), ".f_")) - 1L
+    dt <- datatable(
+      tbl, rownames = FALSE,
+      options = list(dom = "t", paging = FALSE, ordering = FALSE,
+                     searching = FALSE, scrollX = TRUE,
+                     columnDefs = list(list(visible = FALSE, targets = caches))))
+    for (i in seq_len(nrow(COLONNES_SURVEILLEES))) {
+      dt <- formatStyle(
+        dt, COLONNES_SURVEILLEES$COLONNE[i],
+        valueColumns = COLONNES_SURVEILLEES$DRAPEAU[i],
+        backgroundColor = styleEqual(c(-1L, 1L),
+                                     c("rgba(192,57,43,0.18)",
+                                       "rgba(91,123,90,0.18)")),
+        fontWeight = styleEqual(c(-1L, 1L), c("600", "600")))
+    }
+    dt
   })
   output$expl_controle <- renderUI({
     ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
@@ -931,10 +955,19 @@ server <- function(input, output, session) {
   # Plus de reconstruction de plan : les comptes sont classés sur leur numéro
   # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
 
+  # La granularite pilote l'onglet entier : les comptes sont consolides au
+  # niveau choisi AVANT tout regroupement (cf. consolide_periode()).
+  cg_unite <- reactive(input$cg_unite %||% "mois")
+
+  cg_dispo <- reactive({
+    req(exists("DB_COMPTA"))
+    periodes_compta(DB_COMPTA, cg_unite())
+  })
+
   observe({
     req(ONGLETS_PRETS())
-    req(exists("DB_COMPTA"))
-    p <- periodes_compta(DB_COMPTA)
+    p <- cg_dispo()
+    req(nrow(p) > 0)
     updateSelectizeInput(session, "cg_periodes",
                          choices = setNames(as.character(p$PERIODE), p$LIBELLE),
                          selected = as.character(head(p$PERIODE, 3)))
@@ -942,30 +975,78 @@ server <- function(input, output, session) {
 
   cg_periodes <- reactive({
     req(input$cg_periodes)
-    sort(as.Date(input$cg_periodes))
+    # Changer de granularite laisse un instant des valeurs perimees dans le
+    # selecteur : on ne garde que celles qui existent au niveau courant.
+    valides <- intersect(as.Date(input$cg_periodes), cg_dispo()$PERIODE)
+    req(length(valides) > 0)
+    sort(as.Date(valides, origin = "1970-01-01"))
   })
 
   output$cg_titre <- renderText({
     n <- length(cg_periodes())
-    paste0("Compte de résultat — ", n, if (n > 1) " mois comparés" else " mois")
+    mot <- switch(cg_unite(), mois = "mois", trimestre = "trimestre",
+                  annee = "année")
+    pluriel <- if (n > 1 && mot != "mois") paste0(mot, "s") else mot
+    paste0("Compte de résultat — ", n, " ", pluriel,
+           if (n > 1) " comparés" else "")
   })
 
-  output$cg_kpi <- renderUI({ kpi_compta_generale(DB_COMPTA, cg_periodes()) })
+  output$cg_kpi <- renderUI({
+    kpi_compta_generale(DB_COMPTA, cg_periodes(), cg_unite()) })
+
+  cg_table_data <- reactive({
+    table_compte_resultat(DB_COMPTA, cg_periodes(),
+                          detail = isTRUE(input$cg_detail),
+                          en_pct = isTRUE(input$cg_pct),
+                          unite = cg_unite())
+  })
 
   output$cg_table <- renderDT({
-    tbl <- table_compte_resultat(DB_COMPTA, cg_periodes(),
-                                 detail = isTRUE(input$cg_detail),
-                                 en_pct = isTRUE(input$cg_pct))
-    datatable(tbl, rownames = FALSE, escape = FALSE, selection = 'single',
+    tbl <- cg_table_data()
+    # .POSTE ne s'affiche pas : elle sert au deroule au clic, plus bas.
+    cache <- which(names(tbl) == ".POSTE") - 1L
+    chiffres <- setdiff(2:(ncol(tbl) - 1) - 1L, cache)
+    datatable(tbl, rownames = FALSE, escape = FALSE, selection = "single",
               options = list(pageLength = 200, dom = "ft", scrollX = TRUE,
                              ordering = FALSE,
-                             columnDefs = list(list(className = "dt-right",
-                                                    targets = 2:(ncol(tbl) - 1))),
+                             columnDefs = list(
+                               list(visible = FALSE, targets = cache),
+                               list(className = "dt-right", targets = chiffres)),
                              language = list(search = "Filtrer :"))) %>%
       formatStyle("Compte", target = "row", fontWeight = styleEqual("", "bold"))
   })
 
-  output$cg_soldes <- renderPlotly({ graph_soldes(DB_COMPTA, cg_periodes()) })
+  # Deroule d'un poste : un clic sur sa ligne suffit. Les lignes de solde et
+  # les lignes de compte deja deroulees portent un .POSTE vide, et ne
+  # declenchent donc rien.
+  cg_poste_choisi <- reactive({
+    i <- input$cg_table_rows_selected
+    if (length(i) != 1) return(NULL)
+    p <- cg_table_data()$.POSTE[i]
+    if (is.na(p) || !nzchar(p)) NULL else p
+  })
+
+  output$cg_detail_titre <- renderText({
+    p <- cg_poste_choisi()
+    if (is.null(p)) "Détail d'un poste — cliquez sur une ligne"
+    else paste0("Détail — ", p)
+  })
+
+  output$cg_detail_table <- renderDT({
+    p <- cg_poste_choisi()
+    if (is.null(p))
+      return(datatable_simple(tibble(
+        Info = "Sélectionnez un poste du compte de résultat pour voir ses comptes.")))
+    d <- detail_poste(DB_COMPTA, p, cg_periodes(), cg_unite())
+    if (!nrow(d))
+      return(datatable_simple(tibble(Info = "Aucun compte mouvementé sur la période.")))
+    datatable_simple(d %>% transmute(
+      Compte = COMPTE, Libellé = LIBELLE,
+      `Total sur la sélection` = format_CA(VALEUR, -1)))
+  })
+
+  output$cg_soldes <- renderPlotly({
+    graph_soldes(DB_COMPTA, cg_periodes(), cg_unite()) })
 
   # Contrôle : un compte que le plan ne sait pas ranger n'entre dans aucun total.
   output$cg_controle <- renderDT({

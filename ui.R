@@ -436,6 +436,7 @@ ui_exploitation <- function() {
           " d'affaires seul"), ", jamais aux produits totaux.")
     ),
     uiOutput("expl_controle"),
+    uiOutput("expl_alerte_periode"),
     uiOutput("expl_kpi"),
     card(
       full_screen = TRUE,
@@ -450,7 +451,15 @@ ui_exploitation <- function() {
     card(
       full_screen = TRUE,
       card_header("Détail par période"),
-      DTOutput("expl_table")
+      DTOutput("expl_table"),
+      div(class = "small text-muted mt-1",
+          "Ces quatre postes sont censés être stables d'une période à l'autre.",
+          " Une cellule colorée s'écarte de plus de deux écarts-types de sa",
+          " propre série : ", tags$span(style = "color:#5B7B5A;font-weight:600",
+                                        "vert"), " si l'écart est favorable,",
+          " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+          " s'il est défavorable. À vérifier en comptabilité avant d'y lire",
+          " un fait de gestion.")
     )
   )
 }
@@ -462,11 +471,17 @@ ui_compta_generale <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Périodes", width = 310,
-      selectizeInput("cg_periodes", "Mois à comparer", choices = NULL,
+      # Même logique que le compte d'exploitation : la granularité vient en
+      # premier, et la liste des périodes en dépend. Les comptes sont
+      # consolidés directement au niveau choisi.
+      radioButtons("cg_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectizeInput("cg_periodes", "Périodes à comparer", choices = NULL,
                      multiple = TRUE,
                      options = list(plugins = list("remove_button"),
-                                    placeholder = "Choisir un ou plusieurs mois")),
-      checkboxInput("cg_detail", "Dérouler les comptes", FALSE),
+                                    placeholder = "Choisir une ou plusieurs périodes")),
+      checkboxInput("cg_detail", "Dérouler tous les comptes", FALSE),
       checkboxInput("cg_pct", "En % du chiffre d'affaires", FALSE),
       hr(),
       div(class = "small text-muted",
@@ -475,13 +490,22 @@ ui_compta_generale <- function() {
           " rémunérations, 63 amortissements, 64 autres charges, 65/75",
           " financier.", tags$br(), tags$br(),
           tags$b("Soldes"), " : calculés en cumulant les postes qui les",
-          " précèdent, selon leur définition comptable.")
+          " précèdent, selon leur définition comptable.", tags$br(), tags$br(),
+          tags$b("Cliquez sur un poste"), " du compte de résultat pour dérouler",
+          " les comptes qui le composent.")
     ),
     uiOutput("cg_kpi"),
     card(
       full_screen = TRUE,
       card_header(textOutput("cg_titre", inline = TRUE)),
-      DTOutput("cg_table")
+      DTOutput("cg_table"),
+      div(class = "small text-muted mt-1",
+          "Cliquez sur une ligne de poste pour en dérouler les comptes.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(textOutput("cg_detail_titre", inline = TRUE)),
+      DTOutput("cg_detail_table")
     ),
     navset_card_tab(
       nav_panel(

@@ -101,10 +101,27 @@ comptes_non_classes <- function(db) {
     arrange(desc(abs(TOTAL)))
 }
 
+#' Ramène PERIODE (mensuelle) à la granularité demandée.
+#'
+#' Toute la consolidation trimestre / année passe par ici, en AMONT du
+#' regroupement : les postes, les soldes et le détail des comptes se calculent
+#' ensuite sans rien savoir de la granularité. Consolider après coup, en
+#' sommant des soldes déjà calculés, donnerait le même total mais rendrait le
+#' détail des comptes incohérent avec lui.
+consolide_periode <- function(d, unite = c("mois", "trimestre", "annee")) {
+  unite <- match.arg(unite)
+  if (is.null(d) || !nrow(d)) return(d)
+  d %>% mutate(PERIODE = switch(unite,
+                                mois      = PERIODE,
+                                trimestre = floor_date(PERIODE, "quarter"),
+                                annee     = floor_date(PERIODE, "year")))
+}
+
 #' Compte de résultat par poste, une ligne par période x poste.
-resultat_par_poste <- function(db, periodes = NULL) {
+resultat_par_poste <- function(db, periodes = NULL, unite = "mois") {
   d <- classe_comptes(db)
   if (is.null(d) || !nrow(d)) return(tibble())
+  d <- consolide_periode(d, unite)
   if (!is.null(periodes)) d <- filter(d, PERIODE %in% as.Date(periodes))
   d %>%
     group_by(PERIODE, ORDRE_G, SECTION_G, POSTE, SENS_G) %>%
@@ -113,8 +130,8 @@ resultat_par_poste <- function(db, periodes = NULL) {
 }
 
 #' Détail d'un poste : ses comptes, pour le déroulé fin.
-detail_poste <- function(db, poste, periodes = NULL) {
-  d <- classe_comptes(db) %>% filter(POSTE == poste)
+detail_poste <- function(db, poste, periodes = NULL, unite = "mois") {
+  d <- consolide_periode(classe_comptes(db), unite) %>% filter(POSTE == poste)
   if (!is.null(periodes)) d <- filter(d, PERIODE %in% as.Date(periodes))
   d %>%
     group_by(COMPTE, LIBELLE) %>%
@@ -124,8 +141,8 @@ detail_poste <- function(db, poste, periodes = NULL) {
 }
 
 #' Compte de résultat complet : postes + soldes intermédiaires, par période.
-compte_resultat <- function(db, periodes = NULL) {
-  p <- resultat_par_poste(db, periodes)
+compte_resultat <- function(db, periodes = NULL, unite = "mois") {
+  p <- resultat_par_poste(db, periodes, unite)
   if (!nrow(p)) return(tibble())
 
   bind_rows(lapply(split(p, p$PERIODE), function(x) {
@@ -145,13 +162,18 @@ compte_resultat <- function(db, periodes = NULL) {
 }
 
 #' Périodes disponibles, de la plus récente à la plus ancienne.
-periodes_compta <- function(db) {
+periodes_compta <- function(db, unite = "mois") {
   db %>%
     distinct(ANNEE, MOIS) %>%
     filter(!is.na(ANNEE), !is.na(MOIS)) %>%
     mutate(PERIODE = as.Date(sprintf("%04d-%02d-01",
-                                     as.integer(ANNEE), as.integer(MOIS))),
-           LIBELLE = format(PERIODE, "%B %Y")) %>%
+                                     as.integer(ANNEE), as.integer(MOIS)))) %>%
+    consolide_periode(unite) %>%
+    # N_MOIS dit combien de mois composent réellement la période : un trimestre
+    # à 2 mois sur 3 doit se voir dans la liste, pas seulement dans les totaux.
+    count(PERIODE, name = "N_MOIS") %>%
+    # Pas de %B : il suit la locale du serveur (cf. etiquette_periode()).
+    mutate(LIBELLE = etiquette_periode(PERIODE, unite)) %>%
     arrange(desc(PERIODE))
 }
 
@@ -171,22 +193,27 @@ vie_des_comptes <- function(db) {
 #' Compte de résultat mis en forme, une colonne par période.
 #'
 #' @param detail TRUE pour dérouler les comptes sous chaque poste.
-table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE) {
-  cr <- compte_resultat(db, periodes)
+table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
+                                  unite = "mois") {
+  cr <- compte_resultat(db, periodes, unite)
   if (!nrow(cr)) return(tibble(Libellé = character()))
 
   lignes <- cr %>%
     transmute(ORDRE_G, PERIODE, TYPE_LIGNE, COMPTE = "",
+              # .POSTE voyage jusqu'au tableau pour que le clic sur une ligne
+              # sache quel poste dérouler. Masqué à l'affichage.
+              .POSTE = if_else(TYPE_LIGNE == "solde", NA_character_, POSTE),
               Libellé = if_else(TYPE_LIGNE == "solde", POSTE, paste0("▸ ", POSTE)),
               VALEUR = if_else(TYPE_LIGNE == "solde", VALEUR, SENS_G * VALEUR))
 
   if (detail) {
-    d <- classe_comptes(db) %>%
+    d <- consolide_periode(classe_comptes(db), unite) %>%
       filter(PERIODE %in% as.Date(periodes)) %>%
       group_by(PERIODE, ORDRE_G, POSTE, COMPTE, LIBELLE, SENS_G) %>%
       summarise(VALEUR = sum(VALEUR, na.rm = TRUE), .groups = "drop") %>%
       transmute(ORDRE_G = ORDRE_G + 0.1, PERIODE, TYPE_LIGNE = "compte",
-                COMPTE, Libellé = paste0("     ", LIBELLE),
+                COMPTE, .POSTE = NA_character_,
+                Libellé = paste0("     ", LIBELLE),
                 VALEUR = SENS_G * VALEUR)
     lignes <- bind_rows(lignes, d)
   }
@@ -201,26 +228,29 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE) 
   fmt <- if (en_pct) function(x) format_pct(x) else function(x) format_CA(x, -1)
 
   lignes %>%
-    mutate(P = format(PERIODE, "%Y-%m")) %>%
-    group_by(ORDRE_G, Libellé, COMPTE, TYPE_LIGNE) %>%
+    mutate(P = etiquette_periode(PERIODE, unite)) %>%
+    group_by(ORDRE_G, Libellé, COMPTE, TYPE_LIGNE, .POSTE) %>%
     summarise(across(everything(), ~NULL), .groups = "drop") %>%
     left_join(
-      lignes %>% mutate(P = format(PERIODE, "%Y-%m"), V = fmt(VALEUR)) %>%
+      lignes %>% mutate(P = etiquette_periode(PERIODE, unite), V = fmt(VALEUR)) %>%
         select(ORDRE_G, Libellé, COMPTE, P, V) %>%
         pivot_wider(names_from = P, values_from = V),
       by = c("ORDRE_G", "Libellé", "COMPTE")) %>%
     arrange(ORDRE_G) %>%
     select(-ORDRE_G, -TYPE_LIGNE) %>%
-    rename(Compte = COMPTE)
+    rename(Compte = COMPTE) %>%
+    # .POSTE en dernière colonne : le serveur la masque et s'en sert pour le
+    # déroulé au clic.
+    relocate(.POSTE, .after = last_col())
 }
 
 #' Évolution des soldes intermédiaires sur les périodes retenues.
-graph_soldes <- function(db, periodes) {
-  cr <- compte_resultat(db, periodes)
+graph_soldes <- function(db, periodes, unite = "mois") {
+  cr <- compte_resultat(db, periodes, unite)
   d <- cr %>% filter(TYPE_LIGNE == "solde")
   if (!nrow(d)) return(plotly_empty(type = "scatter", mode = "markers") %>%
                          layout(title = list(text = "Aucun solde à afficher")))
-  lab <- format(d$PERIODE, "%b %Y")
+  lab <- etiquette_periode(d$PERIODE, unite)
   d$LAB <- factor(lab, levels = unique(lab[order(d$PERIODE)]))
 
   plot_ly(d, x = ~LAB, y = ~VALEUR, color = ~POSTE, type = "bar",
@@ -233,8 +263,8 @@ graph_soldes <- function(db, periodes) {
 }
 
 #' Tuiles de synthèse pour la période la plus récente sélectionnée.
-kpi_compta_generale <- function(db, periodes) {
-  cr <- compte_resultat(db, periodes)
+kpi_compta_generale <- function(db, periodes, unite = "mois") {
+  cr <- compte_resultat(db, periodes, unite)
   if (!nrow(cr)) return(div(class = "text-muted small", "Aucune période."))
   derniere <- max(cr$PERIODE)
   d <- filter(cr, PERIODE == derniere)
@@ -251,7 +281,7 @@ kpi_compta_generale <- function(db, periodes) {
                paste0(format_pct(ratio_pct(v, ca)), " du CA") else NULL)
   }
   div(class = "kpi-grid",
-      kpi_tile(format_CA(ca, -1), paste("CA —", format(derniere, "%B %Y")),
+      kpi_tile(format_CA(ca, -1), paste("CA —", etiquette_periode(derniere, unite)),
                COUL_BRUN, "euro-sign"),
       tuile(val("Marge brute d'exploitation"), "Marge brute", "layer-group"),
       tuile(val("Résultat d'exploitation"), "Résultat d'exploitation", "chart-line"),
