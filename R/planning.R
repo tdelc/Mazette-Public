@@ -358,7 +358,7 @@ graph_planning_heures <- function(proj, habituel) {
   p %>% layout(
     xaxis = list(title = "", tickangle = -35),
     yaxis = list(title = "Heures planifiées", rangemode = "tozero"),
-    legend = list(orientation = "h"),
+    legend = list(orientation = "h", y = -0.25),
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
@@ -404,7 +404,7 @@ graph_planning_rentabilite <- function(proj) {
     layout(
       xaxis = list(title = "", tickangle = -35),
       yaxis = list(title = "Euros", rangemode = "tozero"),
-      legend = list(orientation = "h"),
+      legend = list(orientation = "h", y = -0.25),
       paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 

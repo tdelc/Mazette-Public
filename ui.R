@@ -176,7 +176,7 @@ ui_planning <- function() {
       card_header("Combien d'heures, comparé à d'habitude ?"),
       plotlyOutput("plan_heures", height = "330px"),
       div(class = "small text-muted",
-          "Barre : les heures planifiées. Trait noir : ce qu'on met",
+          "Barre : les heures planifiées. Trait orange : ce qu'on met",
           " habituellement ce jour-là. En ambre au-delà de +10 %.",
           " Survolez pour les couverts déjà réservés.")
     ),
