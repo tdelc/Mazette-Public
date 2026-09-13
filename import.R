@@ -104,6 +104,31 @@ IMPORT_HIST <- read_excel(path_resa,sheet = "RESA")
 IMPORT_RESA_SALLE <- calendar::ic_read(get_path("ICS_SALLE"))
 IMPORT_RESA_EXT <- calendar::ic_read(get_path("ICS_TERRASSE"))
 
+# Import des heures planifiées
+
+IMPORT_PLANNING <- calendar::ic_read(get_path("ICS_HEURES"))
+
+DB_HEURES_PLANNING <- IMPORT_PLANNING |> 
+  filter(SUMMARY == "", substr(UID,1,5) == "shift", is.na(STATUS)) |> 
+  transmute(
+    INFOS = str_split(DESCRIPTION,"\\\\n"), 
+    # INDIVIDU = str_extract(DESCRIPTION,"werker: ([a-zA-Zéè ]+)", group = 1),
+    # SERVICE  = str_extract(DESCRIPTION,"Team: ([a-zA-Zéè ]+)", group = 1),
+    INDIVIDU = str_remove(unlist(lapply(INFOS,function(x)x[1])),"Medewerker: "),
+    SERVICE = str_remove(unlist(lapply(INFOS,function(x)x[3])),"Team: "),
+    SERVICE = str_remove(SERVICE,"\\n "),
+    SERVICE = str_remove(SERVICE,"Team: "),
+    DT_START = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
+    DT_END   = ymd_hms(`DTEND;TZID=Europe/Brussels`),
+    DATE = as.Date(DT_START),
+    HEURES   = as.numeric(difftime(DT_END, DT_START, units = "hours"))
+  )
+
+DB_HEURES_PLANNING <- DB_HEURES_PLANNING |> 
+  group_by(DATE, SERVICE) |> 
+  summarise(HEURES = sum(HEURES)) |> 
+  ungroup()
+
 # Old Mazette 2023 à 2025
 
 # drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
@@ -678,13 +703,9 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
   mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "dimanche","Midi (<17h)", CD_HEURE)) %>% 
   ungroup() |> 
   mutate(
-    SECTEUR = case_when(
-      DEPARTEMENT == "Transfo alimentaire" ~ "Transformation alimentaire",
-      DEPARTEMENT == "Fabrik de boissons" ~ "Brasserie",
-      DEPARTEMENT == "Support" ~ "Support",
-      DEPARTEMENT == "Service" ~ "Service",
-      TRUE ~ "Secteur inconnu"
-    ),
+    # La correspondance vit dans R/planning.R : le planning parle le même
+    # vocabulaire de départements, et deux copies auraient fini par diverger.
+    SECTEUR = normalise_secteur(DEPARTEMENT),
     CRENEAU = case_when(
       SECTEUR != "Service" ~ "Journée",
       CD_HEURE == "Soir (>=17h)" ~ "Soir",

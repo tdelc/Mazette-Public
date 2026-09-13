@@ -55,6 +55,7 @@ ONGLETS <- tibble::tribble(
   "tab_simulation",   "Simulation",         "sliders",                 "ui_simulation",
   "tab_compta",       "Compta",             "calculator",              "ui_compta",
   "tab_travail",      "Travail",            "person-running",          "ui_travail",
+  "tab_planning",     "Planning",           "calendar-days",           "ui_planning",
   "tab_reservations", "Réservations",       "calendar-check",          "ui_reservations",
   "tab_comparaison",  "Comparaison",        "code-compare",            "ui_comparaison"
 )
@@ -76,7 +77,8 @@ CARTES_ACCUEIL <- tibble::tribble(
   "tab_boissons",     "Boissons",      "champagne-glasses", "acc_bieres",     "go_boissons",
   "tab_nourriture",   "Nourriture",    "utensils",        "acc_focaccias",    "go_nourriture",
   "tab_reservations", "Réservations",  "calendar-check",  "acc_reservations", "go_reservations",
-  "tab_compta",       "Compta",        "calculator",      "acc_compta",       "go_compta"
+  "tab_compta",       "Compta",        "calculator",      "acc_compta",       "go_compta",
+  "tab_planning",     "Planning",      "calendar-days",   "acc_planning",     "go_planning"
 )
 
 #### Profils ####
@@ -92,32 +94,15 @@ PROFILS <- list(
   
   support   = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
               "tab_boissons", "tab_nourriture",
-              "tab_simulation", "tab_travail", "tab_compta",
+              "tab_simulation", "tab_travail", "tab_planning", "tab_compta",
               "tab_comparaison"),
   
   service   = c("tab_maintenant", "tab_detail", "tab_boissons", 
-                "tab_nourriture", "tab_reservations", "tab_travail"),
+                "tab_nourriture", "tab_reservations", "tab_travail",
+                "tab_planning"),
   
   transfo   = c("tab_maintenant", "tab_detail", "tab_boissons", 
                 "tab_nourriture", "tab_reservations"),
-  
-
-  # Pilotage quotidien : tout l'opérationnel, sans la compta générale.
-  # gestion   = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-  #               "tab_boissons", "tab_nourriture",
-  #               "tab_simulation", "tab_travail", "tab_reservations",
-  #               "tab_comparaison"),
-  # 
-  # # L'équipe : l'activité, pas les coûts (ni compta, ni masse salariale).
-  # equipe    = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-  #               "tab_boissons", "tab_nourriture",
-  #               "tab_reservations"),
-  # 
-  # # Salle : ce qui se passe ce soir.
-  # salle     = c("tab_maintenant", "tab_boissons", "tab_reservations"),
-  # 
-  # # Brasserie : les fûts et ce qu'on en tire, désormais dans Boissons.
-  # brasserie = c("tab_maintenant", "tab_boissons"),
   
   # Public : pour présenter à l'extérieur
   public = c("tab_maintenant", "tab_historique", "tab_annee"),

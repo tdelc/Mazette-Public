@@ -138,6 +138,65 @@ ui_accueil <- function() {
   )
 }
 
+# Onglet "Planning" : les heures qu'on s'apprête à poser, face au CA qu'elles
+# devront produire. Seul volet tourné vers l'avant — d'où un onglet à part
+# plutôt qu'un ajout à « Maintenant », qui raconte ce qui s'est passé.
+#
+# Deux graphiques, une seule grammaire : la barre est ce qui est prévu, le
+# trait est la référence. Le premier ne parle qu'en heures, le second qu'en
+# euros. Aucun ne mélange les deux.
+ui_planning <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Planning",
+      width = 300,
+      sliderInput("plan_horizon", "Horizon (jours à venir)",
+                  min = 7, max = 42, value = 21, step = 7, ticks = FALSE),
+      sliderInput("plan_ref_semaines", "Semaines de référence",
+                  min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Heures habituelles"), " : la médiane des heures posées le",
+          " même jour de semaine, sur les semaines de référence. Un samedi se",
+          " compare à un samedi.", tags$br(), tags$br(),
+          tags$b("CA attendu"), " = heures planifiées × le CA par heure",
+          " habituel. C'est ce que ces heures rapportent d'ordinaire.",
+          tags$br(), tags$br(),
+          tags$b("Les couverts réservés"), " sont donnés en survol : ils",
+          " expliquent souvent pourquoi on met plus de monde, sans entrer",
+          " dans le calcul.", tags$br(), tags$br(),
+          tags$b("Sans coût du travail"), ", ce volet dit si un planning est",
+          " inhabituel et si l'objectif est couvert — pas s'il est rentable",
+          " en euros de marge.")
+    ),
+    uiOutput("plan_alerte"),
+    uiOutput("plan_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Combien d'heures, comparé à d'habitude ?"),
+      plotlyOutput("plan_heures", height = "330px"),
+      div(class = "small text-muted",
+          "Barre : les heures planifiées. Trait noir : ce qu'on met",
+          " habituellement ce jour-là. En ambre au-delà de +10 %.",
+          " Survolez pour les couverts déjà réservés.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Est-ce que ces heures couvrent l'objectif ?"),
+      plotlyOutput("plan_rentabilite", height = "330px"),
+      div(class = "small text-muted",
+          "Barre : le CA que ces heures rapportent au rythme habituel.",
+          " Trait noir : l'objectif du jour. Verte, la barre passe l'objectif ;",
+          " rouge, elle reste dessous.")
+    ),
+    card(
+      full_screen = TRUE, height = "440px",
+      card_header("Détail jour par jour"),
+      DTOutput("plan_table")
+    )
+  )
+}
+
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
 ui_travail <- function() {
