@@ -460,3 +460,14 @@ span.value-box-title { display: block; }
   color: #8d7b68;
   margin-top: 0.15rem;
 }
+
+/* ----- Diagnostic du volet Analyse ----- */
+/* La couleur de chaque ligne est posée en R, à partir du statut : la feuille
+   ne fixe que la mise en page, pour qu'un statut ajouté côté R n'ait pas
+   besoin d'une règle CSS de plus. */
+.diagnostic-ligne:last-child {
+  margin-bottom: 0 !important;
+}
+.diagnostic-ligne .small {
+  color: #5c4a3a;
+}

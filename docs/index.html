@@ -371,7 +371,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Focaccias</td><td><code>tab_focaccias</code></td><td>Ventes, options (fromage, viande, spicy) et carte de production.</td></tr>
         <tr><td>Pizzwanze</td><td><code>tab_pizzwanze</code></td><td>Analyse des soir&eacute;es pizza, d&eacute;tect&eacute;es automatiquement.</td></tr>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
-        <tr><td>Compta</td><td><code>tab_compta</code></td><td>Compte d&rsquo;exploitation et comptabilit&eacute; g&eacute;n&eacute;rale, d&eacute;riv&eacute;s de <code>DB_COMPTA</code>.</td></tr>
+        <tr><td>Compta</td><td><code>tab_compta</code></td><td>Trois sous-onglets d&eacute;riv&eacute;s de <code>DB_COMPTA</code>&nbsp;: <strong>Exploitation</strong> (du CA &agrave; la marge), <strong>Analyse</strong> (pourquoi la marge a boug&eacute;) et <strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong> (le compte de r&eacute;sultat).</td></tr>
         <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
         <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em>&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
@@ -421,6 +421,89 @@ R -e 'shiny::runApp()'</code></pre>
         L&rsquo;onglet <strong>Comparaison</strong> continue d&rsquo;afficher <code>MARGE</code>, le
         r&eacute;sultat d&rsquo;exploitation&nbsp;: les deux onglets ne montrent donc pas le m&ecirc;me
         indicateur, &agrave; aligner si on le souhaite.
+      </p>
+    </div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Le pont de marge, et pourquoi l&rsquo;effet volume est s&eacute;par&eacute;</span>
+      <p>
+        Le sous-onglet <strong>Analyse</strong> (<code>R/analyse.R</code>) r&eacute;pond &agrave; une
+        question qu&rsquo;aucun des deux autres ne pose&nbsp;: <em>pourquoi</em> la marge a-t-elle
+        boug&eacute;, et faut-il s&rsquo;en inqui&eacute;ter&nbsp;? Il ne recalcule rien &mdash; il part de
+        <code>postes_exploitation()</code> et de <code>classe_comptes()</code>, comme ses
+        deux voisins &mdash; et se contente de les confronter &agrave; une p&eacute;riode de r&eacute;f&eacute;rence.
+      </p>
+      <p>
+        La d&eacute;composition na&iuml;ve de l&rsquo;&eacute;cart &mdash; &Delta;marge = &Delta;CA &minus; &Delta;mati&egrave;res
+        &minus; &Delta;r&eacute;mun&eacute;rations&hellip; &mdash; est exacte mais ne dit rien d&rsquo;utile&nbsp;: quand le
+        CA baisse de 20&nbsp;%, <em>toutes</em> les charges baissent, et le pont affiche six
+        barres qui pointent dans le m&ecirc;me sens sans qu&rsquo;on sache si la gestion a d&eacute;riv&eacute;.
+      </p>
+      <p>
+        On s&eacute;pare donc le <strong>volume</strong> des <strong>taux</strong>. En &eacute;crivant la marge
+        comme un taux appliqu&eacute; au CA &mdash; <code>marge = CA &times; s</code>, avec
+        <code>s = 1 + a &minus; m &minus; r &minus; g + f</code> (chaque lettre &eacute;tant un poste en part du
+        CA) &mdash; on obtient une identit&eacute; <strong>exacte</strong>&nbsp;:
+      </p>
+      <pre><code>&Delta;marge = &Delta;CA &times; s&#8320;     <span class="cmt"># effet volume : le CA a bougé, les taux non</span>
+        + CA&#8321; &times; &Delta;a     <span class="cmt"># les autres produits ont changé de poids</span>
+        &minus; CA&#8321; &times; &Delta;m     <span class="cmt"># les matières ont dérivé, en % du CA</span>
+        &minus; CA&#8321; &times; &Delta;r
+        &minus; CA&#8321; &times; &Delta;g
+        + CA&#8321; &times; &Delta;f</code></pre>
+      <p>
+        Chaque terme est en euros et se lit seul&nbsp;: &laquo;&nbsp;les mati&egrave;res ont co&ucirc;t&eacute;
+        3&nbsp;200&nbsp;&euro; de marge de plus que si leur taux &eacute;tait rest&eacute; celui de la
+        r&eacute;f&eacute;rence&nbsp;&raquo;. Un poste dont le taux n&rsquo;a pas boug&eacute; a un effet <em>nul</em>, m&ecirc;me
+        si son montant en euros a augment&eacute; de 10&nbsp;%&nbsp;: c&rsquo;est tout l&rsquo;int&eacute;r&ecirc;t du pont.
+        La somme des six termes redonne exactement la variation, ce qu&rsquo;un test v&eacute;rifie.
+        Quand le CA de r&eacute;f&eacute;rence est nul, les taux n&rsquo;existent pas&nbsp;: on retombe sur la
+        d&eacute;composition brute, qui reste exacte, et <code>VOLUME_SEPARE</code> le dit.
+      </p>
+      <p>
+        Sous le pont, <code>contributions_comptes()</code> fait le forage&nbsp;: le pont d&eacute;signe
+        &laquo;&nbsp;les frais g&eacute;n&eacute;raux&nbsp;&raquo;, cette table dit lequel des quarante comptes de la
+        classe&nbsp;61 en est responsable. Le signe y est celui de l&rsquo;effet <em>sur la marge</em>,
+        pas celui du compte&nbsp;: un achat en hausse p&egrave;se n&eacute;gativement.
+      </p>
+    </div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Trois r&eacute;f&eacute;rences, et elles ne disent pas la m&ecirc;me chose</span>
+      <p>
+        Rien, dans le sous-onglet Analyse, ne s&rsquo;affiche sans dire &agrave; quoi il est compar&eacute;&nbsp;:
+        un &laquo;&nbsp;&minus;12&nbsp;%&nbsp;&raquo; sans r&eacute;f&eacute;rence explicite est une statistique, pas une
+        information. Trois modes, trois questions&nbsp;:
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>Mode</th><th>R&eacute;pond &agrave;</th></tr></thead>
+        <tbody>
+          <tr><td>P&eacute;riode pr&eacute;c&eacute;dente</td><td>est-ce que &ccedil;a bouge&nbsp;?</td></tr>
+          <tr><td>M&ecirc;me p&eacute;riode, un an plus t&ocirc;t</td><td>est-ce que &ccedil;a progresse&nbsp;?</td></tr>
+          <tr><td>M&eacute;diane des p&eacute;riodes pr&eacute;c&eacute;dentes</td><td>est-ce que c&rsquo;est normal&nbsp;?</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        La troisi&egrave;me est la plus robuste pour un diagnostic&nbsp;: une seule p&eacute;riode de
+        r&eacute;f&eacute;rence peut elle-m&ecirc;me &ecirc;tre anormale, et on comparerait alors deux accidents.
+        Ses pourcentages sont <strong>recalcul&eacute;s</strong> &agrave; partir des m&eacute;dianes d&rsquo;euros et non
+        m&eacute;dian&eacute;s directement&nbsp;: la m&eacute;diane d&rsquo;un rapport n&rsquo;est pas le rapport des m&eacute;dianes,
+        et afficher les deux c&ocirc;te &agrave; c&ocirc;te laisserait un tableau qui ne s&rsquo;additionne pas.
+        Quand la r&eacute;f&eacute;rence n&rsquo;existe pas, la fonction rend <code>NULL</code> et non une ligne de
+        z&eacute;ros&nbsp;: un &eacute;cart contre z&eacute;ro vaudrait &minus;100&nbsp;%, ce qui est faux et alarmant.
+      </p>
+      <p>
+        La <strong>zone habituelle</strong> du graphe de tendance est la m&eacute;diane de la s&eacute;rie
+        &plusmn;&nbsp;2&nbsp;MAD &mdash; exactement la mesure de <code>flag_ecart()</code> qui colore le
+        tableau du volet Exploitation. Les deux &eacute;crans signalent donc les m&ecirc;mes p&eacute;riodes&nbsp;;
+        reprendre ici une moyenne et un &eacute;cart-type donnerait un graphe qui contredit son
+        propre tableau.
+      </p>
+      <p>
+        Enfin, le <strong>diagnostic</strong> n&rsquo;invente aucun seuil&nbsp;: ses bornes de ratio sont
+        celles d&eacute;j&agrave; employ&eacute;es par <code>kpi_exploitation()</code>, et son rep&eacute;rage
+        statistique est celui de <code>flag_ecart()</code>. Un diagnostic qui contredirait
+        les autres &eacute;crans serait pire qu&rsquo;aucun diagnostic.
       </p>
     </div>
 
@@ -480,6 +563,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td><code>brassins.R</code>, <code>boissons.R</code>, <code>consommation.R</code></td><td>F&ucirc;ts, pr&eacute;diction d&rsquo;&eacute;puisement, consommation par cat&eacute;gorie.</td></tr>
         <tr><td><code>focaccia.R</code>, <code>pizzwanze.R</code>, <code>produits.R</code></td><td>D&eacute;composition des recettes, d&eacute;tection des soir&eacute;es, carte de production.</td></tr>
         <tr><td><code>compta.R</code>, <code>exploitation.R</code>, <code>plan_comptable.R</code>, <code>couts.R</code></td><td>Agr&eacute;gation comptable, compte d&rsquo;exploitation, classement des comptes, co&ucirc;ts mati&egrave;re.</td></tr>
+        <tr><td><code>analyse.R</code></td><td>Pont de marge, contributions par compte, tendance, saisonnalit&eacute;, diagnostic automatique.</td></tr>
         <tr><td><code>travail.R</code></td><td>Heures, co&ucirc;ts, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
         <tr><td><code>reservations.R</code></td><td>R&eacute;servations, croisement avec le CA.</td></tr>
         <tr><td><code>simulation.R</code></td><td>Base de simulation de prix.</td></tr>

@@ -954,6 +954,163 @@ server <- function(input, output, session) {
   })
 
 
+  #### Volet "Compta / Gestion" — Analyse ####
+
+  # Même socle que le volet Exploitation : postes_exploitation() puis
+  # agrege_exploitation() à la granularité choisie. Rien n'est recalculé ici,
+  # sinon les deux sous-onglets finiraient par afficher deux marges.
+  ana_unite <- reactive(input$ana_unite %||% "mois")
+
+  ana_serie_complete <- reactive({
+    p <- agrege_exploitation(expl_postes(), ana_unite())
+    req(nrow(p) > 0)
+    p
+  })
+
+  # Le sélecteur de période. Comme partout, il n'est semé qu'une fois les
+  # onglets insérés : écrire dans un input qui n'existe pas encore est perdu
+  # en silence, et l'observateur ne rejoue pas (cf. R/acces.R).
+  observe({
+    req(ONGLETS_PRETS())
+    dispo <- sort(unique(ana_serie_complete()$PERIODE), decreasing = TRUE)
+    updateSelectInput(session, "ana_periode",
+                      choices = setNames(as.character(dispo),
+                                         etiquette_periode(dispo, ana_unite())),
+                      selected = as.character(dispo[1]))
+  })
+
+  ana_periode <- reactive({
+    p <- ana_serie_complete()
+    choisie <- suppressWarnings(as.Date(input$ana_periode %||% NA))
+    # Changer de granularité laisse un instant l'ancienne valeur dans le select
+    # — un début de mois qui n'est pas un début de trimestre. On retombe alors
+    # sur la période la plus récente plutôt que de rendre un volet vide.
+    if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
+      max(p$PERIODE) else choisie
+  })
+
+  ana_actuel <- reactive({
+    filter(ana_serie_complete(), PERIODE == ana_periode())
+  })
+
+  # La série de tendance s'arrête à la période analysée : prolonger au-delà
+  # ferait juger une période sur des mois qu'elle n'a pas encore vécus.
+  ana_serie <- reactive({
+    ana_serie_complete() %>%
+      filter(PERIODE <= ana_periode()) %>%
+      tail(as.integer(input$ana_nb %||% 18))
+  })
+
+  ana_reference <- reactive({
+    reference_analyse(ana_serie_complete(), ana_periode(),
+                      mode = input$ana_ref %||% "precedente",
+                      unite = ana_unite())
+  })
+
+  ana_lib_ref <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) "aucune référence" else r$libelle
+  })
+
+  # Les périodes dont la référence est faite : une seule pour les modes
+  # « précédente » et « an dernier », plusieurs pour la médiane. Le forage par
+  # compte en a besoin — il ne peut pas travailler sur une ligne médiane, qui
+  # n'est la comptabilité d'aucune période réelle.
+  ana_ref_periodes <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) return(as.Date(character()))
+    if (identical(r$mode, "habituelle")) {
+      serie <- ana_serie_complete() %>% filter(PERIODE < ana_periode())
+      return(tail(sort(serie$PERIODE), 6))
+    }
+    r$ligne$PERIODE
+  })
+
+  output$ana_alerte <- renderUI({
+    tagList(
+      alerte_periode(etat_periode(ana_actuel(), ana_unite())),
+      if (is.null(ana_reference()))
+        bandeau_alerte(
+          TRUE,
+          paste0("Aucune période de référence n'existe pour ce mode de ",
+                 "comparaison. Le volet affiche alors les niveaux, sans écart. ",
+                 "Choisissez « période précédente » ou reculez la période ",
+                 "analysée."),
+          titre = "Pas de référence", couleur = COUL_NEUTRE,
+          icone = "circle-info"))
+  })
+
+  output$ana_kpi <- renderUI({
+    r <- ana_reference()
+    kpi_analyse(ana_actuel(), if (is.null(r)) NULL else r$ligne,
+                ana_lib_ref(), ana_unite())
+  })
+
+  ana_pont <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) return(NULL)
+    pont_marge(ana_actuel(), r$ligne)
+  })
+
+  output$ana_pont <- renderPlotly({
+    graph_pont_marge(ana_pont(),
+                     etiquette_periode(ana_periode(), ana_unite()),
+                     ana_lib_ref())
+  })
+
+  output$ana_pont_table <- renderDT({ datatable_simple(table_pont_marge(ana_pont())) })
+
+  ana_contrib <- reactive({
+    req(exists("DB_COMPTA"))
+    contributions_comptes(DB_COMPTA, ana_periode(), ana_ref_periodes(),
+                          ana_unite())
+  })
+
+  output$ana_contrib <- renderPlotly({ graph_contributions(ana_contrib()) })
+  output$ana_contrib_table <- renderDT({
+    datatable_simple(table_contributions(ana_contrib()))
+  })
+
+  output$ana_tendance <- renderPlotly({
+    graph_tendance(serie_indicateur(ana_serie(), input$ana_indic),
+                   input$ana_indic, ana_unite())
+  })
+
+  # La saisonnalité travaille toujours au grain MENSUEL : superposer des
+  # années agrégées à l'année ne donnerait qu'un point par courbe.
+  output$ana_saison <- renderPlotly({
+    graph_saisonnalite(saisonnalite(expl_postes(), input$ana_indic),
+                       input$ana_indic)
+  })
+
+  output$ana_table <- renderDT({
+    r <- ana_reference()
+    tbl <- table_comparaison(ana_actuel(), if (is.null(r)) NULL else r$ligne,
+                             etiquette_periode(ana_periode(), ana_unite()),
+                             ana_lib_ref())
+    if (!".sens" %in% names(tbl)) return(datatable_simple(tbl))
+    # .sens colore l'écart sans être affichée : même mécanique que les
+    # colonnes .f_* du tableau d'exploitation.
+    cache <- which(names(tbl) == ".sens") - 1L
+    datatable(
+      tbl, rownames = FALSE,
+      options = list(dom = "t", paging = FALSE, ordering = FALSE,
+                     searching = FALSE, scrollX = TRUE,
+                     columnDefs = list(list(visible = FALSE, targets = cache)))) %>%
+      formatStyle("Écart", valueColumns = ".sens",
+                  color = styleEqual(c(-1L, 1L), c("#c0392b", "#5B7B5A")),
+                  fontWeight = styleEqual(c(-1L, 1L), c("600", "600")))
+  })
+
+  ana_diagnostic <- reactive({
+    req(exists("DB_COMPTA"))
+    diagnostic_compta(DB_COMPTA, ana_serie(), ana_actuel(), ana_unite())
+  })
+
+  output$ana_diagnostic <- renderUI({ rendu_diagnostic(ana_diagnostic()) })
+  output$ana_diag_resume <- renderText({ resume_diagnostic(ana_diagnostic()) })
+
+
   #### Volet "Compta / Gestion" — Comptabilité générale ####
 
   # Plus de reconstruction de plan : les comptes sont classés sur leur numéro

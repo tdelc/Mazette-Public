@@ -428,6 +428,11 @@ ui_compta <- function() {
       ui_exploitation()
     ),
     nav_panel(
+      title = "Analyse",
+      icon = icon("magnifying-glass-chart"),
+      ui_compta_analyse()
+    ),
+    nav_panel(
       title = "Comptabilité générale",
       icon = icon("book"),
       ui_compta_generale()
@@ -495,6 +500,113 @@ ui_exploitation <- function() {
           " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
           " s'il est défavorable. À vérifier en comptabilité avant d'y lire",
           " un fait de gestion.")
+    )
+  )
+}
+
+# Analyse : le POURQUOI des deux autres sous-onglets.
+#
+# Même grammaire que le volet Exploitation — la granularité d'abord, puis la
+# période — et un réglage de plus qui porte tout le volet : la RÉFÉRENCE. Rien
+# ici ne s'affiche sans dire à quoi il est comparé.
+ui_compta_analyse <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Analyse", width = 320,
+      radioButtons("ana_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectInput("ana_periode", "Période analysée", choices = NULL),
+      selectInput("ana_ref", "Comparée à", choices = MODES_REFERENCE,
+                  selected = "precedente"),
+      sliderInput("ana_nb", "Périodes de tendance", min = 6, max = 48,
+                  value = 18, step = 1, ticks = FALSE),
+      hr(),
+      selectInput("ana_indic", "Indicateur suivi",
+                  choices = setNames(INDICATEURS_ANALYSE$CLE,
+                                     INDICATEURS_ANALYSE$LIBELLE),
+                  selected = "marge"),
+      div(class = "small text-muted",
+          "Pilote la tendance et la saisonnalité. Le reste du volet porte",
+          " toujours sur la marge."),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
+          " — le CA a bougé, les taux non — de ce qui vient de la dérive de",
+          " chaque poste. La somme des barres redonne exactement l'écart.",
+          tags$br(), tags$br(),
+          tags$b("Zone habituelle"), " : médiane de la série ± 2 MAD, la même",
+          " mesure que le tableau du volet Exploitation. Les deux écrans",
+          " signalent donc les mêmes périodes.", tags$br(), tags$br(),
+          "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
+          " chiffre d'affaires seul.")
+    ),
+    uiOutput("ana_alerte", class = "zone-alerte"),
+    uiOutput("ana_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Pourquoi la marge a bougé"),
+      plotlyOutput("ana_pont", height = "380px"),
+      div(class = "small text-muted",
+          "On part de la marge de référence, chaque barre la creuse ou la",
+          " remplit. ", tags$b("Effet volume"), " : ce que la seule variation",
+          " du chiffre d'affaires aurait produit, à taux inchangés. Les autres",
+          " barres sont la dérive propre de chaque poste, en euros de marge.")
+    ),
+    navset_card_tab(
+      nav_panel(
+        title = "Comptes qui expliquent l'écart",
+        icon = icon("list-ol"),
+        plotlyOutput("ana_contrib", height = "400px"),
+        div(class = "small text-muted mt-1",
+            "Effet de chaque compte sur la marge, signe compris : un achat en",
+            " hausse pèse négativement. Le forage sous le pont ci-dessus.")
+      ),
+      nav_panel(
+        title = "Détail chiffré",
+        icon = icon("table"),
+        DTOutput("ana_contrib_table")
+      ),
+      nav_panel(
+        title = "Décomposition du pont",
+        icon = icon("bridge"),
+        DTOutput("ana_pont_table")
+      )
+    ),
+    navset_card_tab(
+      nav_panel(
+        title = "Tendance",
+        icon = icon("chart-line"),
+        plotlyOutput("ana_tendance", height = "360px"),
+        div(class = "small text-muted mt-1",
+            "La bande grise est la zone habituelle de la série. Un point",
+            " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+            " en sort défavorablement, un point ",
+            tags$span(style = "color:#5B7B5A;font-weight:600", "vert"),
+            " favorablement.")
+      ),
+      nav_panel(
+        title = "Saisonnalité",
+        icon = icon("calendar-days"),
+        plotlyOutput("ana_saison", height = "360px"),
+        div(class = "small text-muted mt-1",
+            "Le même indicateur mois par mois, une courbe par année, toujours",
+            " au grain mensuel. Sépare l'effet de saison de l'effet de gestion :",
+            " février est mauvais, mais février est-il toujours mauvais ?")
+      )
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Période contre référence"),
+      DTOutput("ana_table")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(
+        span("Est-ce que tout va bien ?"),
+        span(class = "small text-muted ms-2", textOutput("ana_diag_resume",
+                                                         inline = TRUE))),
+      uiOutput("ana_diagnostic")
     )
   )
 }
