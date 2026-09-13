@@ -129,6 +129,35 @@ DB_HEURES_PLANNING <- DB_HEURES_PLANNING |>
   summarise(HEURES = sum(HEURES)) |> 
   ungroup()
 
+# Le calendrier de shifts ne garde que l'avenir : un jour passé en disparaît.
+# Sans archivage, ce volet n'aurait donc jamais de passé, et donc jamais de
+# médiane à laquelle se comparer. On fusionne ce que le calendrier donne
+# aujourd'hui avec l'historique accumulé dans le Google Sheet, puis on réécrit
+# le tout : à chaque import, un jour de plus est mis à l'abri avant de
+# s'effacer. Toute la logique (et le pourquoi du détail) vit dans R/planning.R.
+SS_PLANNING <- get_path("PATH_HEURES_PLANNING")
+
+if (length(SS_PLANNING) == 1 && !is.na(SS_PLANNING) && nzchar(SS_PLANNING)) {
+  # googlesheets4 n'est pas attaché (cf. global.R) : il partage simplement le
+  # jeton du compte de service déjà obtenu par googledrive, plutôt que de
+  # relancer une authentification pour lui seul.
+  if (requireNamespace("googlesheets4", quietly = TRUE))
+    try(googlesheets4::gs4_auth(token = googledrive::drive_token()),
+        silent = TRUE)
+
+  # Un incident d'archivage ne doit jamais faire tomber l'import : le volet
+  # repartira du calendrier seul, sans passé, et le prochain passage rattrapera.
+  archive <- try(historise_planning(DB_HEURES_PLANNING, SS_PLANNING),
+                 silent = TRUE)
+  if (inherits(archive, "try-error"))
+    cli::cli_alert_warning("Historisation du planning impossible : {as.character(archive)}")
+  else if (!is.null(archive))
+    DB_HEURES_PLANNING <- archive
+} else {
+  cli::cli_alert_warning(
+    "PATH_HEURES_PLANNING absent des PATHS : le planning reste sans historique")
+}
+
 # Old Mazette 2023 à 2025
 
 # drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)

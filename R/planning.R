@@ -20,6 +20,16 @@
 # que l'objectif justifie » : elles se calculent bien mais ne se lisent pas.
 # Chaque graphique reste dans UNE unité, et la comparaison y est directe.
 #
+# PÉRIMÈTRE DES HEURES — la grandeur affichée, partout dans ce volet, est
+# l'heure VARIABLE, c'est-à-dire l'heure de service. C'est le même découpage
+# que l'onglet Travail (cf. R/travail.R), et pour la même raison : seules les
+# heures de service se pilotent au jour le jour et suivent le CA. Les heures
+# fixes (transformation alimentaire, brasserie, support) sont posées pour des
+# raisons de production, pas de fréquentation ; les additionner aux heures de
+# service brouillerait la comparaison au CA du jour. Elles restent calculées
+# et données en survol, jour par jour : c'est une information utile, pas une
+# grandeur à comparer.
+#
 # Le jour où DB_HEURES_PLANNING portera un coût horaire, ce volet pourra passer
 # à une vraie marge ; rien d'autre ne changera.
 
@@ -38,6 +48,159 @@ PLANNING_COLONNES <- c("DATE", "SERVICE", "HEURES")
 planning_valide <- function(db) {
   !is.null(db) && is.data.frame(db) &&
     all(PLANNING_COLONNES %in% names(db)) && nrow(db) > 0
+}
+
+#### Historique du planning ####
+
+# Le calendrier de shifts ne garde que l'avenir : dès qu'un jour est passé, ses
+# shifts en disparaissent. Un import qui ne lirait que le calendrier n'aurait
+# donc JAMAIS d'ancienneté — et sans passé, pas de médiane par jour de semaine,
+# donc pas de repère, donc pas de volet.
+#
+# D'où cette boucle, exécutée à chaque import (cf. import.R) :
+#
+#   1. lire l'historique accumulé dans un Google Sheet (clé PATH_HEURES_PLANNING) ;
+#   2. le fusionner avec ce que le calendrier donne aujourd'hui ;
+#   3. réécrire le tout dans le même Google Sheet.
+#
+# Le Sheet est la mémoire, le calendrier est l'actualité. À chaque passage, un
+# jour de plus est archivé avant de s'effacer du calendrier.
+
+# Nom de l'onglet du classeur. Nommé plutôt que « le premier onglet » : un
+# classeur dont on lit et réécrit le premier onglet finit un jour par écraser
+# autre chose. L'onglet est créé à la première écriture s'il n'existe pas.
+SHEET_PLANNING <- "HEURES PLANNING"
+
+# Met une table de planning à la forme du contrat, d'où qu'elle vienne. Un
+# aller-retour par Google Sheets rend les dates en texte ou en POSIXct et les
+# heures parfois en liste : on ne peut rien supposer de ce qui revient.
+normalise_planning <- function(db) {
+  if (is.null(db) || !is.data.frame(db) || nrow(db) == 0 ||
+      !all(PLANNING_COLONNES %in% names(db)))
+    return(NULL)
+
+  res <- db %>%
+    transmute(DATE    = parse_date_souple(aplatit_colonne(DATE)),
+              SERVICE = as.character(aplatit_colonne(SERVICE)),
+              HEURES  = suppressWarnings(
+                          as.numeric(sub(",", ".", aplatit_colonne(HEURES),
+                                         fixed = TRUE)))) %>%
+    filter(!is.na(DATE), !is.na(HEURES), !is.na(SERVICE)) %>%
+    group_by(DATE, SERVICE) %>%
+    summarise(HEURES = sum(HEURES, na.rm = TRUE), .groups = "drop") %>%
+    arrange(DATE, SERVICE)
+
+  if (nrow(res) == 0) NULL else res
+}
+
+# googlesheets4 rend une colonne en liste dès qu'il y voit des types mêlés
+# (une cellule vide, une date saisie à la main). unlist() aplatirait en perdant
+# l'alignement sur les cellules vides : on remplace chacune par NA, ce qui
+# préserve le nombre de lignes.
+aplatit_colonne <- function(x) {
+  if (!is.list(x)) return(x)
+  vapply(x, function(v) if (length(v) == 1) as.character(v) else NA_character_,
+         FUN.VALUE = character(1))
+}
+
+# On lit le classeur en texte (cf. lit_planning_historique) : c'est le seul
+# moyen d'être indifférent au format d'affichage choisi côté Google. Reste à
+# reconnaître la date, qu'elle soit ISO — ce que nous écrivons — ou saisie à la
+# main au format belge. Un format inconnu donne NA, et la ligne est écartée
+# plutôt que datée n'importe comment.
+parse_date_souple <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  if (inherits(x, "POSIXt")) return(as.Date(x))
+  if (is.numeric(x)) return(as.Date(x, origin = "1899-12-30"))  # série Sheets
+
+  txt <- trimws(as.character(x))
+  txt[txt == ""] <- NA_character_
+  d <- as.Date(txt, format = "%Y-%m-%d")
+  manquants <- is.na(d) & !is.na(txt)
+  if (any(manquants))
+    d[manquants] <- as.Date(txt[manquants], format = "%d/%m/%Y")
+  d
+}
+
+# Fusion de l'historique et de l'import du jour.
+#
+# La déduplication se fait PAR JOUR, pas par jour x service : sur un jour que
+# le calendrier couvre encore, c'est lui qui fait autorité EN ENTIER. Dédupliquer
+# par (jour, service) garderait à vie la ligne d'un service dont tous les shifts
+# ont été annulés depuis — elle n'aurait plus d'équivalent dans l'import, donc
+# rien ne viendrait jamais l'écraser.
+fusionne_planning <- function(ancien, nouveau) {
+  ancien  <- normalise_planning(ancien)
+  nouveau <- normalise_planning(nouveau)
+
+  if (is.null(nouveau)) return(ancien)
+  if (is.null(ancien))  return(nouveau)
+
+  bind_rows(ancien %>% filter(!DATE %in% nouveau$DATE), nouveau) %>%
+    arrange(DATE, SERVICE)
+}
+
+# Lecture de l'historique. Renvoie NULL — et ne lève pas — si le classeur est
+# vide, si l'onglet n'existe pas encore, ou si le Drive est injoignable : au
+# tout premier passage, il n'y a rien à lire, et c'est normal. L'import ne doit
+# pas tomber pour ça ; il repartira du seul calendrier, et réécrira.
+lit_planning_historique <- function(ss) {
+  if (!requireNamespace("googlesheets4", quietly = TRUE)) {
+    cli::cli_alert_warning("googlesheets4 absent : historique du planning ignoré")
+    return(NULL)
+  }
+  lu <- try({
+    onglets <- googlesheets4::sheet_names(ss)
+    if (!SHEET_PLANNING %in% onglets) NULL
+    else googlesheets4::read_sheet(ss, sheet = SHEET_PLANNING,
+                                   col_types = "c")
+  }, silent = TRUE)
+
+  if (inherits(lu, "try-error")) {
+    cli::cli_alert_warning("Historique du planning illisible : {as.character(lu)}")
+    return(NULL)
+  }
+  normalise_planning(lu)
+}
+
+# Réécriture. On n'écrit QUE si on a quelque chose : réécrire une table vide
+# effacerait l'historique accumulé, ce qui est exactement le sinistre que ce
+# mécanisme existe pour éviter. Un calendrier temporairement vide ne doit rien
+# coûter.
+ecrit_planning_historique <- function(ss, db) {
+  db <- normalise_planning(db)
+  if (is.null(db)) {
+    cli::cli_alert_warning("Rien à écrire dans l'historique du planning")
+    return(invisible(NULL))
+  }
+  if (!requireNamespace("googlesheets4", quietly = TRUE)) {
+    cli::cli_alert_warning("googlesheets4 absent : historique du planning non sauvé")
+    return(invisible(NULL))
+  }
+
+  ecrit <- try(
+    googlesheets4::write_sheet(
+      db %>% mutate(DATE = format(DATE, "%Y-%m-%d")),
+      ss = ss, sheet = SHEET_PLANNING),
+    silent = TRUE)
+
+  if (inherits(ecrit, "try-error"))
+    cli::cli_alert_warning("Historique du planning non sauvé : {as.character(ecrit)}")
+  else
+    cli::cli_alert_success("Historique du planning : {nrow(db)} lignes, {length(unique(db$DATE))} jours")
+
+  invisible(db)
+}
+
+# Le mouvement complet, tel que import.R l'appelle. Isolé ici pour être
+# testable sans Drive : les deux fonctions d'accès sont injectables.
+historise_planning <- function(nouveau, ss,
+                               lire  = lit_planning_historique,
+                               ecrire = ecrit_planning_historique) {
+  ancien <- lire(ss)
+  fusion <- fusionne_planning(ancien, nouveau)
+  ecrire(ss, fusion)
+  fusion
 }
 
 #### Libellés de secteur ####
@@ -89,11 +252,14 @@ planning_jour <- function(db_planning, db_kpi, date_veille) {
   sect <- planning_secteurs(db_planning)
   if (is.null(sect)) return(NULL)
 
+  # Même partage que R/travail.R : le service est variable, tout le reste est
+  # fixe. H_VARIABLE porte le volet ; H_FIXE ne sert qu'au survol.
   heures <- sect %>%
     group_by(DATE) %>%
-    summarise(H_TOTAL = sum(HEURES, na.rm = TRUE),
-              H_SERVICE = sum(HEURES[SECTEUR == "Service"], na.rm = TRUE),
-              .groups = "drop")
+    summarise(H_VARIABLE = sum(HEURES[SECTEUR == "Service"], na.rm = TRUE),
+              H_FIXE     = sum(HEURES[SECTEUR != "Service"], na.rm = TRUE),
+              .groups = "drop") %>%
+    mutate(H_TOTAL = H_VARIABLE + H_FIXE)
 
   ca <- db_kpi %>% select(DATE, CA = ventes)
 
@@ -104,9 +270,24 @@ planning_jour <- function(db_planning, db_kpi, date_veille) {
       # Un jour échu sans CA reste un jour échu : le CA vaut alors zéro, ce qui
       # est l'information utile (des heures posées, rien produit).
       CA = if_else(STATUT == "Échu", replace_na(CA, 0), NA_real_),
-      CA_PAR_HEURE = if_else(STATUT == "Échu" & H_TOTAL > 0, CA / H_TOTAL, NA_real_)
+      # Au dénominateur, les heures variables seules — comme CA_PAR_HEURE dans
+      # R/travail.R. Diviser par le total ferait baisser le ratio les jours de
+      # grosse production en cuisine, qui n'ont rien à voir avec la salle.
+      CA_PAR_HEURE = if_else(STATUT == "Échu" & H_VARIABLE > 0,
+                             CA / H_VARIABLE, NA_real_)
     ) %>%
     arrange(DATE)
+}
+
+# Heures fixes prévues par jour ET par secteur : le détail qu'on donne en
+# survol. Le total seul dirait « 14 h fixes » sans dire si c'est la brasserie
+# ou la transfo, ce qui est justement l'information qu'on veut.
+detail_heures_fixes <- function(db_planning) {
+  sect <- planning_secteurs(db_planning)
+  if (is.null(sect)) return(NULL)
+  sect %>%
+    filter(SECTEUR != "Service", HEURES > 0) %>%
+    arrange(DATE, desc(HEURES))
 }
 
 #### Réservations ####
@@ -142,7 +323,7 @@ couverts_par_jour <- function(resa) {
 heures_habituelles <- function(jour, db_couts_travail, n_semaines = 8) {
   depuis_planning <- medianes_par_jour_semaine(
     if (is.null(jour)) NULL else
-      jour %>% filter(STATUT == "Échu") %>% select(DATE, VALEUR = H_TOTAL),
+      jour %>% filter(STATUT == "Échu") %>% select(DATE, VALEUR = H_VARIABLE),
     n_semaines)
 
   if (!is.null(depuis_planning))
@@ -150,9 +331,17 @@ heures_habituelles <- function(jour, db_couts_travail, n_semaines = 8) {
                 libelle = paste0("médiane des ", attr(depuis_planning, "n_sem"),
                                  " dernières semaines planifiées")))
 
+  # Le repli suit le même périmètre que la grandeur qu'il remplace : des heures
+  # de service, pas toutes les heures. Comparer des heures de service prévues à
+  # un total réel tous secteurs confondus afficherait un déficit permanent.
   reelles <- medianes_par_jour_semaine(
     if (is.null(db_couts_travail)) NULL else
-      db_couts_travail %>% group_by(DATE) %>%
+      db_couts_travail %>%
+        # Sans colonne SECTEUR, on ne sait pas trier : on prend tout plutôt
+        # que de tomber, et le bandeau de repli dit déjà que ce n'est qu'un
+        # ordre de grandeur.
+        (\(d) if ("SECTEUR" %in% names(d)) filter(d, SECTEUR == "Service") else d)() %>%
+        group_by(DATE) %>%
         summarise(VALEUR = sum(HEURES, na.rm = TRUE), .groups = "drop"),
     n_semaines)
 
@@ -232,9 +421,10 @@ ca_habituel <- function(db_kpi, date_veille, n_semaines = 8) {
 # La table qui alimente les deux graphiques et le tableau. Une ligne par jour à
 # venir, avec tout ce qu'on veut lui comparer :
 #
-#   H_TOTAL / H_MEDIANE   les heures posées et les heures habituelles
-#   CA_MEDIAN / OBJECTIF  le CA habituel de ce jour de semaine, et l'objectif
-#   COUVERTS              contexte, pour l'infobulle
+#   H_VARIABLE / H_MEDIANE  les heures de service posées et les habituelles
+#   H_FIXE                  les heures hors service prévues — survol seulement
+#   CA_MEDIAN / OBJECTIF    le CA habituel de ce jour de semaine, et l'objectif
+#   COUVERTS                contexte, pour l'infobulle
 #
 # Aucune grandeur dérivée d'une autre dérivée : chaque colonne se lit seule.
 projection_planning <- function(jour, db_objectifs, habituel, ca_hab,
@@ -265,15 +455,15 @@ projection_planning <- function(jour, db_objectifs, habituel, ca_hab,
   p %>%
     mutate(
       OBJECTIF     = replace_na(OBJECTIF, 0),
-      ECART_H      = H_TOTAL - H_MEDIANE,
-      ECART_H_PCT  = ratio_pct(H_TOTAL - H_MEDIANE, H_MEDIANE),
+      ECART_H      = H_VARIABLE - H_MEDIANE,
+      ECART_H_PCT  = ratio_pct(H_VARIABLE - H_MEDIANE, H_MEDIANE),
       # Le CA que ce jour de semaine rapporte d'habitude, face à l'objectif.
       ECART_CA     = CA_MEDIAN - OBJECTIF,
       COUVRE       = !is.na(CA_MEDIAN) & OBJECTIF > 0 & CA_MEDIAN >= OBJECTIF,
-      # Ce qu'il faudrait produire par heure pour tenir l'objectif : utile en
-      # infobulle, jamais comme grandeur affichée.
-      CA_H_REQUIS  = if_else(H_TOTAL > 0 & OBJECTIF > 0, OBJECTIF / H_TOTAL,
-                             NA_real_),
+      # Ce qu'il faudrait produire par heure de service pour tenir l'objectif :
+      # utile en infobulle, jamais comme grandeur affichée.
+      CA_H_REQUIS  = if_else(H_VARIABLE > 0 & OBJECTIF > 0,
+                             OBJECTIF / H_VARIABLE, NA_real_),
       # vecteur_jours (global.R) plutôt que wday(label = TRUE) ou %a : ces
       # deux-là suivent la locale du SERVEUR, et rendent « Sat » sur une
       # machine en locale C — ce qui est le cas courant d'un serveur Shiny.
@@ -287,7 +477,8 @@ projection_planning <- function(jour, db_objectifs, habituel, ca_hab,
 # journaliers donnerait le même poids à un mardi creux et à un samedi plein.
 resume_projection <- function(proj) {
   if (is.null(proj) || nrow(proj) == 0) return(NULL)
-  h    <- sum(proj$H_TOTAL, na.rm = TRUE)
+  h    <- sum(proj$H_VARIABLE, na.rm = TRUE)
+  hf   <- sum(proj$H_FIXE, na.rm = TRUE)
   hmed <- if (all(is.na(proj$H_MEDIANE))) NA_real_
           else sum(proj$H_MEDIANE, na.rm = TRUE)
   obj  <- sum(proj$OBJECTIF, na.rm = TRUE)
@@ -296,7 +487,9 @@ resume_projection <- function(proj) {
 
   list(
     jours       = nrow(proj),
-    H_TOTAL     = h,
+    H_VARIABLE  = h,
+    H_FIXE      = hf,
+    H_TOTAL     = h + hf,
     H_MEDIANE   = hmed,
     ECART_H     = if (is.na(hmed)) NA_real_ else h - hmed,
     ECART_H_PCT = if (is.na(hmed)) NA_real_ else ratio_pct(h - hmed, hmed),
@@ -304,7 +497,7 @@ resume_projection <- function(proj) {
     CA_MEDIAN   = ca,
     OBJECTIF    = obj,
     ECART_CA    = if (is.na(ca)) NA_real_ else ca - obj,
-    # Le CA par heure que l'objectif impose, sur toute la fenêtre.
+    # Le CA par heure de service que l'objectif impose, sur toute la fenêtre.
     CA_H_REQUIS = if (h > 0 && obj > 0) obj / h else NA_real_
   )
 }
@@ -314,7 +507,7 @@ resume_projection <- function(proj) {
 # Infobulle commune aux deux graphiques : mêmes lignes, même ordre, quelle que
 # soit l'unité du graphe. On y glisse les couverts réservés, qui expliquent
 # souvent l'écart d'heures sans entrer dans le calcul.
-infobulle_jour <- function(d) {
+infobulle_jour <- function(d, detail_fixe = NULL) {
   couverts <- ifelse(d$COUVERTS > 0,
                      paste0("<br>", d$COUVERTS, " couverts réservés (",
                             d$RESA, " résa)"),
@@ -325,13 +518,38 @@ infobulle_jour <- function(d) {
                                    paste0(" (", ifelse(d$ECART_H_PCT >= 0, "+", ""),
                                           round(d$ECART_H_PCT), " %)"))))
   paste0("<b>", d$JOUR_LABEL, "</b>",
-         "<br>", round(d$H_TOTAL), " h planifiées", habituel,
+         "<br>", round(d$H_VARIABLE), " h de service planifiées", habituel,
+         texte_heures_fixes(d$DATE, d$H_FIXE, detail_fixe),
          couverts, "<extra></extra>")
+}
+
+# Les heures fixes du jour, en survol : le total, puis le détail par secteur
+# quand on l'a. Elles n'entrent dans aucun calcul du volet — c'est du contexte,
+# et c'est pour ça qu'elles vivent dans l'infobulle et nulle part ailleurs.
+texte_heures_fixes <- function(dates, totaux, detail = NULL) {
+  totaux <- replace_na(as.numeric(totaux), 0)
+  sortie <- ifelse(totaux > 0,
+                   paste0("<br>+ ", round(totaux, 1), " h hors service prévues"),
+                   "<br>aucune heure hors service prévue")
+  if (is.null(detail) || nrow(detail) == 0) return(sortie)
+
+  # Un seul passage de collapse, puis un appariement par date : la boucle
+  # naïve sur les lignes coûtait un filtre par jour affiché.
+  par_jour <- detail %>%
+    group_by(DATE) %>%
+    summarise(TXT = paste0("<br><span style='font-size:0.85em'>&nbsp;&nbsp;",
+                           paste0(SECTEUR, " ", round(HEURES, 1), " h",
+                                  collapse = " · "),
+                           "</span>"),
+              .groups = "drop")
+
+  i <- match(as.Date(dates), as.Date(par_jour$DATE))
+  paste0(sortie, ifelse(is.na(i) | totaux <= 0, "", par_jour$TXT[i]))
 }
 
 # Graphique 1 — rien que des heures.
 # Barre : ce qui est planifié. Trait : ce qu'on met d'habitude ce jour-là.
-graph_planning_heures <- function(proj, habituel) {
+graph_planning_heures <- function(proj, habituel, detail_fixe = NULL) {
   if (is.null(proj) || nrow(proj) == 0)
     return(plotly_empty() %>% layout(title = "Aucun jour à venir"))
 
@@ -342,9 +560,9 @@ graph_planning_heures <- function(proj, habituel) {
              ifelse(proj$ECART_H_PCT > 10, COUL_AMBRE, COUL_VERT))
 
   p <- plot_ly() %>%
-    add_bars(x = ordre, y = proj$H_TOTAL, name = "Heures planifiées",
+    add_bars(x = ordre, y = proj$H_VARIABLE, name = "Heures de service",
              marker = list(color = couleur),
-             hovertemplate = infobulle_jour(proj))
+             hovertemplate = infobulle_jour(proj, detail_fixe))
 
   if (any(!is.na(proj$H_MEDIANE)))
     p <- p %>% add_markers(
@@ -357,7 +575,7 @@ graph_planning_heures <- function(proj, habituel) {
 
   p %>% layout(
     xaxis = list(title = "", tickangle = -35),
-    yaxis = list(title = "Heures planifiées", rangemode = "tozero"),
+    yaxis = list(title = "Heures de service planifiées", rangemode = "tozero"),
     legend = list(orientation = "h", y = -0.25),
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
@@ -384,7 +602,7 @@ graph_planning_rentabilite <- function(proj) {
            paste0("<br>", ifelse(proj$ECART_CA >= 0, "au-dessus de ", "manque "),
                   format_CA(abs(proj$ECART_CA), -1)), ""),
     ifelse(is.na(proj$CA_H_REQUIS), "",
-           paste0("<br>", round(proj$H_TOTAL), " h planifiées, soit ",
+           paste0("<br>", round(proj$H_VARIABLE), " h de service, soit ",
                   format_CA(proj$CA_H_REQUIS, -1), " / h à tenir")),
     ifelse(proj$COUVERTS > 0,
            paste0("<br>", proj$COUVERTS, " couverts réservés (",
@@ -426,9 +644,11 @@ kpi_planning_tiles <- function(res, habituel, ca_hab) {
 
   div(
     class = "kpi-grid",
-    kpi_tile(format(round(res$H_TOTAL)), "Heures planifiées", COUL_TRAVAIL, "clock",
+    kpi_tile(format(round(res$H_VARIABLE)), "Heures de service planifiées",
+             COUL_TRAVAIL, "clock",
              sous_titre = paste0("sur ", res$jours, " jour",
-                                 if (res$jours > 1) "s" else "", " à venir")),
+                                 if (res$jours > 1) "s" else "", " à venir",
+                                 " · + ", round(res$H_FIXE), " h hors service")),
     kpi_tile(ecart_h, "Par rapport à l'habitude", couleur_h, "code-compare",
              sous_titre = if (is.na(res$H_MEDIANE)) habituel$libelle
                           else paste0("habituel : ", round(res$H_MEDIANE), " h")),
@@ -458,12 +678,13 @@ table_planning_avenir <- function(proj) {
       Jour                  = paste0(vecteur_jours[wday(DATE, week_start = 1)],
                                      " ", format(DATE, "%d/%m/%Y")),
       Couverts              = COUVERTS,
-      `Heures planifiées`   = round(H_TOTAL, 1),
+      `Heures service`      = round(H_VARIABLE, 1),
       `Heures habituelles`  = ifelse(is.na(H_MEDIANE), "—",
                                      as.character(round(H_MEDIANE, 1))),
       `Écart`               = ifelse(is.na(ECART_H), "—",
                                      paste0(ifelse(ECART_H >= 0, "+", ""),
                                             round(ECART_H, 1), " h")),
+      `Heures hors service` = round(H_FIXE, 1),
       `CA habituel`         = format_CA(CA_MEDIAN, -1),
       Objectif              = format_CA(OBJECTIF, -1),
       `Écart CA`            = ifelse(is.na(ECART_CA), "—",
@@ -482,13 +703,13 @@ acc_planning <- function(res) {
     res$COUVERTS, " couverts réservés")
 
   if (is.na(res$ECART_CA))
-    return(corps_accueil(paste0(round(res$H_TOTAL), " h"),
-                         paste0("planifiées sur ", res$jours, " jours à venir"),
+    return(corps_accueil(paste0(round(res$H_VARIABLE), " h"),
+                         paste0("de service sur ", res$jours, " jours à venir"),
                          COUL_NEUTRE, detail))
 
   corps_accueil(
-    paste0(round(res$H_TOTAL), " h"),
-    paste0("planifiées sur ", res$jours, " jours à venir"),
+    paste0(round(res$H_VARIABLE), " h"),
+    paste0("de service sur ", res$jours, " jours à venir"),
     if (res$ECART_CA >= 0) COUL_VERT else COUL_ROUGE,
     paste0(detail, " · ",
            if (res$ECART_CA >= 0) "objectif couvert" else

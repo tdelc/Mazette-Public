@@ -156,9 +156,14 @@ ui_planning <- function() {
                   min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
       hr(),
       div(class = "small text-muted",
-          tags$b("Heures habituelles"), " : la médiane des heures posées le",
-          " même jour de semaine, sur les semaines de référence. Un samedi se",
-          " compare à un samedi.", tags$br(), tags$br(),
+          tags$b("Heures de service"), " : seules les heures variables sont",
+          " comparées, comme dans l'onglet Travail. Les heures hors service",
+          " (transfo, brasserie, support) suivent la production, pas la",
+          " fréquentation : elles sont données en survol, jour par jour.",
+          tags$br(), tags$br(),
+          tags$b("Heures habituelles"), " : la médiane des heures de service",
+          " posées le même jour de semaine, sur les semaines de référence. Un",
+          " samedi se compare à un samedi.", tags$br(), tags$br(),
           tags$b("CA habituel"), " : la médiane du chiffre d'affaires du même",
           " jour de semaine, sur les mêmes semaines de référence. Un jeudi se",
           " compare à un jeudi.", tags$br(), tags$br(),
@@ -173,12 +178,13 @@ ui_planning <- function() {
     uiOutput("plan_kpi"),
     card(
       full_screen = TRUE,
-      card_header("Combien d'heures, comparé à d'habitude ?"),
+      card_header("Combien d'heures de service, comparé à d'habitude ?"),
       plotlyOutput("plan_heures", height = "330px"),
       div(class = "small text-muted",
-          "Barre : les heures planifiées. Trait orange : ce qu'on met",
-          " habituellement ce jour-là. En ambre au-delà de +10 %.",
-          " Survolez pour les couverts déjà réservés.")
+          "Barre : les heures de service planifiées. Trait orange : ce qu'on",
+          " met habituellement ce jour-là. En ambre au-delà de +10 %.",
+          " Survolez pour les heures hors service prévues et les couverts",
+          " déjà réservés.")
     ),
     card(
       full_screen = TRUE,
@@ -187,8 +193,8 @@ ui_planning <- function() {
       div(class = "small text-muted",
           "Barre : le CA que ce jour de semaine rapporte habituellement.",
           " Trait noir : l'objectif du jour. Verte, la barre passe l'objectif ;",
-          " rouge, elle reste dessous. Survolez pour les heures posées et le",
-          " CA par heure que l'objectif imposerait.")
+          " rouge, elle reste dessous. Survolez pour les heures de service",
+          " posées et le CA par heure que l'objectif imposerait.")
     ),
     card(
       full_screen = TRUE, height = "440px",

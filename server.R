@@ -1271,6 +1271,13 @@ server <- function(input, output, session) {
                        n_semaines = req(input$plan_ref_semaines))
   })
 
+  # Le détail des heures hors service, pour le survol seulement : il ne passe
+  # par aucun calcul, d'où ce reactive séparé plutôt qu'une colonne de plus
+  # dans la projection.
+  PLAN_FIXE <- reactive({
+    detail_heures_fixes(PLANNING_BRUT())
+  })
+
   # Le CA habituel de chaque jour de semaine, sur les mêmes semaines de
   # référence que les heures : c'est lui qu'on confronte à l'objectif.
   PLAN_CA_HABITUEL <- reactive({
@@ -1319,7 +1326,7 @@ server <- function(input, output, session) {
 
   output$plan_heures <- renderPlotly({
     req(PLANNING_BRUT())
-    graph_planning_heures(PLAN_PROJECTION(), PLAN_HABITUEL())
+    graph_planning_heures(PLAN_PROJECTION(), PLAN_HABITUEL(), PLAN_FIXE())
   })
 
   output$plan_rentabilite <- renderPlotly({

@@ -373,7 +373,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
         <tr><td>Compta</td><td><code>tab_compta</code></td><td>Compte d&rsquo;exploitation et comptabilit&eacute; g&eacute;n&eacute;rale, d&eacute;riv&eacute;s de <code>DB_COMPTA</code>.</td></tr>
         <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
-        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
+        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em>&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
         <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
       </tbody>
@@ -596,6 +596,8 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         <tr><td><code>ID_DB_COMPTA</code></td><td><code>DB_COMPTA.rds</code>, la comptabilit&eacute; g&eacute;n&eacute;rale d&eacute;j&agrave; consolid&eacute;e.</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>ID_DRIVE_RESA</code></td><td>Historique des r&eacute;servations (onglet <code>RESA</code>).</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>ICS_SALLE</code> / <code>ICS_TERRASSE</code></td><td>Deux calendriers iCal, lus par <code>calendar::ic_read()</code>.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>ICS_HEURES</code></td><td>Le calendrier iCal des shifts planifi&eacute;s. Il ne contient que l&rsquo;avenir&nbsp;: un jour pass&eacute; en dispara&icirc;t.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>PATH_HEURES_PLANNING</code></td><td>Le Google&nbsp;Sheet o&ugrave; l&rsquo;import <strong>archive</strong> les shifts avant qu&rsquo;ils ne s&rsquo;effacent du calendrier. Lu puis r&eacute;&eacute;crit &agrave; chaque passage&nbsp;; onglet <code>HEURES PLANNING</code>.</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>ID_MAZETTE_2023</code>, <code>ID_MAZETTE_2025</code>, <code>ID_OLD_COMPTA</code></td><td>Archives historiques, reprises une fois puis fig&eacute;es.</td><td><span class="pill non">comment&eacute;</span></td></tr>
       </tbody>
     </table></div>
@@ -661,6 +663,39 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         </tr>
       </tbody>
     </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Pourquoi le planning s&rsquo;archive dans un Google&nbsp;Sheet</span>
+      <p>
+        Le calendrier de shifts (<code>ICS_HEURES</code>) ne garde que l&rsquo;avenir&nbsp;:
+        d&egrave;s qu&rsquo;un jour est pass&eacute;, ses shifts en disparaissent. Un import qui ne
+        lirait que le calendrier n&rsquo;aurait donc <strong>jamais</strong> d&rsquo;anciennet&eacute; &mdash;
+        et sans pass&eacute;, pas de m&eacute;diane par jour de semaine, donc aucun rep&egrave;re
+        auquel comparer les heures &agrave; venir.
+      </p>
+      <p>
+        &Agrave; chaque import, <code>R/planning.R</code> ex&eacute;cute donc trois pas&nbsp;:
+        lire l&rsquo;historique accumul&eacute; dans le Sheet <code>PATH_HEURES_PLANNING</code>,
+        le fusionner avec ce que le calendrier donne aujourd&rsquo;hui, r&eacute;&eacute;crire le tout.
+        Le Sheet est la m&eacute;moire, le calendrier est l&rsquo;actualit&eacute;&nbsp;; un jour de plus
+        est mis &agrave; l&rsquo;abri avant de s&rsquo;effacer.
+      </p>
+      <p>
+        La d&eacute;duplication se fait <strong>par jour</strong>, pas par jour&nbsp;&times;&nbsp;service&nbsp;:
+        sur un jour que le calendrier couvre encore, c&rsquo;est lui qui fait autorit&eacute; en
+        entier. D&eacute;dupliquer par (jour, service) garderait &agrave; vie la ligne d&rsquo;un service
+        dont tous les shifts ont &eacute;t&eacute; annul&eacute;s depuis&nbsp;: elle n&rsquo;aurait plus
+        d&rsquo;&eacute;quivalent dans l&rsquo;import, donc rien ne viendrait jamais l&rsquo;&eacute;craser.
+      </p>
+      <p>
+        Deux garde-fous&nbsp;: on n&rsquo;&eacute;crit jamais une table vide (un calendrier
+        temporairement muet effacerait tout l&rsquo;historique), et un incident d&rsquo;archivage
+        ne fait pas tomber l&rsquo;import &mdash; le volet repart du calendrier seul et le
+        passage suivant rattrape. La lecture et l&rsquo;&eacute;criture passent par
+        <code>googlesheets4</code>, qui partage simplement le jeton du compte de
+        service d&eacute;j&agrave; obtenu par <code>googledrive</code>.
+      </p>
+    </div>
 
     <div class="note" data-profondeur="detail">
       <span class="l">Pourquoi <code>DB_TICKET</code> est stock&eacute; en deux morceaux</span>
@@ -803,7 +838,7 @@ mkdir -p outputs   <span class="cmt"># le cache y sera écrit ; le dossier est i
         <pre><code>install.packages(c(
   <span class="cmt"># chargés par global.R</span>
   "shiny","bslib","shinyjs","shinyWidgets","shinybusy","dplyr","ggplot2",
-  "tidyr","purrr","stringr","tibble","lubridate","googledrive","readxl",
+  "tidyr","purrr","stringr","tibble","lubridate","googledrive","googlesheets4","readxl",
   "scales","plotly","forecast","DT","zoo","patchwork",
   <span class="cmt"># utilisés via :: uniquement</span>
   "cli","httr","calendar","janitor","htmlwidgets"))</code></pre>
@@ -846,6 +881,8 @@ mkdir -p outputs   <span class="cmt"># le cache y sera écrit ; le dossier est i
             <tr><td><code>ID_DRIVE_RESA</code></td><td>identifiant du classeur des r&eacute;servations</td></tr>
             <tr><td><code>ICS_SALLE</code></td><td>URL du calendrier iCal &laquo;&nbsp;salle&nbsp;&raquo;</td></tr>
             <tr><td><code>ICS_TERRASSE</code></td><td>URL du calendrier iCal &laquo;&nbsp;terrasse&nbsp;&raquo;</td></tr>
+            <tr><td><code>ICS_HEURES</code></td><td>URL du calendrier iCal des shifts planifi&eacute;s</td></tr>
+            <tr><td><code>PATH_HEURES_PLANNING</code></td><td>identifiant (ou URL) d&rsquo;un Google&nbsp;Sheet <em>vide</em>, partag&eacute; en &eacute;criture avec le compte de service&nbsp;: l&rsquo;import y cr&eacute;e l&rsquo;onglet <code>HEURES PLANNING</code> au premier passage</td></tr>
           </tbody>
         </table></div>
       </li>
