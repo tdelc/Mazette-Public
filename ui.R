@@ -422,6 +422,8 @@ ui_exploitation <- function() {
                   value = 12, step = 1, ticks = FALSE),
       hr(),
       div(class = "small text-muted",
+          "Tous les chiffres présentés ici le sont HTVA",
+          tags$br(), tags$br(),
           tags$b("Marge avant amortissements"), tags$br(),
           "= CA + autres produits − matières − rémunérations − 
           frais généraux + résultat financier",
@@ -485,14 +487,14 @@ ui_compta_generale <- function() {
       checkboxInput("cg_pct", "En % du chiffre d'affaires", FALSE),
       hr(),
       div(class = "small text-muted",
+          "Tous les chiffres présentés ici le sont HTVA",
+          tags$br(), tags$br(),
           "Les comptes sont classés sur leur ", tags$b("numéro"), " : 70 ventes,",
           " 60 achats (609 variations de stock), 61 services et biens, 62",
           " rémunérations, 63 amortissements, 64 autres charges, 65/75",
           " financier.", tags$br(), tags$br(),
           tags$b("Soldes"), " : calculés en cumulant les postes qui les",
-          " précèdent, selon leur définition comptable.", tags$br(), tags$br(),
-          tags$b("Cliquez sur un poste"), " du compte de résultat pour dérouler",
-          " les comptes qui le composent.")
+          " précèdent, selon leur définition comptable."
     ),
     uiOutput("cg_kpi"),
     card(
@@ -501,11 +503,6 @@ ui_compta_generale <- function() {
       DTOutput("cg_table"),
       div(class = "small text-muted mt-1",
           "Cliquez sur une ligne de poste pour en dérouler les comptes.")
-    ),
-    card(
-      full_screen = TRUE,
-      card_header(textOutput("cg_detail_titre", inline = TRUE)),
-      DTOutput("cg_detail_table")
     ),
     navset_card_tab(
       nav_panel(

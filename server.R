@@ -1026,25 +1026,6 @@ server <- function(input, output, session) {
     if (is.na(p) || !nzchar(p)) NULL else p
   })
 
-  output$cg_detail_titre <- renderText({
-    p <- cg_poste_choisi()
-    if (is.null(p)) "Détail d'un poste — cliquez sur une ligne"
-    else paste0("Détail — ", p)
-  })
-
-  output$cg_detail_table <- renderDT({
-    p <- cg_poste_choisi()
-    if (is.null(p))
-      return(datatable_simple(tibble(
-        Info = "Sélectionnez un poste du compte de résultat pour voir ses comptes.")))
-    d <- detail_poste(DB_COMPTA, p, cg_periodes(), cg_unite())
-    if (!nrow(d))
-      return(datatable_simple(tibble(Info = "Aucun compte mouvementé sur la période.")))
-    datatable_simple(d %>% transmute(
-      Compte = COMPTE, Libellé = LIBELLE,
-      `Total sur la sélection` = format_CA(VALEUR, -1)))
-  })
-
   output$cg_soldes <- renderPlotly({
     graph_soldes(DB_COMPTA, cg_periodes(), cg_unite()) })
 
