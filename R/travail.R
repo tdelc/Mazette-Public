@@ -243,19 +243,21 @@ graph_productivite_temps <- function(ag, unite = "mois",
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
 
   lbl <- etiquette_periode(ag$PERIODE, unite)
+  ordre <- factor(lbl, levels = lbl)
+  
   h_service <- sum(ag$H_VARIABLE, na.rm = TRUE)
   moy <- if (h_service > 0) sum(ag$CA, na.rm = TRUE) / h_service else NA_real_
 
   p <- plot_ly(source = source) %>%
-    add_bars(x = ag$PERIODE, y = ag$H_VARIABLE, name = "Heures variables (service)",
+    add_bars(x = ordre, y = ag$H_VARIABLE, name = "Heures variables (service)",
              marker = list(color = COUL_TRAVAIL),
              hovertemplate = paste0(lbl, "<br>", round(ag$H_VARIABLE),
                                     " h de service<extra></extra>")) %>%
-    add_bars(x = ag$PERIODE, y = ag$H_FIXE, name = "Heures fixes (hors service)",
+    add_bars(x = ordre, y = ag$H_FIXE, name = "Heures fixes (hors service)",
              marker = list(color = COUL_MATIERE),
              hovertemplate = paste0(lbl, "<br>", round(ag$H_FIXE),
                                     " h hors service<extra></extra>")) %>%
-    add_lines(x = ag$PERIODE, y = ag$CA_PAR_HEURE, name = "CA par heure de service",
+    add_lines(x = ordre, y = ag$CA_PAR_HEURE, name = "CA par heure de service",
               yaxis = "y2", line = list(color = COUL_BRUN, width = 2.5),
               hovertemplate = paste0(lbl, "<br>", format_CA(ag$CA_PAR_HEURE, -1),
                                      " / h<extra></extra>"))

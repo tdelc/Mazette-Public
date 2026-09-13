@@ -739,6 +739,40 @@ ui_conso_boissons <- function() {
   )
 }
 
+# Onglet "Nourriture"
+ui_nourriture <- function() {
+  navset_card_tab(
+    id = "nourriture_tabs",
+    nav_panel(
+      title = "Focaccias",
+      icon = icon("bread-slice"),
+      ui_focaccias()
+    ),
+    nav_panel(
+      title = "Pizzwanze",
+      icon = icon("pizza-slice"),
+      ui_pizzwanze()
+    )
+  )
+}
+
+# Onglet "Boisson"
+ui_boissons <- function() {
+  navset_card_tab(
+    id = "boissons_tabs",
+    nav_panel(
+      title = "Boissons",
+      icon = icon("bread-slice"),
+      ui_conso_boissons()
+    ),
+    nav_panel(
+      title = "Fûts",
+      icon = icon("boxes-stacked"),
+      ui_futs()
+    )
+  )
+}
+
 # Onglet "Pizzwanze" : suivi des soirées pizza, soirée par soirée.
 ui_pizzwanze <- function() {
   layout_sidebar(

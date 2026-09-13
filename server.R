@@ -606,7 +606,7 @@ server <- function(input, output, session) {
         Personnel = format_CA(COUT_TRAVAIL, -1),
         `Matières` = format_CA(COUT_MATIERE, -1),
         Total = format_CA(TOTAL, -1),
-        `Chiffre d'affaires` = format_CA(CA, -1),
+        # `Chiffre d'affaires` = format_CA(CA, -1),
         `% du CA` = format_pct(PCT_CA)))
     })
 

@@ -66,13 +66,19 @@ IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
 # OLD") rendrait le préfixe ambigu et renverrait NULL, sans un mot.
 IMPORT_PASS          <- DB_sheets[[SHEET_PASS]]
 
-# Import des heures (issu du rapport pour l'AG)
+# Import des heures
 
 cli::cli_h3("Drive Heures")
 
 drive_heures <- drive_download(drive_get(id =get_path("ID_DRIVE_HEURES")),
                                 overwrite = TRUE)
-IMPORT_HEURES <- read_excel(drive_heures$local_path,sheet = "Rapport",skip = 1)
+
+sheets <- excel_sheets(path = drive_heures$local_path)
+sheets_heures <- sheets[str_detect(sheets,"[0-9]+")]
+
+IMPORT_HEURES <- sheets_heures |> map_df(~{
+  read_excel(drive_heures$local_path,sheet = .x,skip = 1)
+})
 IMPORT_COUT <- read_excel(drive_heures$local_path,sheet = "Cout")
 
 # Import des matières premières (old issu de la compta 2022 à juin 2026)
@@ -384,8 +390,8 @@ DB_HEURES <- IMPORT_HEURES %>%
          HEURE_DEB,HEURE_FIN,debut_h,fin_h,HEURES,HEURES_PAUSE) %>%
   pivot_longer(cols = c(HEURE_MIDI,HEURE_SOIR), names_to = "CD_HEURE",values_to = "NB_HEURES") %>% 
   group_by(DATE,CONTRAT,DEPARTEMENT,CD_HEURE) %>% 
-  summarise(NB_HEURES = sum(NB_HEURES))
-
+  summarise(NB_HEURES = sum(NB_HEURES)) |> 
+  ungroup()
 
 colnames(IMPORT_COUT) <- c("CONTRAT","COUT_HEURE")
 

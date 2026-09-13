@@ -45,15 +45,13 @@
 
 ONGLETS <- tibble::tribble(
   ~CLE,               ~TITRE,               ~ICONE,                    ~UI,
-  "tab_accueil",      "Accueil",            "home",                    "ui_accueil",
+  # "tab_accueil",      "Accueil",            "home",                    "ui_accueil",
   "tab_maintenant",   "Maintenant",         "gauge-high",              "ui_maintenant",
   "tab_detail",       "Chiffre d'affaires", "magnifying-glass-chart",  "ui_detail",
   "tab_historique",   "Historique",         "chart-line",              "ui_historique",
   "tab_annee",        "Année",              "calendar-check",          "ui_annee",
-  "tab_futs",         "Fûts",               "boxes-stacked",           "ui_futs",
-  "tab_boissons",     "Boissons",           "beer-mug-empty",          "ui_conso_boissons",
-  "tab_focaccias",    "Focaccias",          "bread-slice",             "ui_focaccias",
-  "tab_pizzwanze",    "Pizzwanze",          "pizza-slice",             "ui_pizzwanze",
+  "tab_boissons",     "Boissons",           "champagne-glasses",       "ui_boissons",
+  "tab_nourriture",   "Nourriture",         "utensils",                "ui_nourriture",
   "tab_simulation",   "Simulation",         "sliders",                 "ui_simulation",
   "tab_compta",       "Compta",             "calculator",              "ui_compta",
   "tab_travail",      "Travail",            "person-running",          "ui_travail",
@@ -63,7 +61,7 @@ ONGLETS <- tibble::tribble(
 
 # L'accueil est la page d'atterrissage : quiconque a un mot de passe valide y
 # arrive. Ce sont ses cartes qui sont filtrées, pas l'onglet lui-même.
-ONGLET_ACCUEIL <- "tab_accueil"
+ONGLET_ACCUEIL <- "tab_maintenant"
 
 #### Cartes de l'accueil ####
 # Une carte renvoie vers un onglet : elle n'a de sens que si cet onglet est
@@ -94,13 +92,13 @@ PROFILS <- list(
 
   # Pilotage quotidien : tout l'opérationnel, sans la compta générale.
   gestion   = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-                "tab_futs", "tab_boissons", "tab_focaccias", "tab_pizzwanze",
+                "tab_futs", "tab_boissons", "tab_nourriture",
                 "tab_simulation", "tab_travail", "tab_reservations",
                 "tab_comparaison"),
 
   # L'équipe : l'activité, pas les coûts (ni compta, ni masse salariale).
   equipe    = c("tab_maintenant", "tab_detail", "tab_historique", "tab_annee",
-                "tab_futs", "tab_boissons", "tab_focaccias", "tab_pizzwanze",
+                "tab_futs", "tab_boissons", "tab_nourriture",
                 "tab_reservations"),
 
   # Salle : ce qui se passe ce soir.
@@ -108,10 +106,10 @@ PROFILS <- list(
                 "tab_reservations"),
 
   # Brasserie : les fûts et ce qu'on en tire.
-  brasserie = c("tab_futs", "tab_boissons", "tab_maintenant"),
+  brasserie = c("tab_maintenant", "tab_futs", "tab_boissons"),
   
   # Public : pour présenter à l'extérieur
-  public = c("tab_historique", "tab_annee", "tab_maintenant"),
+  public = c("tab_maintenant", "tab_historique", "tab_annee"),
 
   # Un accès de courtoisie : l'accueil et rien d'autre.
   invite    = character(0)
