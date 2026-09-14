@@ -54,6 +54,80 @@ format_indicateur <- function(x, unite) {
   if (identical(unite, "pct")) format_pct(x) else format_CA(x, -1)
 }
 
+##### Comparer une période partielle #####
+
+# Une période en cours n'a pas fini de vivre : août 2026 apporte huit mois de
+# comptabilité quand 2025 en apporte douze. Les confronter tels quels compare
+# huit mois à douze, et l'écart affiché n'est qu'une différence de durée.
+#
+# La réponse est de RABOTER la référence à la même taille — plus exactement aux
+# mêmes MOIS. Pas « les huit premiers mois » au sens positionnel, mais les mois
+# de même rang dans leur période : si 2026 porte janvier à août, on ne garde de
+# 2025 que janvier à août. La saisonnalité est ainsi respectée, ce qu'un simple
+# prorata (x 12/8) manquerait complètement : raboter n'invente rien, il retire.
+#
+# Ça vaut aussi quand il manque un mois au milieu : si 2026 n'a pas mars, on
+# retire mars de 2025 également. On compare toujours les mêmes rangs.
+
+# Rang d'un mois dans sa période : 0 pour janvier d'une année, 2 pour le
+# troisième mois d'un trimestre. C'est la clé sur laquelle tout le rabotage
+# s'appuie, et elle se déduit de la seule granularité.
+offset_mois <- function(mois, unite) {
+  mois <- as.Date(mois)
+  debut <- switch(unite,
+                  mois      = mois,
+                  trimestre = floor_date(mois, "quarter"),
+                  annee     = floor_date(mois, "year"))
+  # as.integer explicite : year() et month() rendent des doubles, et un rang de
+  # mois qui se promène en double finit par se comparer de travers dans un
+  # %in% ou un identical().
+  as.integer(12L * (year(mois) - year(debut)) + (month(mois) - month(debut)))
+}
+
+# Nombre de mois qu'une période complète devrait porter.
+mois_attendus <- function(unite) switch(unite, mois = 1L, trimestre = 3L,
+                                        annee = 12L)
+
+# Les rangs effectivement présents dans la période analysée. C'est le gabarit
+# auquel toutes les autres périodes seront ramenées.
+offsets_periode <- function(postes_mensuels, periode, unite) {
+  if (is.null(postes_mensuels) || !nrow(postes_mensuels))
+    return(seq_len(mois_attendus(unite)) - 1L)
+  d <- postes_mensuels %>%
+    filter(!is.na(PERIODE),
+           consolide_periode(tibble(PERIODE = PERIODE), unite)$PERIODE ==
+             as.Date(periode))
+  if (!nrow(d)) return(seq_len(mois_attendus(unite)) - 1L)
+  sort(unique(offset_mois(d$PERIODE, unite)))
+}
+
+# La série agrégée en ne gardant, dans CHAQUE période, que les mois dont le
+# rang figure dans le gabarit. Sur une période complète le gabarit est complet
+# et la fonction ne retire rien : c'est pour cela qu'on peut l'appliquer sans
+# condition, et que le rabotage n'a d'effet que là où il en fallait un.
+serie_rabotee <- function(postes_mensuels, unite, offsets) {
+  if (is.null(postes_mensuels) || !nrow(postes_mensuels))
+    return(agrege_exploitation(postes_mensuels, unite))
+  postes_mensuels %>%
+    filter(offset_mois(PERIODE, unite) %in% offsets) %>%
+    agrege_exploitation(unite)
+}
+
+# Comment nommer une référence rabotée.
+#
+# Sur une année, les rangs sont les mois de l'année : on peut les nommer, et
+# « janv.–août » se lit infiniment mieux que « 8 mois sur 12 ». Sur un
+# trimestre, le rang 0 est tantôt janvier tantôt juillet : on s'en tient au
+# décompte, qui reste juste dans tous les cas.
+etiquette_rabotage <- function(offsets, unite) {
+  n <- length(offsets); attendu <- mois_attendus(unite)
+  if (n >= attendu) return(NULL)
+  contigu <- identical(as.integer(offsets), seq_len(n) - 1L)
+  if (identical(unite, "annee") && contigu)
+    paste0(vecteur_mois_court[1], "–", vecteur_mois_court[n])
+  else paste0(n, " mois sur ", attendu)
+}
+
 ##### Choix de la période de référence #####
 
 # Trois façons de se comparer, et elles ne disent pas la même chose :
@@ -376,8 +450,13 @@ Il fait ", euro_exact(pont$REEL), " (",
 # Cascade du pont : on part de la marge de référence, chaque effet la creuse ou
 # la remplit, on arrive à la marge de la période. La lecture est immédiate —
 # c'est le seul graphe du dashboard qui réponde à « qu'est-ce qui a changé ».
+# Le titre porte la période, la référence ET la granularité : l'image doit se
+# suffire à elle-même une fois copiée dans un mail ou un compte rendu, où elle
+# n'a plus ni sélecteur ni barre latérale autour d'elle pour dire ce qu'elle
+# montre. Un graphe sorti de son écran sans son titre est un graphe faux.
 graph_pont_marge <- function(pont, lib_actuel = "la période",
-                             lib_ref = "la référence") {
+                             lib_ref = "la référence", unite = "mois",
+                             sous_titre = NULL) {
   if (is.null(pont) || !nrow(pont))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas de période de référence")))
@@ -421,10 +500,27 @@ graph_pont_marge <- function(pont, lib_actuel = "la période",
       "<b>", libelles, "</b><br>", format_CA(valeurs, -1), calculs,
       "<extra></extra>")
   ) %>%
-    layout(xaxis = list(title = "", tickangle = -25),
-           yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68",
-                        range = c(ymin, ymax)),
-           margin = list(b = 110, t = 20), showlegend = FALSE)
+    layout(
+      title = list(text = titre_pont(lib_actuel, lib_ref, unite, sous_titre),
+                   font = list(size = 14), x = 0, xanchor = "left",
+                   y = 0.97, yanchor = "top"),
+      xaxis = list(title = "", tickangle = -25),
+      yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68",
+                   range = c(ymin, ymax)),
+      # t = 78 : de quoi loger le titre ET sa ligne de contexte sans que la
+      # première barre vienne mordre dessus.
+      margin = list(b = 110, t = 78), showlegend = FALSE)
+}
+
+# Titre du pont, sur deux lignes : ce qu'on compare, puis à quel grain.
+titre_pont <- function(lib_actuel, lib_ref, unite = "mois", sous_titre = NULL) {
+  grain <- switch(unite, mois = "comparaison mensuelle",
+                  trimestre = "comparaison trimestrielle",
+                  annee = "comparaison annuelle", "comparaison")
+  contexte <- paste(c(grain, "marge avant amortissements", sous_titre),
+                    collapse = " · ")
+  paste0("Pont de marge — ", lib_actuel, " comparé à ", lib_ref,
+         "<br><span style='font-size:11px;color:#8d7b68'>", contexte, "</span>")
 }
 
 # Le pont en tableau, colonne par colonne, pour REFAIRE le calcul.
@@ -539,10 +635,21 @@ explication_pont <- function(pont, lib_actuel = "la période",
 # hausse a un effet négatif. C'est la seule convention qui permette de trier
 # les comptes « bonnes nouvelles » et « mauvaises nouvelles » dans la même
 # colonne.
-contributions_comptes <- function(db, periode, ref_periodes, unite = "mois") {
+contributions_comptes <- function(db, periode, ref_periodes, unite = "mois",
+                                  offsets = NULL) {
   if (is.null(db) || !nrow(db)) return(NULL)
-  d <- consolide_periode(classe_comptes(db), unite)
+  d <- classe_comptes(db)
   if (is.null(d) || !nrow(d)) return(NULL)
+
+  # Le rabotage s'applique AVANT la consolidation, sur les mois eux-mêmes —
+  # sinon il n'y aurait plus de mois à retirer. Il doit suivre exactement celui
+  # de la série : si le pont compare huit mois à huit mois et que le forage en
+  # compare huit à douze, les contributions ne somment plus à l'écart affiché
+  # juste au-dessus, et c'est le forage qu'on croira faux.
+  if (!is.null(offsets))
+    d <- filter(d, offset_mois(PERIODE, unite) %in% offsets)
+  d <- consolide_periode(d, unite)
+  if (!nrow(d)) return(NULL)
 
   periode <- as.Date(periode); ref_periodes <- as.Date(ref_periodes)
   if (!length(ref_periodes)) return(NULL)

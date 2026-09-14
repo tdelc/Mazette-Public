@@ -961,10 +961,41 @@ server <- function(input, output, session) {
   # sinon les deux sous-onglets finiraient par afficher deux marges.
   ana_unite <- reactive(input$ana_unite %||% "mois")
 
+  # Deux séries, et la distinction porte tout le rabotage.
+  #
+  # La série COMPLÈTE sert au sélecteur de période : toutes les périodes
+  # doivent rester choisissables, y compris celles qu'un rabotage viderait.
   ana_serie_complete <- reactive({
     p <- agrege_exploitation(expl_postes(), ana_unite())
     req(nrow(p) > 0)
     p
+  })
+
+  # Les rangs de mois présents dans la période analysée — le gabarit auquel on
+  # ramène les autres périodes (cf. R/analyse.R).
+  ana_offsets <- reactive({
+    if (!isTRUE(input$ana_raboter %||% TRUE))
+      return(seq_len(mois_attendus(ana_unite())) - 1L)
+    offsets_periode(expl_postes(), ana_periode(), ana_unite())
+  })
+
+  # La série COMPARABLE : chaque période ramenée à ces mêmes rangs. C'est elle
+  # qui alimente tout ce qui compare — référence, pont, tuiles, tableau — et
+  # aussi la tendance : un graphe où 2026 vaut huit mois et 2025 douze ferait
+  # exactement l'erreur que la case à cocher existe pour éviter.
+  #
+  # La période analysée y est identique à celle de la série complète : tous ses
+  # mois sont dans le gabarit, par construction.
+  ana_serie_comparable <- reactive({
+    p <- serie_rabotee(expl_postes(), ana_unite(), ana_offsets())
+    req(nrow(p) > 0)
+    p
+  })
+
+  # Rabote-t-on réellement quelque chose ? Faux sur une période complète, et
+  # c'est ce qui permet de n'annoncer le rabotage que lorsqu'il a lieu.
+  ana_rabotage <- reactive({
+    etiquette_rabotage(ana_offsets(), ana_unite())
   })
 
   # Le sélecteur de période. Comme partout, il n'est semé qu'une fois les
@@ -990,26 +1021,31 @@ server <- function(input, output, session) {
   })
 
   ana_actuel <- reactive({
-    filter(ana_serie_complete(), PERIODE == ana_periode())
+    filter(ana_serie_comparable(), PERIODE == ana_periode())
   })
 
   # La série de tendance s'arrête à la période analysée : prolonger au-delà
   # ferait juger une période sur des mois qu'elle n'a pas encore vécus.
   ana_serie <- reactive({
-    ana_serie_complete() %>%
+    ana_serie_comparable() %>%
       filter(PERIODE <= ana_periode()) %>%
       tail(as.integer(input$ana_nb %||% 18))
   })
 
   ana_reference <- reactive({
-    reference_analyse(ana_serie_complete(), ana_periode(),
+    reference_analyse(ana_serie_comparable(), ana_periode(),
                       mode = input$ana_ref %||% "precedente",
                       unite = ana_unite())
   })
 
+  # Le libellé dit le rabotage quand il a lieu : « 2025 » et « 2025 (janv.–août) »
+  # ne désignent pas les mêmes chiffres, et l'en-tête du tableau de comparaison
+  # comme le titre du graphe s'appuient dessus.
   ana_lib_ref <- reactive({
     r <- ana_reference()
-    if (is.null(r)) "aucune référence" else r$libelle
+    if (is.null(r)) return("aucune référence")
+    rab <- ana_rabotage()
+    if (is.null(rab)) r$libelle else paste0(r$libelle, " (", rab, ")")
   })
 
   # Les périodes dont la référence est faite : une seule pour les modes
@@ -1020,15 +1056,30 @@ server <- function(input, output, session) {
     r <- ana_reference()
     if (is.null(r)) return(as.Date(character()))
     if (identical(r$mode, "habituelle")) {
-      serie <- ana_serie_complete() %>% filter(PERIODE < ana_periode())
+      serie <- ana_serie_comparable() %>% filter(PERIODE < ana_periode())
       return(tail(sort(serie$PERIODE), 6))
     }
     r$ligne$PERIODE
   })
 
   output$ana_alerte <- renderUI({
+    rab <- ana_rabotage()
     tagList(
-      alerte_periode(etat_periode(ana_actuel(), ana_unite())),
+      # Sur une période partielle, l'alerte standard dit « les totaux ne sont
+      # pas comparables ». Quand le rabotage est actif, ils le redeviennent :
+      # on remplace donc l'avertissement par ce qui a été fait, sans quoi on
+      # lirait une mise en garde contre un problème déjà résolu.
+      if (is.null(rab)) alerte_periode(etat_periode(ana_actuel(), ana_unite()))
+      else bandeau_alerte(
+        TRUE,
+        paste0(etiquette_periode(ana_periode(), ana_unite()), " ne porte que ",
+               length(ana_offsets()), " mois. Toutes les périodes comparées ",
+               "sont donc ramenées aux mêmes mois (", rab, ") : les écarts ",
+               "affichés sont de vrais écarts, pas des différences de durée. ",
+               "Décochez « raboter la référence » pour retrouver les périodes ",
+               "entières."),
+        titre = "Périodes ramenées à la même taille", couleur = COUL_AMBRE,
+        icone = "scissors"),
       if (is.null(ana_reference()))
         bandeau_alerte(
           TRUE,
@@ -1058,7 +1109,9 @@ server <- function(input, output, session) {
   ana_lib_periode <- reactive(etiquette_periode(ana_periode(), ana_unite()))
 
   output$ana_pont <- renderPlotly({
-    graph_pont_marge(ana_pont(), ana_lib_periode(), ana_lib_ref())
+    graph_pont_marge(ana_pont(), ana_lib_periode(), ana_lib_ref(), ana_unite(),
+                     sous_titre = if (is.null(ana_rabotage())) NULL
+                                  else "périodes ramenées aux mêmes mois")
   })
 
   output$ana_pont_explication <- renderUI({
@@ -1077,8 +1130,10 @@ server <- function(input, output, session) {
 
   ana_contrib <- reactive({
     req(exists("DB_COMPTA"))
+    # Le même gabarit que la série : sans lui, les contributions ne sommeraient
+    # plus à l'écart affiché juste au-dessus.
     contributions_comptes(DB_COMPTA, ana_periode(), ana_ref_periodes(),
-                          ana_unite())
+                          ana_unite(), ana_offsets())
   })
 
   output$ana_contrib <- renderPlotly({ graph_contributions(ana_contrib()) })
