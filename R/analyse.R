@@ -215,6 +215,9 @@ graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
                 paste0("Marge ", lib_actuel))
   valeurs  <- c(pont$DEPART[1], pont$EFFET, pont$ARRIVEE[1])
   mesures  <- c("absolute", rep("relative", nrow(pont)), "total")
+  
+  ymin <- min(pont$DEPART[1], pont$ARRIVEE[1], 0) - 1000
+  ymax <- (pont$DEPART[1]+pont$EFFET[1]+pont$EFFET[2]) * 1.1
 
   plot_ly(
     type = "waterfall", orientation = "v",
@@ -230,7 +233,8 @@ graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
       "<extra></extra>")
   ) %>%
     layout(xaxis = list(title = "", tickangle = -25),
-           yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68"),
+           yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68",
+                        range = c(ymin, ymax)),
            margin = list(b = 110, t = 20), showlegend = FALSE)
 }
 
