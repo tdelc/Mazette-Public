@@ -597,6 +597,7 @@ texte_heures_fixes <- function(dates, totaux, detail = NULL) {
 
   i <- match(as.Date(dates), as.Date(par_jour$DATE))
   paste0(sortie, ifelse(is.na(i) | totaux <= 0, "", par_jour$TXT[i]))
+  return(NULL)
 }
 
 # Graphique 1 — rien que des heures.
