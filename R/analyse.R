@@ -391,6 +391,20 @@ graph_pont_marge <- function(pont, lib_actuel = "la période",
                           "<br><i>", lecture_pont(pont, lib_actuel, lib_ref),
                           "</i>"), "")
 
+  # Échelle verticale resserrée : sans elle, une cascade qui va de 18 000 à
+  # 21 000 € se lit sur un axe partant de zéro, et les marches deviennent
+  # invisibles.
+  #
+  # Les bornes sont prises sur le CHEMIN CUMULÉ de la cascade — la hauteur
+  # atteinte après chaque effet — et non sur les deux ou trois premières
+  # marches : le sommet d'un pont n'est pas forcément au début. Un gros effet
+  # favorable en cinquième position sortirait sinon du cadre, silencieusement.
+  chemin <- pont$DEPART[1] + cumsum(pont$EFFET)
+  hauteurs <- c(pont$DEPART[1], chemin, pont$ARRIVEE[1])
+  marge_axe <- max(1000, 0.1 * diff(range(c(hauteurs, 0))))
+  ymin <- min(hauteurs, 0) - marge_axe
+  ymax <- max(hauteurs) + marge_axe
+
   plot_ly(
     type = "waterfall", orientation = "v",
     x = ~factor(libelles, levels = libelles), y = valeurs, measure = mesures,
@@ -404,7 +418,8 @@ graph_pont_marge <- function(pont, lib_actuel = "la période",
       "<extra></extra>")
   ) %>%
     layout(xaxis = list(title = "", tickangle = -25),
-           yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68"),
+           yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68",
+                        range = c(ymin, ymax)),
            margin = list(b = 110, t = 20), showlegend = FALSE)
 }
 
