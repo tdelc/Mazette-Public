@@ -340,7 +340,8 @@ lecture_pont <- function(pont, lib_actuel = "la période",
   phrases <- ifelse(
     pont$NATURE == "volume",
     paste0("le chiffre d'affaires passe de ", euro_exact(pont$ATTENDU), " à ",
-           euro_exact(pont$REEL), " ; ces ", euro_exact(abs(pont$ECART)),
+           euro_exact(pont$REEL), " ;
+ces ", euro_exact(abs(pont$ECART)),
            " au taux de marge de ", lib_ref, " (", format_pct(pont$BASE),
            ") ", ifelse(pont$EFFET >= 0, "rapportent ", "coûtent "), eff),
     ifelse(
@@ -350,12 +351,15 @@ lecture_pont <- function(pont, lib_actuel = "la période",
       # « à la référence » plutôt que son libellé : il vaut tantôt « juin 2026 »,
       # tantôt « médiane des 6 périodes précédentes », et la phrase doit rester
       # lisible dans les deux cas. Le libellé est déjà en en-tête de colonne.
-      paste0("ce poste pesait ", format_points(pont$TAUX_REF, suffixe = " %"),
-             " du CA à la référence ; à ce poids, il aurait ",
+      paste0("
+ce poste pesait ", format_points(pont$TAUX_REF, suffixe = " %"),
+             " du CA à la référence ;
+à ce poids, il aurait ",
              ifelse(pont$SIGNE < 0, "coûté ",
              ifelse(pont$ATTENDU < 0, "pesé ", "rapporté ")),
              euro_exact(pont$ATTENDU), " sur le CA de ", lib_actuel,
-             ". Il fait ", euro_exact(pont$REEL), " (",
+             ".
+Il fait ", euro_exact(pont$REEL), " (",
              format_points(pont$TAUX_ACT, suffixe = " %"), "), soit ",
              euro_exact(abs(pont$ECART)),
              ifelse(pont$ECART >= 0, " de plus", " de moins"), " : ", gagne,
