@@ -534,6 +534,9 @@ ui_compta_analyse <- function() {
           tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
           " — le CA a bougé, les taux non — de ce qui vient de la dérive de",
           " chaque poste. La somme des barres redonne exactement l'écart.",
+          tags$br(),
+          "Le calcul complet, chiffres à l'appui, est dans l'onglet",
+          " « Décomposition du pont ».",
           tags$br(), tags$br(),
           tags$b("Zone habituelle"), " : médiane de la série ± 2 MAD, la même",
           " mesure que le tableau du volet Exploitation. Les deux écrans",
@@ -549,9 +552,12 @@ ui_compta_analyse <- function() {
       plotlyOutput("ana_pont", height = "380px"),
       div(class = "small text-muted",
           "On part de la marge de référence, chaque barre la creuse ou la",
-          " remplit. ", tags$b("Effet volume"), " : ce que la seule variation",
-          " du chiffre d'affaires aurait produit, à taux inchangés. Les autres",
-          " barres sont la dérive propre de chaque poste, en euros de marge.")
+          " remplit. ", tags$b("Effet volume"), " : l'écart de chiffre",
+          " d'affaires, au taux de marge de la référence. ",
+          tags$b("Les autres barres"), " : l'écart entre ce que le poste a",
+          " coûté et ce qu'il aurait coûté en gardant son poids de la",
+          " référence. Survolez une barre pour voir son calcul, ou ouvrez",
+          " l'onglet ", tags$i("Décomposition du pont"), " juste en dessous.")
     ),
     navset_card_tab(
       nav_panel(
@@ -570,7 +576,30 @@ ui_compta_analyse <- function() {
       nav_panel(
         title = "Décomposition du pont",
         icon = icon("bridge"),
-        DTOutput("ana_pont_table")
+        # Le graphe montre le résultat, cet onglet montre l'arithmétique.
+        # L'explication vient AVANT les tableaux : on lit la règle, puis on la
+        # vérifie sur les chiffres, jamais l'inverse.
+        uiOutput("ana_pont_explication"),
+        hr(),
+        div(class = "small text-muted mb-2",
+            "Tout le tableau est en euros — c'est ce qui le rend exact. ",
+            tags$b("Attendu"), " : ce que le poste aurait coûté en gardant son",
+            " poids de la période de référence, appliqué au chiffre d'affaires",
+            " de la période analysée. ", tags$b("Réel"), " : ce qu'il a",
+            " vraiment coûté. L'écart entre les deux ", tags$b("est"),
+            " l'effet sur la marge.",
+            tags$br(),
+            "Pour une ", tags$b("charge"), ", dépenser plus que l'attendu fait",
+            " baisser la marge : l'effet porte le signe opposé à l'écart. Pour",
+            " un ", tags$b("produit"), ", il garde le même signe.",
+            tags$br(),
+            "Seule la ligne ", tags$i("Effet volume"), " comporte une",
+            " multiplication : l'écart de chiffre d'affaires, au taux de marge",
+            " de la référence."),
+        DTOutput("ana_pont_table"),
+        div(class = "small text-muted mt-3 mb-2",
+            tags$b("La preuve que rien ne se perd en route.")),
+        DTOutput("ana_pont_verif")
       )
     ),
     navset_card_tab(

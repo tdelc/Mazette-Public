@@ -138,33 +138,88 @@ reference_analyse <- function(serie, periode, mode = "precedente",
 # ---------------------------------------------------------------------------
 # Pourquoi un effet volume séparé
 # ---------------------------------------------------------------------------
-# La décomposition naïve — Δmarge = ΔCA − Δmatières − Δrémunérations … — est
+# La décomposition naïve — Δmarge = ΔCA - Δmatières - Δrémunérations … — est
 # exacte mais ne dit rien d'utile : quand le CA baisse de 20 %, TOUTES les
 # charges baissent, et le pont affiche six barres qui pointent dans le même
 # sens sans qu'on sache si la gestion a dérivé.
 #
-# On sépare donc ce qui vient du VOLUME de ce qui vient des TAUX. En écrivant
-# la marge comme un taux appliqué au CA :
+# On sépare donc ce qui vient du VOLUME de ce qui vient des TAUX.
 #
-#   marge = CA x s   avec   s = 1 + a - m - r - g + f
-#                           (a autres produits, m matières, r rémunérations,
-#                            g frais généraux, f financier, tous en part du CA)
+# ---------------------------------------------------------------------------
+# Le calcul, en toutes lettres
+# ---------------------------------------------------------------------------
+# Deux formes de lignes, et deux seulement.
 #
-# on obtient l'identité EXACTE :
+#   EFFET VOLUME    écart de CA  x  taux de marge de la référence
 #
-#   Δmarge = ΔCA x s0            <- effet volume : le CA a bougé, les taux non
-#          + CA1 x Δa            <- les autres produits ont changé de poids
-#          - CA1 x Δm            <- les matières ont dérivé (en % du CA)
-#          - CA1 x Δr
-#          - CA1 x Δg
-#          + CA1 x Δf
+#     Le CA a bougé de +10 000 €. Si RIEN d'autre n'avait changé — si chaque
+#     poste avait gardé exactement le même poids dans le CA — ces 10 000 €
+#     auraient rapporté la marge qu'un euro de CA rapportait à la référence.
+#     Le taux de marge de référence, c'est simplement sa marge divisée par son
+#     CA : 12 000 / 100 000 = 12 %. Donc 10 000 x 12 % = +1 200 € de marge.
 #
-# Chaque terme est en euros et se lit seul : « les matières ont coûté 3 200 €
-# de marge de plus que si leur taux était resté celui de la référence ». La
-# somme des six redonne exactement la variation, ce qu'un test vérifie.
+#   EFFET D'UN POSTE    ce qu'il a coûté  -  ce qu'il aurait dû coûter
 #
-# Quand le CA de référence est nul, les taux n'existent pas : on retombe sur
-# la décomposition brute, qui reste exacte, et VOLUME_SEPARE le dit.
+#     Les matières pesaient 30 % du CA à la référence. À ce poids-là, sur les
+#     110 000 € de CA de la période, elles auraient dû coûter 33 000 €. Elles
+#     ont coûté 37 400 €. L'écart, 4 400 €, est exactement ce que ce poste a
+#     coûté de marge. Une charge qui monte fait baisser la marge : l'effet
+#     porte le signe opposé à l'écart.
+#
+#     C'est une soustraction d'euros, sans pourcentage et SANS ARRONDI. La
+#     version « 4 points × 110 000 € » dit la même chose, mais les points
+#     affichés sont arrondis au dixième : un lecteur qui refait le produit
+#     tombe à côté de l'effet dès que le taux n'est pas rond. Ici, les trois
+#     nombres affichés se soustraient exactement.
+#
+# Et ces six termes retombent EXACTEMENT sur la variation de marge. La preuve
+# tient en trois lignes. En notant s le taux de marge (marge / CA) :
+#
+#   marge = CA x s        donc
+#   Δmarge = CA1.s1 - CA0.s0
+#          = (CA1 - CA0).s0  +  CA1.(s1 - s0)
+#
+# Le premier terme est l'effet volume. Le second se répartit entre les postes,
+# puisque s = 1 + a - m - r - g + f (chaque lettre étant un poste rapporté au
+# CA) : s1 - s0 = Δa - Δm - Δr - Δg + Δf, et multiplier par CA1 donne une ligne
+# par poste. Aucun reste, aucun arrondi : c'est une identité, et un test la
+# vérifie à l'euro près.
+#
+# La forme affichée d'une ligne de poste est la même chose écrite en euros :
+#
+#   -CA1 x (m1 - m0)  =  -(CA1.m1 - m0.CA1)  =  -(réel - attendu)
+#
+# avec « attendu » = m0 x CA1, ce que le poste aurait coûté en gardant son
+# poids de référence sur le CA de la période.
+#
+# Le taux de marge de référence mérite d'être retenu sous sa forme courte :
+#
+#   s0 = 1 + a - m - r - g + f  =  MARGE_AA(référence) / CA(référence)
+#
+# Les deux écritures sont le même nombre — la seconde est celle qu'on affiche,
+# parce qu'on peut la refaire de tête.
+#
+# Quand le CA de référence est nul, les taux n'existent pas : on retombe sur la
+# décomposition brute, qui reste exacte, et VOLUME_SEPARE le dit.
+#
+# ---------------------------------------------------------------------------
+# Les colonnes rendues
+# ---------------------------------------------------------------------------
+# Au-delà de EFFET, la table porte de quoi REFAIRE le calcul à la main — c'est
+# tout l'objet du sous-onglet « Décomposition du pont ». Pour chaque ligne :
+#
+#   NATURE    "volume", "taux" ou "brut" (régime de repli)
+#   ATTENDU   ligne de poste : ce qu'il aurait coûté au poids de référence ;
+#             ligne volume : le CA de la référence
+#   REEL      le montant de la période (ou son CA)
+#   ECART     REEL - ATTENDU, toujours en euros
+#   BASE      le taux de marge de référence, pour la seule ligne volume
+#   TAUX_REF  le poids du poste dans le CA, à la référence puis à la période —
+#   TAUX_ACT  affichés dans la phrase de lecture, jamais dans le calcul
+#
+# L'invariant qui rend la table vérifiable, et qu'un test rejoue sur le TEXTE
+# affiché : ECART = REEL - ATTENDU sur toutes les lignes, puis
+# EFFET = SIGNE x ECART, sauf la ligne volume où EFFET = ECART x BASE / 100.
 pont_marge <- function(actuel, reference) {
   if (is.null(actuel) || !nrow(actuel) || is.null(reference) || !nrow(reference))
     return(NULL)
@@ -173,40 +228,152 @@ pont_marge <- function(actuel, reference) {
   if (is.na(r$CA) || r$CA <= 0) {
     postes <- c("Chiffre d'affaires", "Autres produits", "Matières premières",
                 "Rémunérations", "Frais généraux", "Résultat financier")
-    effets <- c(a$CA - r$CA, a$AUTRES - r$AUTRES,
-                -(a$MATIERES - r$MATIERES), -(a$REMUNERATION - r$REMUNERATION),
-                -(a$GENERAUX - r$GENERAUX), a$FINANCIER - r$FINANCIER)
-    return(tibble(POSTE = postes, EFFET = effets,
-                  DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA,
-                  VOLUME_SEPARE = FALSE))
+    champs <- c("CA", "AUTRES", "MATIERES", "REMUNERATION", "GENERAUX",
+                "FINANCIER")
+    signe  <- c(1, 1, -1, -1, -1, 1)
+    ref <- vapply(champs, function(x) as.numeric(r[[x]]), 0)
+    act <- vapply(champs, function(x) as.numeric(a[[x]]), 0)
+    return(tibble(
+      POSTE = postes, NATURE = "brut",
+      ATTENDU = ref, REEL = act, ECART = act - ref,
+      BASE = NA_real_, SIGNE = signe,
+      TAUX_REF = NA_real_, TAUX_ACT = NA_real_,
+      EFFET = signe * (act - ref),
+      DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = FALSE))
   }
 
-  taux <- function(x, ca) x / ca
-  s0 <- 1 + taux(r$AUTRES, r$CA) - taux(r$MATIERES, r$CA) -
-        taux(r$REMUNERATION, r$CA) - taux(r$GENERAUX, r$CA) +
-        taux(r$FINANCIER, r$CA)
+  # Le taux de marge de la référence : sa marge divisée par son CA. C'est
+  # exactement 1 + a - m - r - g + f, mais sous une forme qu'on peut refaire
+  # de tête — et c'est la forme qu'affiche le tableau de décomposition.
+  s0_pct <- 100 * r$MARGE_AA / r$CA
+  taux <- function(champ, l) 100 * l[[champ]] / l$CA
 
-  d_taux <- function(champ)
-    taux(a[[champ]], a$CA) - taux(r[[champ]], r$CA)
+  champs <- c("AUTRES", "MATIERES", "REMUNERATION", "GENERAUX", "FINANCIER")
+  postes <- c("Autres produits", "Matières premières", "Rémunérations",
+              "Frais généraux", "Résultat financier")
+  signe  <- c(1, -1, -1, -1, 1)
+  t_ref  <- vapply(champs, taux, 0, l = r)
+  t_act  <- vapply(champs, taux, 0, l = a)
 
-  postes <- c("Effet volume (CA)", "Autres produits", "Matières premières",
-              "Rémunérations", "Frais généraux", "Résultat financier")
-  effets <- c(
-    (a$CA - r$CA) * s0,
-     a$CA * d_taux("AUTRES"),
-    -a$CA * d_taux("MATIERES"),
-    -a$CA * d_taux("REMUNERATION"),
-    -a$CA * d_taux("GENERAUX"),
-     a$CA * d_taux("FINANCIER"))
+  # Ce que chaque poste aurait coûté (ou rapporté) en gardant son poids de
+  # référence sur le CA de la période. C'est la grandeur qui rend la ligne
+  # exacte à l'euro, sans passer par des points arrondis.
+  attendu <- t_ref / 100 * a$CA
+  reel    <- vapply(champs, function(x) as.numeric(a[[x]]), 0)
 
-  tibble(POSTE = postes, EFFET = effets,
-         DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = TRUE)
+  bind_rows(
+    tibble(POSTE = "Effet volume (CA)", NATURE = "volume",
+           ATTENDU = r$CA, REEL = a$CA, ECART = a$CA - r$CA,
+           BASE = s0_pct, SIGNE = 1,
+           TAUX_REF = NA_real_, TAUX_ACT = NA_real_,
+           EFFET = (a$CA - r$CA) * s0_pct / 100),
+    tibble(POSTE = postes, NATURE = "taux",
+           ATTENDU = attendu, REEL = reel, ECART = reel - attendu,
+           BASE = NA_real_, SIGNE = signe,
+           TAUX_REF = t_ref, TAUX_ACT = t_act,
+           EFFET = signe * (reel - attendu))) %>%
+    mutate(DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = TRUE)
+}
+
+# format_CA() blanchit les montants nuls et aligne les largeurs sur le plus
+# long élément du vecteur. Les deux comportements sont utiles ailleurs et
+# nuisibles ici : dans un tableau dont l'objet est de refaire l'arithmétique,
+# une cellule vide se lit « donnée manquante » et non « zéro », et une cellule
+# rembourrée d'espaces ne se compare plus à ce qu'on attend. Un poste dont le
+# poids n'a pas bougé DOIT montrer 0 €, c'est même le résultat le plus parlant
+# du pont.
+euro_exact <- function(x) {
+  ifelse(is.na(x), "—",
+  ifelse(abs(x) < 0.5, "0 €", trimws(format_CA(x, -1))))
+}
+
+euro_signe <- function(x) {
+  ifelse(is.na(x), "—",
+  ifelse(abs(x) < 0.5, "0 €",
+         paste0(ifelse(x > 0, "+", ""), trimws(format_CA(x, -1)))))
+}
+
+# Un poids dans le CA, en pourcentage à une décimale.
+#
+# scientific = FALSE, pour la même raison que dans format_CA() : sans lui,
+# format() rend « 4e+00 » plutôt que « 4,0 » dès que la notation scientifique
+# est plus courte. Le piège frappe tous les nombres ronds, et il est d'autant
+# plus vicieux ici que 4 points d'écart sur les matières est exactement le
+# genre de valeur qu'on veut lire.
+format_points <- function(x, signe = FALSE, suffixe = " pt") {
+  txt <- format(round(x, 1), nsmall = 1, trim = TRUE, decimal.mark = ",",
+                scientific = FALSE)
+  paste0(if (signe) ifelse(x >= 0, "+", "") else "", txt, suffixe)
+}
+
+# Les deux morceaux de phrase qui décrivent une ligne du pont : ce qu'on
+# compare, et le cas échéant ce par quoi on multiplie. Partagés par le tableau
+# et par l'infobulle du graphe, pour que les deux racontent mot pour mot le
+# même calcul.
+libelle_attendu_pont <- function(pont) {
+  ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$ATTENDU), " de CA"),
+  ifelse(pont$NATURE == "brut",   euro_exact(pont$ATTENDU),
+         paste0(euro_exact(pont$ATTENDU), " attendus")))
+}
+
+libelle_reel_pont <- function(pont) {
+  ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$REEL), " de CA"),
+  ifelse(pont$NATURE == "brut",   euro_exact(pont$REEL),
+         paste0(euro_exact(pont$REEL), " réels")))
+}
+
+# L'opération qui mène de l'écart à l'effet. Vide pour une ligne de poste :
+# l'écart EST l'effet, au signe près, et une colonne « × 1 » n'apprendrait rien.
+libelle_base_pont <- function(pont, lib_ref = "la référence") {
+  ifelse(pont$NATURE == "volume",
+         paste0("× ", format_pct(pont$BASE), " de marge"),
+  ifelse(pont$SIGNE < 0, "charge : signe opposé", "produit : même signe"))
+}
+
+# La phrase de lecture d'une ligne : celle qu'on se dirait à voix haute en
+# refaisant le calcul. C'est elle qui fait comprendre le pont la première fois.
+lecture_pont <- function(pont, lib_actuel = "la période",
+                         lib_ref = "la référence") {
+  eff   <- euro_exact(abs(pont$EFFET))
+  gagne <- ifelse(pont$EFFET >= 0, "rapporte ", "coûte ")
+
+  phrases <- ifelse(
+    pont$NATURE == "volume",
+    paste0("le chiffre d'affaires passe de ", euro_exact(pont$ATTENDU), " à ",
+           euro_exact(pont$REEL), " ; ces ", euro_exact(abs(pont$ECART)),
+           " au taux de marge de ", lib_ref, " (", format_pct(pont$BASE),
+           ") ", ifelse(pont$EFFET >= 0, "rapportent ", "coûtent "), eff),
+    ifelse(
+      pont$NATURE == "brut",
+      paste0("le poste passe de ", euro_exact(pont$ATTENDU), " à ",
+             euro_exact(pont$REEL), ", ce qui ", gagne, eff, " de marge"),
+      # « à la référence » plutôt que son libellé : il vaut tantôt « juin 2026 »,
+      # tantôt « médiane des 6 périodes précédentes », et la phrase doit rester
+      # lisible dans les deux cas. Le libellé est déjà en en-tête de colonne.
+      paste0("ce poste pesait ", format_points(pont$TAUX_REF, suffixe = " %"),
+             " du CA à la référence ; à ce poids, il aurait ",
+             ifelse(pont$SIGNE < 0, "coûté ",
+             ifelse(pont$ATTENDU < 0, "pesé ", "rapporté ")),
+             euro_exact(pont$ATTENDU), " sur le CA de ", lib_actuel,
+             ". Il fait ", euro_exact(pont$REEL), " (",
+             format_points(pont$TAUX_ACT, suffixe = " %"), "), soit ",
+             euro_exact(abs(pont$ECART)),
+             ifelse(pont$ECART >= 0, " de plus", " de moins"), " : ", gagne,
+             eff, " de marge")))
+
+  # « 0 € de plus coûte 0 € » est une phrase que personne ne lit jusqu'au bout.
+  # Un poste qui n'a pas bougé mérite qu'on le dise en clair : c'est justement
+  # le cas que le pont est là pour rendre visible.
+  ifelse(abs(pont$EFFET) < 0.5,
+         "ce poste garde le même poids dans le CA : il ne change rien à la marge",
+         phrases)
 }
 
 # Cascade du pont : on part de la marge de référence, chaque effet la creuse ou
 # la remplit, on arrive à la marge de la période. La lecture est immédiate —
 # c'est le seul graphe du dashboard qui réponde à « qu'est-ce qui a changé ».
-graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
+graph_pont_marge <- function(pont, lib_actuel = "la période",
+                             lib_ref = "la référence") {
   if (is.null(pont) || !nrow(pont))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas de période de référence")))
@@ -215,6 +382,14 @@ graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
                 paste0("Marge ", lib_actuel))
   valeurs  <- c(pont$DEPART[1], pont$EFFET, pont$ARRIVEE[1])
   mesures  <- c("absolute", rep("relative", nrow(pont)), "total")
+  # Le calcul de la barre, dans son infobulle : mot pour mot celui du tableau
+  # de décomposition. Deux formulations différentes du même chiffre donneraient
+  # l'impression de deux calculs différents.
+  calculs <- c("", paste0("<br>", libelle_attendu_pont(pont), " → ",
+                          libelle_reel_pont(pont),
+                          "<br>écart ", euro_signe(pont$ECART),
+                          "<br><i>", lecture_pont(pont, lib_actuel, lib_ref),
+                          "</i>"), "")
 
   plot_ly(
     type = "waterfall", orientation = "v",
@@ -225,8 +400,7 @@ graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
     decreasing = list(marker = list(color = COUL_ROUGE)),
     totals = list(marker = list(color = COUL_BRUN)),
     hovertemplate = paste0(
-      libelles, "<br>", format_CA(valeurs, -1),
-      c("", rep("<br><i>écart imputable à ce poste</i>", nrow(pont)), ""),
+      "<b>", libelles, "</b><br>", format_CA(valeurs, -1), calculs,
       "<extra></extra>")
   ) %>%
     layout(xaxis = list(title = "", tickangle = -25),
@@ -234,18 +408,103 @@ graph_pont_marge <- function(pont, lib_actuel, lib_ref) {
            margin = list(b = 110, t = 20), showlegend = FALSE)
 }
 
-# Le même pont en tableau, pour lire les montants exacts et vérifier que la
-# somme des effets retombe bien sur l'écart.
-table_pont_marge <- function(pont) {
+# Le pont en tableau, colonne par colonne, pour REFAIRE le calcul.
+#
+# Le graphe montre le résultat, ce tableau montre l'arithmétique. Les quatre
+# colonnes du milieu se lisent comme une seule opération :
+#
+#     Écart  x  Base  =  Effet
+#
+# l'un des deux facteurs étant toujours un pourcentage. Rien n'est caché, et
+# une ligne de total permet de vérifier que la somme retombe sur l'écart.
+#
+# La colonne « Lecture » dit la même chose en français. Elle fait double emploi
+# avec les chiffres, et c'est voulu : la première fois, c'est elle qu'on lit ;
+# ensuite, ce sont les colonnes.
+table_pont_marge <- function(pont, lib_actuel = "la période",
+                             lib_ref = "la référence") {
   if (is.null(pont) || !nrow(pont)) return(tibble(Info = "Pas de référence."))
-  bind_rows(
-    pont %>% transmute(Poste = POSTE, Effet = EFFET),
-    tibble(Poste = "Écart total", Effet = sum(pont$EFFET))) %>%
-    mutate(Sens = case_when(Poste == "Écart total" ~ "",
-                            Effet > 0 ~ "favorable",
-                            Effet < 0 ~ "défavorable",
-                            TRUE ~ "neutre"),
-           Effet = format_CA(Effet, -1))
+
+  corps <- tibble(
+    Poste       = pont$POSTE,
+    `Attendu`   = libelle_attendu_pont(pont),
+    `Réel`      = libelle_reel_pont(pont),
+    `Écart`     = euro_signe(pont$ECART),
+    `Opération` = libelle_base_pont(pont, lib_ref),
+    `= Effet sur la marge` = euro_signe(pont$EFFET),
+    Lecture     = lecture_pont(pont, lib_actuel, lib_ref))
+
+  total <- sum(pont$EFFET)
+  bind_rows(corps, tibble(
+    Poste = "Écart total", `Attendu` = "", `Réel` = "", `Écart` = "",
+    `Opération` = "", `= Effet sur la marge` = euro_signe(total),
+    Lecture = paste0("somme des ", nrow(pont), " effets ci-dessus")))
+}
+
+# La preuve par trois lignes : marge de départ, somme des effets, marge
+# d'arrivée. C'est ce qui transforme le pont d'illustration en démonstration —
+# on voit que rien ne s'est perdu en route.
+table_verification_pont <- function(pont, lib_actuel = "la période",
+                                    lib_ref = "la référence") {
+  if (is.null(pont) || !nrow(pont)) return(tibble(Info = "Pas de référence."))
+  total   <- sum(pont$EFFET)
+  arrivee <- pont$ARRIVEE[1]
+  # L'écart de bouclage n'est jamais qu'un arrondi d'affichage : l'identité est
+  # exacte. On l'affiche quand même — un contrôle qu'on ne montre pas est un
+  # contrôle auquel on ne croit pas.
+  reste <- pont$DEPART[1] + total - arrivee
+
+  tibble(
+    Étape = c(paste0("Marge de ", lib_ref),
+              paste0("+ somme des ", nrow(pont), " effets"),
+              paste0("= Marge de ", lib_actuel),
+              "Écart de bouclage"),
+    Montant = c(euro_exact(pont$DEPART[1]), euro_signe(total),
+                euro_exact(arrivee),
+                if (abs(reste) < 0.5) "0 € — le pont boucle"
+                else format_CA(reste, -1)))
+}
+
+# Le paragraphe d'accueil du sous-onglet, écrit AVEC LES CHIFFRES DE LA PÉRIODE
+# affichée plutôt qu'avec un exemple générique. Une formule illustrée par ses
+# propres nombres se comprend du premier coup ; la même formule en lettres se
+# relit trois fois.
+#
+# On détaille deux lignes seulement : l'effet volume, qui est le mécanisme à
+# saisir, et le poste au plus fort effet, qui est celui qu'on est venu
+# comprendre. Détailler les six noierait les deux qui comptent.
+explication_pont <- function(pont, lib_actuel = "la période",
+                             lib_ref = "la référence") {
+  if (is.null(pont) || !nrow(pont))
+    return(div(class = "small text-muted",
+               "Choisissez une période de référence pour voir le calcul."))
+
+  phrase <- function(p) lecture_pont(p, lib_actuel, lib_ref)
+  vol <- pont[pont$NATURE == "volume", ]
+  gros <- pont[pont$NATURE != "volume", ]
+  gros <- if (nrow(gros)) gros[which.max(abs(gros$EFFET)), ] else NULL
+
+  div(
+    class = "small",
+    p(tags$b("Deux sortes de lignes, et deux seulement."),
+      " L'écart de marge se range entièrement dans l'une ou l'autre."),
+    if (nrow(vol))
+      p(tags$b("Le volume."), " Le chiffre d'affaires a bougé. Si rien",
+        " d'autre n'avait changé, chaque euro de CA en plus aurait rapporté ce",
+        " qu'il rapportait à ", lib_ref, " — sa marge divisée par son CA.",
+        tags$br(),
+        tags$span(class = "text-muted", "Ici : ", phrase(vol), ".")),
+    if (!is.null(gros) && nrow(gros))
+      p(tags$b("La dérive d'un poste."), " Un poste a changé de POIDS dans le",
+        " CA. Ce sont ces points d'écart, appliqués au CA de ", lib_actuel,
+        ", qui font la marge en plus ou en moins.", tags$br(),
+        tags$span(class = "text-muted", "Ici, le poste qui pèse le plus est ",
+                  tags$b(gros$POSTE), " : ", phrase(gros), ".")),
+    p(class = "text-muted mb-0",
+      "Un poste dont le poids n'a pas bougé a un effet nul, même si son",
+      " montant en euros a suivi le CA. C'est exactement ce qu'on veut lire :",
+      " le pont ne montre que ce qui a vraiment changé.")
+  )
 }
 
 ##### Contributions compte par compte #####

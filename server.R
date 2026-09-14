@@ -1052,13 +1052,28 @@ server <- function(input, output, session) {
     pont_marge(ana_actuel(), r$ligne)
   })
 
+  # Le libellé de la période analysée sert au graphe, au tableau de
+  # décomposition ET aux phrases de lecture : un seul reactive, pour que les
+  # trois nomment la même période de la même façon.
+  ana_lib_periode <- reactive(etiquette_periode(ana_periode(), ana_unite()))
+
   output$ana_pont <- renderPlotly({
-    graph_pont_marge(ana_pont(),
-                     etiquette_periode(ana_periode(), ana_unite()),
-                     ana_lib_ref())
+    graph_pont_marge(ana_pont(), ana_lib_periode(), ana_lib_ref())
   })
 
-  output$ana_pont_table <- renderDT({ datatable_simple(table_pont_marge(ana_pont())) })
+  output$ana_pont_explication <- renderUI({
+    explication_pont(ana_pont(), ana_lib_periode(), ana_lib_ref())
+  })
+
+  output$ana_pont_table <- renderDT({
+    datatable_simple(table_pont_marge(ana_pont(), ana_lib_periode(),
+                                      ana_lib_ref()))
+  })
+
+  output$ana_pont_verif <- renderDT({
+    datatable_simple(table_verification_pont(ana_pont(), ana_lib_periode(),
+                                             ana_lib_ref()))
+  })
 
   ana_contrib <- reactive({
     req(exists("DB_COMPTA"))

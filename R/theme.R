@@ -13,8 +13,14 @@ theme_mazette <- function(){
 }
 
 format_CA <- function(montant,nb_apres=0) {
+  # scientific = FALSE, sinon format() bascule en notation scientifique dès que
+  # celle-ci est plus COURTE que la notation décimale : un chiffre d'affaires de
+  # 100 000 € s'affichait « 1e+05€ ». Le piège ne se déclenche que sur les
+  # nombres ronds, et seulement quand l'appel est scalaire — sur un vecteur, la
+  # largeur commune est décidée par le plus long élément et masque le problème.
   montant_formatte <- format(round(montant,nb_apres), big.mark = ".",
-                             decimal.mark = ",", nsmall = max(nb_apres,0))
+                             decimal.mark = ",", nsmall = max(nb_apres,0),
+                             scientific = FALSE)
   montant_formatte <- paste0(montant_formatte, "€")
   
   montant_formatte[str_trim(montant_formatte) == "0€"] <- ""

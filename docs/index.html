@@ -452,14 +452,38 @@ R -e 'shiny::runApp()'</code></pre>
         &minus; CA&#8321; &times; &Delta;g
         + CA&#8321; &times; &Delta;f</code></pre>
       <p>
-        Chaque terme est en euros et se lit seul&nbsp;: &laquo;&nbsp;les mati&egrave;res ont co&ucirc;t&eacute;
-        3&nbsp;200&nbsp;&euro; de marge de plus que si leur taux &eacute;tait rest&eacute; celui de la
-        r&eacute;f&eacute;rence&nbsp;&raquo;. Un poste dont le taux n&rsquo;a pas boug&eacute; a un effet <em>nul</em>, m&ecirc;me
-        si son montant en euros a augment&eacute; de 10&nbsp;%&nbsp;: c&rsquo;est tout l&rsquo;int&eacute;r&ecirc;t du pont.
-        La somme des six termes redonne exactement la variation, ce qu&rsquo;un test v&eacute;rifie.
-        Quand le CA de r&eacute;f&eacute;rence est nul, les taux n&rsquo;existent pas&nbsp;: on retombe sur la
-        d&eacute;composition brute, qui reste exacte, et <code>VOLUME_SEPARE</code> le dit.
+        Chaque terme est en euros et se lit seul. Un poste dont le taux n&rsquo;a pas boug&eacute;
+        a un effet <em>nul</em>, m&ecirc;me si son montant en euros a augment&eacute; de 10&nbsp;%&nbsp;:
+        c&rsquo;est tout l&rsquo;int&eacute;r&ecirc;t du pont. La somme des six termes redonne exactement la
+        variation, ce qu&rsquo;un test v&eacute;rifie. Quand le CA de r&eacute;f&eacute;rence est nul, les taux
+        n&rsquo;existent pas&nbsp;: on retombe sur la d&eacute;composition brute, qui reste exacte, et
+        <code>VOLUME_SEPARE</code> le dit.
       </p>
+      <p>
+        <strong>Ce que l&rsquo;&eacute;cran affiche n&rsquo;est pas cette formule</strong>, mais la m&ecirc;me chose
+        r&eacute;&eacute;crite en euros, parce qu&rsquo;elle est alors refaisable de t&ecirc;te&nbsp;:
+      </p>
+      <pre><code>-CA&#8321; × (m&#8321; - m&#8320;)  =  -(CA&#8321;.m&#8321; - m&#8320;.CA&#8321;)  =  -(réel - attendu)</code></pre>
+      <p>
+        avec <em>attendu</em> = <code>m&#8320; × CA&#8321;</code>, ce que le poste aurait co&ucirc;t&eacute; en gardant
+        son poids de r&eacute;f&eacute;rence sur le chiffre d&rsquo;affaires de la p&eacute;riode. Les mati&egrave;res
+        pesaient 30&nbsp;%&nbsp;; sur les 110&nbsp;000&nbsp;&euro; de juillet, cela ferait 33&nbsp;000&nbsp;&euro;&nbsp;;
+        elles en ont co&ucirc;t&eacute; 37&nbsp;400, soit 4&nbsp;400&nbsp;&euro; de trop. Cinq lignes sur six
+        deviennent ainsi une simple soustraction d&rsquo;euros, <strong>sans aucun arrondi</strong>.
+      </p>
+      <div class="note">
+        <span class="l">Pourquoi pas la version &laquo;&nbsp;4 points &times; 110&nbsp;000&nbsp;&euro;&nbsp;&raquo;</span>
+        <p>
+          Elle dit exactement la m&ecirc;me chose, et c&rsquo;est la premi&egrave;re qui avait &eacute;t&eacute; affich&eacute;e.
+          Mais les points sont arrondis au dixi&egrave;me&nbsp;: un lecteur qui refait le produit
+          tombe &agrave; c&ocirc;t&eacute; d&egrave;s que le taux n&rsquo;est pas rond. Sur un poste &agrave; 4,55&nbsp;%, l&rsquo;&eacute;cran
+          montrait &laquo;&nbsp;0,5&nbsp;pt&nbsp;&raquo; et le produit donnait 550&nbsp;&euro; l&agrave; o&ugrave; l&rsquo;effet vaut 500&nbsp;&euro;.
+          Un tableau dont l&rsquo;objet est d&rsquo;&ecirc;tre v&eacute;rifi&eacute; &agrave; la main ne peut pas se permettre
+          un &eacute;cart de 10&nbsp;%&nbsp;; la forme en euros n&rsquo;en a aucun. C&rsquo;est un test rejouant le
+          calcul sur le <em>texte affich&eacute;</em>, et non sur les valeurs internes, qui a
+          fait apparaitre le probl&egrave;me.
+        </p>
+      </div>
       <p>
         Sous le pont, <code>contributions_comptes()</code> fait le forage&nbsp;: le pont d&eacute;signe
         &laquo;&nbsp;les frais g&eacute;n&eacute;raux&nbsp;&raquo;, cette table dit lequel des quarante comptes de la
