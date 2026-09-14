@@ -28,15 +28,27 @@
 # (+1 produit, -1 charge), et sert au repérage comme au choix des couleurs.
 # UNITE distingue les euros des points de pourcentage, ce qui décide du
 # formatage et du libellé d'axe.
+# Le registre doit couvrir TOUT ce que le pont sait décomposer : ses six lignes
+# — CA, autres produits, matières, rémunérations, frais généraux, résultat
+# financier — plus les soldes et les ratios. Un poste que le pont accuse mais
+# que la tendance ne sait pas tracer est une impasse : on voit le coupable sans
+# pouvoir regarder son historique.
+#
+# Amortissements et MARGE (le résultat d'exploitation comptable) en sont
+# délibérément absents : ce volet raisonne en marge de gestion, et les mélanger
+# ferait deux marges à l'écran (cf. R/exploitation.R).
 INDICATEURS_ANALYSE <- tibble::tribble(
   ~CLE,            ~LIBELLE,                      ~COLONNE,       ~UNITE, ~SENS,
   "ca",            "Chiffre d'affaires",          "CA",           "eur",      1,
+  "autres",        "Autres produits",             "AUTRES",       "eur",      1,
   "marge",         "Marge avant amortissements",  "MARGE_AA",     "eur",      1,
   "matieres",      "Matières premières",          "MATIERES",     "eur",     -1,
   "remunerations", "Rémunérations",               "REMUNERATION", "eur",     -1,
   "generaux",      "Frais généraux",              "GENERAUX",     "eur",     -1,
+  "financier",     "Résultat financier",          "FINANCIER",    "eur",      1,
   "pct_matieres",  "Matières en % du CA",         "PCT_MATIERES", "pct",     -1,
   "pct_travail",   "Rémunérations en % du CA",    "PCT_TRAVAIL",  "pct",     -1,
+  "pct_prime",     "Matières + rémunérations en % du CA", "PCT_PRIME", "pct", -1,
   "pct_generaux",  "Frais généraux en % du CA",   "PCT_GENERAUX", "pct",     -1,
   "pct_marge",     "Marge en % du CA",            "PCT_MARGE_AA", "pct",      1
 )
@@ -47,6 +59,18 @@ indicateur_analyse <- function(cle) {
   i <- match(cle %||% "", INDICATEURS_ANALYSE$CLE)
   if (is.na(i)) i <- match("marge", INDICATEURS_ANALYSE$CLE)
   as.list(INDICATEURS_ANALYSE[i, ])
+}
+
+# La même chose, mais SANS repli.
+#
+# Le repli ci-dessus est bon pour un select — mieux vaut la marge qu'un écran
+# vide. Il est franchement mauvais partout où la clé est écrite à la main : une
+# tuile intitulée « Écart frais généraux » qui afficherait la marge, sans rien
+# signaler, est pire qu'une tuile en erreur. Les deux usages ne veulent pas la
+# même chose, donc deux fonctions.
+indicateur_strict <- function(cle) {
+  i <- match(cle %||% "", INDICATEURS_ANALYSE$CLE)
+  if (is.na(i)) NULL else as.list(INDICATEURS_ANALYSE[i, ])
 }
 
 # Formatage d'une valeur selon l'unité de son indicateur.
@@ -926,6 +950,9 @@ table_comparaison <- function(actuel, reference, lib_actuel, lib_ref) {
 
 # Quatre tuiles, toutes en ÉCART : c'est l'objet du volet. Le niveau absolu se
 # lit dans le sous-titre, jamais en gros — le volet Exploitation est là pour ça.
+# Les tuiles se désignent par leur CLÉ dans INDICATEURS_ANALYSE (ci-dessus) :
+# c'est la seule liste à consulter pour en ajouter une, et elle est la même que
+# celle du sélecteur d'indicateur.
 kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
   if (is.null(actuel) || !nrow(actuel))
     return(div(class = "text-muted small p-2", "Aucune période sélectionnée."))
@@ -941,42 +968,67 @@ kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
                sous_titre = format_pct(a$PCT_MARGE_AA))))
   r <- reference[1, ]
 
-  # sens = +1 quand une hausse est une bonne nouvelle.
-  tuile_eur <- function(champ, lib, icone, sens) {
-    e <- a[[champ]] - r[[champ]]
-    pct <- if (is.na(r[[champ]]) || r[[champ]] == 0) NA_real_
-           else 100 * e / abs(r[[champ]])
+  # Une tuile d'écart, désignée par sa CLÉ dans INDICATEURS_ANALYSE — jamais
+  # par un nom de colonne écrit à la main.
+  #
+  # Les noms de colonnes ne se devinent pas : MATIERES donne PCT_MATIERES, mais
+  # REMUNERATION donne PCT_TRAVAIL et « Frais généraux » donne PCT_GENERAUX.
+  # Écrire PCT_FRAIS_GENERAUX est l'erreur naturelle, et elle faisait tomber
+  # TOUTE la rangée de tuiles : a[["colonne inconnue"]] vaut NULL, NULL - NULL
+  # vaut numeric(0), et `if (e >= 0)` sur numeric(0) lève « argument de longueur
+  # nulle ». Une tuile ne doit jamais pouvoir emporter ses voisines.
+  #
+  # Passer par la clé règle les deux problèmes d'un coup : la liste de ce qui
+  # est disponible est celle du sélecteur d'indicateur (INDICATEURS_ANALYSE),
+  # et l'unité comme le SENS viennent du registre au lieu d'être recopiés —
+  # écrire +1 pour une charge était l'autre faute silencieuse possible.
+  tuile_ecart <- function(cle, lib, icone) {
+    ind <- indicateur_strict(cle)
+    if (is.null(ind) || !ind$COLONNE %in% names(a) || !ind$COLONNE %in% names(r))
+      return(tuile_indisponible(cle, lib, icone))
+
+    champ <- ind$COLONNE
+    va <- a[[champ]]; vr <- r[[champ]]
+    e <- va - vr
+    if (!length(e)) return(tuile_indisponible(cle, lib, icone))
+
+    couleur <- if (is.na(e) || e == 0) COUL_NEUTRE
+               else if (sign(e) == ind$SENS) COUL_VERT else COUL_ROUGE
+
+    if (identical(ind$UNITE, "pct"))
+      return(kpi_tile(
+        paste0(if (!is.na(e) && e >= 0) "+" else "", round(e, 1), " pt"),
+        lib, couleur, icone,
+        sous_titre = paste0(format_pct(va), " vs ", format_pct(vr))))
+
+    pct <- if (is.na(vr) || vr == 0) NA_real_ else 100 * e / abs(vr)
     kpi_tile(
-      paste0(if (e >= 0) "+" else "", format_CA(e, -1)), lib,
-      if (is.na(e) || e == 0) COUL_NEUTRE
-      else if (sign(e) == sens) COUL_VERT else COUL_ROUGE,
-      icone,
-      sous_titre = paste0(format_indicateur(a[[champ]], "eur"), " vs ",
-                          format_indicateur(r[[champ]], "eur"),
+      paste0(if (!is.na(e) && e >= 0) "+" else "", format_CA(e, -1)),
+      lib, couleur, icone,
+      sous_titre = paste0(format_CA(va, -1), " vs ", format_CA(vr, -1),
                           if (!is.na(pct)) paste0(" · ", if (pct >= 0) "+" else "",
                                                   format_pct(pct)) else ""))
-  }
-  tuile_pt <- function(champ, lib, icone, sens) {
-    e <- a[[champ]] - r[[champ]]
-    kpi_tile(
-      paste0(if (!is.na(e) && e >= 0) "+" else "", round(e, 1), " pt"), lib,
-      if (is.na(e) || e == 0) COUL_NEUTRE
-      else if (sign(e) == sens) COUL_VERT else COUL_ROUGE,
-      icone,
-      sous_titre = paste0(format_pct(a[[champ]]), " vs ", format_pct(r[[champ]])))
   }
 
   div(
     class = "kpi-grid",
     # kpi_tile(etiquette_periode(a$PERIODE, unite), "Période analysée",
     #          COUL_BRUN, "calendar-day", sous_titre = paste("comparée à", lib_ref)),
-    tuile_eur("CA", "Écart de chiffre d'affaires", "euro-sign", 1),
-    tuile_eur("MARGE_AA", "Écart de marge", "piggy-bank", 1),
-    tuile_pt("PCT_MARGE_AA", "Écart de taux de marge", "percent", 1),
-    tuile_pt("PCT_MATIERES", "Écart taux matières", "cart-shopping", -1),
-    tuile_pt("PCT_TRAVAIL", "Écart taux rémunérations", "users", -1),
-    tuile_pt("PCT_FRAIS_GENERAUX", "Écart frais généraux", "file-contract", -1)
+    tuile_ecart("ca",           "Écart de chiffre d'affaires", "euro-sign"),
+    tuile_ecart("marge",        "Écart de marge",              "piggy-bank"),
+    tuile_ecart("pct_marge",    "Écart de taux de marge",      "percent"),
+    tuile_ecart("pct_matieres", "Écart taux matières",         "cart-shopping"),
+    tuile_ecart("pct_travail",  "Écart taux rémunérations",    "users"),
+    tuile_ecart("pct_generaux", "Écart frais généraux",        "file-contract")
   )
+}
+
+# La tuile de repli : grise, et elle DIT ce qui manque plutôt que de laisser un
+# trou. Une clé inconnue est une faute de frappe dans le code, pas une donnée
+# absente — autant la lire à l'écran que la chercher dans une pile d'appels.
+tuile_indisponible <- function(cle, lib, icone) {
+  kpi_tile("—", lib, COUL_NEUTRE, icone,
+           sous_titre = paste0("indicateur « ", cle %||% "", " » inconnu"))
 }
 
 ##### Diagnostic automatique #####
