@@ -519,16 +519,18 @@ ui_compta_analyse <- function() {
       selectInput("ana_periode", "Période analysée", choices = NULL),
       selectInput("ana_ref", "Comparée à", choices = MODES_REFERENCE,
                   selected = "precedente"),
+      # Coché par défaut : sur une période complète le rabotage ne retire rien,
+      # il n'a donc d'effet que là où la comparaison était fausse.
+      checkboxInput("ana_raboter",
+                    "Raboter la référence à la même taille", TRUE),
+      div(class = "small text-muted",
+          "Une période en cours ne porte pas douze mois. Coché, la référence",
+          " est ramenée aux ", tags$b("mêmes mois"), " : huit mois de 2026 se",
+          " comparent à janvier-août 2025, pas à l'année entière. Sans effet",
+          " sur une période complète."),
+      hr(),
       sliderInput("ana_nb", "Périodes de tendance", min = 6, max = 48,
                   value = 18, step = 1, ticks = FALSE),
-      hr(),
-      selectInput("ana_indic", "Indicateur suivi",
-                  choices = setNames(INDICATEURS_ANALYSE$CLE,
-                                     INDICATEURS_ANALYSE$LIBELLE),
-                  selected = "marge"),
-      div(class = "small text-muted",
-          "Pilote la tendance et la saisonnalité. Le reste du volet porte",
-          " toujours sur la marge."),
       hr(),
       div(class = "small text-muted",
           tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
@@ -541,6 +543,9 @@ ui_compta_analyse <- function() {
           tags$b("Zone habituelle"), " : médiane de la série ± 2 MAD, la même",
           " mesure que le tableau du volet Exploitation. Les deux écrans",
           " signalent donc les mêmes périodes.", tags$br(), tags$br(),
+          tags$b("L'indicateur suivi"), " se choisit au-dessus des graphiques",
+          " de tendance et de saisonnalité. Le reste du volet porte toujours",
+          " sur la marge.", tags$br(), tags$br(),
           "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
           " chiffre d'affaires seul.")
     ),
@@ -603,6 +608,22 @@ ui_compta_analyse <- function() {
       )
     ),
     navset_card_tab(
+      # Le sélecteur vit dans l'en-tête de la carte, avec les deux graphiques
+      # qu'il pilote, et non dans la barre latérale : c'est là qu'on pense à
+      # s'en servir. Même disposition que le sélecteur de la heatmap du volet
+      # Travail.
+      #
+      # `title` et non `header` : en bslib 0.6.1, l'argument `header` de
+      # navset_card_tab() est SILENCIEUSEMENT ignoré — le contenu n'apparaît
+      # nulle part et rien ne le signale. Un test de placement le vérifie.
+      title = div(
+        class = "d-flex flex-wrap gap-2 align-items-center",
+        span(class = "small text-muted", "Indicateur suivi"),
+        div(class = "flex-shrink-0",
+            selectInput("ana_indic", NULL,
+                        choices = setNames(INDICATEURS_ANALYSE$CLE,
+                                           INDICATEURS_ANALYSE$LIBELLE),
+                        selected = "marge", width = "260px"))),
       nav_panel(
         title = "Tendance",
         icon = icon("chart-line"),

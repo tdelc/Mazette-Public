@@ -517,6 +517,30 @@ R -e 'shiny::runApp()'</code></pre>
         z&eacute;ros&nbsp;: un &eacute;cart contre z&eacute;ro vaudrait &minus;100&nbsp;%, ce qui est faux et alarmant.
       </p>
       <p>
+        Une p&eacute;riode <strong>en cours</strong> pose un probl&egrave;me &agrave; part&nbsp;: ao&ucirc;t 2026 apporte
+        huit mois de comptabilit&eacute; quand 2025 en apporte douze. Les confronter tels
+        quels compare huit mois &agrave; douze, et l&rsquo;&eacute;cart affich&eacute; n&rsquo;est qu&rsquo;une diff&eacute;rence
+        de dur&eacute;e&nbsp;: 2026 se lit comme un effondrement alors qu&rsquo;il progresse.
+      </p>
+      <p>
+        La case <em>Raboter la r&eacute;f&eacute;rence &agrave; la m&ecirc;me taille</em> ram&egrave;ne toutes les
+        p&eacute;riodes compar&eacute;es aux <strong>m&ecirc;mes mois</strong> &mdash; pas &laquo;&nbsp;les huit premiers&nbsp;&raquo;
+        au sens positionnel, mais les mois de m&ecirc;me <em>rang</em> dans leur p&eacute;riode. Si
+        2026 porte janvier &agrave; ao&ucirc;t, on ne garde de 2025 que janvier &agrave; ao&ucirc;t&nbsp;; s&rsquo;il
+        manque mars &agrave; 2026, on retire mars de 2025 aussi. La saisonnalit&eacute; est ainsi
+        respect&eacute;e, ce qu&rsquo;un prorata (&times;&nbsp;12/8) manquerait compl&egrave;tement&nbsp;: raboter
+        n&rsquo;invente rien, il retire.
+      </p>
+      <p>
+        Le rabotage s&rsquo;applique &agrave; <strong>tout ce qui compare</strong> &mdash; tuiles, pont,
+        tableau, forage par compte <em>et</em> graphe de tendance. Un &eacute;cran &agrave; moiti&eacute;
+        rabot&eacute; serait pire que les deux autres&nbsp;: si le pont comparait huit mois &agrave;
+        huit et le forage huit &agrave; douze, les contributions ne sommeraient plus &agrave;
+        l&rsquo;&eacute;cart affich&eacute; juste au-dessus, et c&rsquo;est le forage qu&rsquo;on croirait faux. La
+        case est coch&eacute;e par d&eacute;faut&nbsp;: sur une p&eacute;riode compl&egrave;te le gabarit est complet
+        et rien n&rsquo;est retir&eacute;, donc elle ne change le r&eacute;sultat que l&agrave; o&ugrave; il &eacute;tait faux.
+      </p>
+      <p>
         La <strong>zone habituelle</strong> du graphe de tendance est la m&eacute;diane de la s&eacute;rie
         &plusmn;&nbsp;2&nbsp;MAD &mdash; exactement la mesure de <code>flag_ecart()</code> qui colore le
         tableau du volet Exploitation. Les deux &eacute;crans signalent donc les m&ecirc;mes p&eacute;riodes&nbsp;;
