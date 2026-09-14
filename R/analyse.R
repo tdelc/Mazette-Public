@@ -409,15 +409,17 @@ format_points <- function(x, signe = FALSE, suffixe = " pt") {
 # et par l'infobulle du graphe, pour que les deux racontent mot pour mot le
 # même calcul.
 libelle_attendu_pont <- function(pont) {
-  ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$ATTENDU), " de CA"),
-  ifelse(pont$NATURE == "brut",   euro_exact(pont$ATTENDU),
-         paste0(euro_exact(pont$ATTENDU), " attendus")))
+  # ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$ATTENDU), " de CA"),
+  # ifelse(pont$NATURE == "brut",   euro_exact(pont$ATTENDU),
+  #        paste0(euro_exact(pont$ATTENDU), " attendus")))
+  euro_exact(pont$ATTENDU)
 }
 
 libelle_reel_pont <- function(pont) {
-  ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$REEL), " de CA"),
-  ifelse(pont$NATURE == "brut",   euro_exact(pont$REEL),
-         paste0(euro_exact(pont$REEL), " réels")))
+  # ifelse(pont$NATURE == "volume", paste0(euro_exact(pont$REEL), " de CA"),
+  # ifelse(pont$NATURE == "brut",   euro_exact(pont$REEL),
+  #        paste0(euro_exact(pont$REEL), " réels")))
+  euro_exact(pont$REEL)
 }
 
 # L'opération qui mène de l'écart à l'effet. Vide pour une ligne de poste :
@@ -570,14 +572,14 @@ table_pont_marge <- function(pont, lib_actuel = "la période",
     `Attendu`   = libelle_attendu_pont(pont),
     `Réel`      = libelle_reel_pont(pont),
     `Écart`     = euro_signe(pont$ECART),
-    `Opération` = libelle_base_pont(pont, lib_ref),
-    `= Effet sur la marge` = euro_signe(pont$EFFET),
+    # `Opération` = libelle_base_pont(pont, lib_ref),
+    `Effet sur la marge` = euro_signe(pont$EFFET),
     Lecture     = lecture_pont(pont, lib_actuel, lib_ref))
 
   total <- sum(pont$EFFET)
   bind_rows(corps, tibble(
     Poste = "Écart total", `Attendu` = "", `Réel` = "", `Écart` = "",
-    `Opération` = "", `= Effet sur la marge` = euro_signe(total),
+    `Effet sur la marge` = euro_signe(total),
     Lecture = paste0("somme des ", nrow(pont), " effets ci-dessus")))
 }
 
@@ -626,8 +628,7 @@ explication_pont <- function(pont, lib_actuel = "la période",
 
   div(
     class = "small",
-    p(tags$b("Deux sortes de lignes, et deux seulement."),
-      " L'écart de marge se range entièrement dans l'une ou l'autre."),
+    p(tags$b("Deux sortes de lignes :")),
     if (nrow(vol))
       p(tags$b("Le volume."), " Le chiffre d'affaires a bougé. Si rien",
         " d'autre n'avait changé, chaque euro de CA en plus aurait rapporté ce",
@@ -635,7 +636,7 @@ explication_pont <- function(pont, lib_actuel = "la période",
         tags$br(),
         tags$span(class = "text-muted", "Ici : ", phrase(vol), ".")),
     if (!is.null(gros) && nrow(gros))
-      p(tags$b("La dérive d'un poste."), " Un poste a changé de POIDS dans le",
+      p(tags$b("La dérive d'un poste."), " Un poste a changé de poids dans le",
         " CA. Ce sont ces points d'écart, appliqués au CA de ", lib_actuel,
         ", qui font la marge en plus ou en moins.", tags$br(),
         tags$span(class = "text-muted", "Ici, le poste qui pèse le plus est ",

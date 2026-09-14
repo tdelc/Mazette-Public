@@ -585,26 +585,7 @@ ui_compta_analyse <- function() {
         # L'explication vient AVANT les tableaux : on lit la règle, puis on la
         # vérifie sur les chiffres, jamais l'inverse.
         uiOutput("ana_pont_explication"),
-        hr(),
-        div(class = "small text-muted mb-2",
-            "Tout le tableau est en euros — c'est ce qui le rend exact. ",
-            tags$b("Attendu"), " : ce que le poste aurait coûté en gardant son",
-            " poids de la période de référence, appliqué au chiffre d'affaires",
-            " de la période analysée. ", tags$b("Réel"), " : ce qu'il a",
-            " vraiment coûté. L'écart entre les deux ", tags$b("est"),
-            " l'effet sur la marge.",
-            tags$br(),
-            "Pour une ", tags$b("charge"), ", dépenser plus que l'attendu fait",
-            " baisser la marge : l'effet porte le signe opposé à l'écart. Pour",
-            " un ", tags$b("produit"), ", il garde le même signe.",
-            tags$br(),
-            "Seule la ligne ", tags$i("Effet volume"), " comporte une",
-            " multiplication : l'écart de chiffre d'affaires, au taux de marge",
-            " de la référence."),
-        DTOutput("ana_pont_table"),
-        div(class = "small text-muted mt-3 mb-2",
-            tags$b("La preuve que rien ne se perd en route.")),
-        DTOutput("ana_pont_verif")
+        DTOutput("ana_pont_table")
       )
     ),
     navset_card_tab(
