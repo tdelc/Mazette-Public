@@ -56,6 +56,20 @@ marque_pizzwanze <- function(db, dates_piz) {
            CRENEAU = factor(CRENEAU, levels = CRENEAUX_ORDRE))
 }
 
+# Jours sans service, au sens de wday(week_start = 1) : 1 = lundi.
+#
+# La règle vivait jusqu'ici en creux, dans le `filter(.wd != 1)` de
+# normalise_creneaux() : lisible pour qui lit cette fonction, invisible pour
+# tout le reste du dashboard. Le volet Planning l'a d'ailleurs manquée, et
+# comptait comme heures de service les heures de préparation du lundi.
+#
+# Elle est donc nommée ici, à l'endroit où elle a toujours vécu, pour que les
+# autres volets s'y réfèrent au lieu de la redécouvrir — ou de l'ignorer.
+JOURS_FERMES <- 1L
+
+# TRUE pour une date tombant un jour de fermeture.
+jour_ferme <- function(d) wday(as.Date(d), week_start = 1) %in% JOURS_FERMES
+
 # Normalisation des créneaux, reprise de l'étude de rentabilité :
 #   - les lundis (rares ouvertures exceptionnelles) sont exclus ;
 #   - le mardi est toujours un créneau « Soir » (ouverture à 17h) ;
@@ -65,8 +79,8 @@ marque_pizzwanze <- function(db, dates_piz) {
 # service en face, donc une productivité infinie.
 normalise_creneaux <- function(db) {
   db %>%
+    filter(!jour_ferme(DATE)) %>%
     mutate(.wd = wday(DATE, week_start = 1)) %>%
-    filter(.wd != 1) %>%
     mutate(CRENEAU = case_when(.wd == 2 ~ "Soir",
                                .wd == 7 ~ "Midi",
                                TRUE     ~ as.character(CRENEAU))) %>%

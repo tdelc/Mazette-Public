@@ -373,7 +373,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
         <tr><td>Compta</td><td><code>tab_compta</code></td><td>Trois sous-onglets d&eacute;riv&eacute;s de <code>DB_COMPTA</code>&nbsp;: <strong>Exploitation</strong> (du CA &agrave; la marge), <strong>Analyse</strong> (pourquoi la marge a boug&eacute;) et <strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong> (le compte de r&eacute;sultat).</td></tr>
         <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
-        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em>&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
+        <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em> &mdash; le service, un jour d&rsquo;ouverture&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
         <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
       </tbody>
@@ -795,6 +795,39 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         </tr>
       </tbody>
     </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Ce qu&rsquo;est une &laquo;&nbsp;heure variable&nbsp;&raquo;, et o&ugrave; la r&egrave;gle vit</span>
+      <p>
+        Une heure variable, c&rsquo;est une heure <strong>de service</strong>, <strong>un jour
+        d&rsquo;ouverture</strong>, sur un <strong>cr&eacute;neau de service</strong>. Les trois morceaux
+        comptent, et le deuxi&egrave;me a longtemps manqu&eacute; au volet Planning.
+      </p>
+      <p>
+        Le lundi, la brasserie ne sert pas. Les heures que l&rsquo;&eacute;quipe de salle y passe
+        sont de la pr&eacute;paration et du nettoyage&nbsp;: elles sont bookées &laquo;&nbsp;Service&nbsp;&raquo;
+        dans le planning comme dans Horeko, mais elles ne produisent aucun couvert et
+        ne se comparent &agrave; aucun chiffre d&rsquo;affaires. Les compter comme variables
+        faisait apparaitre des &laquo;&nbsp;heures habituelles&nbsp;&raquo; un lundi &mdash; un rep&egrave;re qui ne
+        veut rien dire, puisqu&rsquo;il n&rsquo;y a rien &agrave; comparer.
+      </p>
+      <p>
+        La r&egrave;gle vivait en creux, dans un <code>filter(.wd != 1)</code> au milieu de
+        <code>normalise_creneaux()</code> (<code>R/travail.R</code>)&nbsp;: lisible pour qui lit
+        cette fonction, invisible pour tout le reste du dashboard. Elle porte
+        d&eacute;sormais un nom &mdash; <code>JOURS_FERMES</code> et <code>jour_ferme()</code> &mdash; et
+        les deux volets s&rsquo;y r&eacute;f&egrave;rent. <strong>Le Planning et le Travail doivent appeler
+        &laquo;&nbsp;heure variable&nbsp;&raquo; exactement la m&ecirc;me chose</strong>, sans quoi le premier
+        projette des heures que le second ne mesurera jamais.
+      </p>
+      <p>
+        Ces heures ne sont pas <em>supprim&eacute;es</em> pour autant&nbsp;: elles existent et elles
+        co&ucirc;tent. Elles sont simplement renomm&eacute;es &laquo;&nbsp;Service (jour ferm&eacute;)&nbsp;&raquo;, ce qui
+        les fait compter du c&ocirc;t&eacute; des heures fixes et les nomme correctement dans
+        l&rsquo;infobulle. Un seul changement de libell&eacute; &agrave; l&rsquo;entr&eacute;e, et tout le volet
+        suit &mdash; parce qu&rsquo;il distingue partout &laquo;&nbsp;Service&nbsp;&raquo; du reste.
+      </p>
+    </div>
 
     <div class="note" data-profondeur="detail">
       <span class="l">Pourquoi le planning s&rsquo;archive dans un Google&nbsp;Sheet</span>

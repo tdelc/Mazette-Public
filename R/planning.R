@@ -21,7 +21,7 @@
 # Chaque graphique reste dans UNE unité, et la comparaison y est directe.
 #
 # PÉRIMÈTRE DES HEURES — la grandeur affichée, partout dans ce volet, est
-# l'heure VARIABLE, c'est-à-dire l'heure de service. C'est le même découpage
+# l'heure VARIABLE, c'est-à-dire l'heure de service SUR UN JOUR D'OUVERTURE. C'est le même découpage
 # que l'onglet Travail (cf. R/travail.R), et pour la même raison : seules les
 # heures de service se pilotent au jour le jour et suivent le CA. Les heures
 # fixes (transformation alimentaire, brasserie, support) sont posées pour des
@@ -29,6 +29,19 @@
 # service brouillerait la comparaison au CA du jour. Elles restent calculées
 # et données en survol, jour par jour : c'est une information utile, pas une
 # grandeur à comparer.
+#
+# Le jour de fermeture est le second morceau de cette définition, et c'est
+# celui qu'on avait manqué. Le lundi, la brasserie ne sert pas : les heures que
+# l'équipe de salle y passe sont de la préparation et du nettoyage. Elles sont
+# bookées « Service » dans le planning comme dans Horeko, mais elles ne
+# produisent aucun couvert et ne se comparent à aucun chiffre d'affaires. Les
+# compter comme variables faisait apparaître des « heures habituelles » un
+# lundi — un repère qui ne veut rien dire, puisqu'il n'y a rien à comparer.
+#
+# La règle de fermeture vit dans R/travail.R (JOURS_FERMES / jour_ferme), là où
+# elle était déjà appliquée par normalise_creneaux() : les deux volets doivent
+# appeler « heure variable » exactement la même chose, sinon le Planning
+# projette des heures que le Travail ne mesurera jamais.
 #
 # Le jour où DB_HEURES_PLANNING portera un coût horaire, ce volet pourra passer
 # à une vraie marge ; rien d'autre ne changera.
@@ -230,7 +243,18 @@ couleur_secteur <- function(secteur) {
 
 #### Heures planifiées ####
 
+# Libellé du service posé un jour de fermeture. Distinct de « Service » : c'est
+# ce qui le fait basculer du côté des heures fixes, et ce qui le nomme
+# correctement dans l'infobulle.
+SECTEUR_SERVICE_FERME <- "Service (jour fermé)"
+
 # Heures par jour x secteur, libellés normalisés et doublons additionnés.
+#
+# Les heures de service posées un jour de fermeture sont RENOMMÉES plutôt que
+# supprimées : elles existent, elles coûtent, et le survol doit les montrer.
+# Mais elles ne sont pas des heures variables — rien ne les convertit en
+# couverts. Ce simple changement de libellé suffit à les faire compter du bon
+# côté partout en aval, parce que tout le volet distingue « Service » du reste.
 planning_secteurs <- function(db_planning) {
   if (!planning_valide(db_planning)) return(NULL)
   db_planning %>%
@@ -238,6 +262,8 @@ planning_secteurs <- function(db_planning) {
               SECTEUR = normalise_secteur(as.character(SERVICE)),
               HEURES = as.numeric(HEURES)) %>%
     filter(!is.na(DATE), !is.na(HEURES)) %>%
+    mutate(SECTEUR = if_else(SECTEUR == "Service" & jour_ferme(DATE),
+                             SECTEUR_SERVICE_FERME, SECTEUR)) %>%
     group_by(DATE, SECTEUR) %>%
     summarise(HEURES = sum(HEURES, na.rm = TRUE), .groups = "drop")
 }
@@ -331,19 +357,15 @@ heures_habituelles <- function(jour, db_couts_travail, n_semaines = 8) {
                 libelle = paste0("médiane des ", attr(depuis_planning, "n_sem"),
                                  " dernières semaines planifiées")))
 
-  # Le repli suit le même périmètre que la grandeur qu'il remplace : des heures
-  # de service, pas toutes les heures. Comparer des heures de service prévues à
-  # un total réel tous secteurs confondus afficherait un déficit permanent.
+  # Le repli suit exactement le périmètre de la grandeur qu'il remplace : des
+  # heures de service, sur un jour d'ouverture, sur un créneau de service —
+  # c'est mot pour mot la définition de base_travail() dans R/travail.R.
+  #
+  # En prendre une plus large donnerait un repère systématiquement au-dessus de
+  # ce que le volet Travail mesurera ensuite : le planning paraîtrait toujours
+  # trop léger, et l'écart serait un artefact de définition.
   reelles <- medianes_par_jour_semaine(
-    if (is.null(db_couts_travail)) NULL else
-      db_couts_travail %>%
-        # Sans colonne SECTEUR, on ne sait pas trier : on prend tout plutôt
-        # que de tomber, et le bandeau de repli dit déjà que ce n'est qu'un
-        # ordre de grandeur.
-        (\(d) if ("SECTEUR" %in% names(d)) filter(d, SECTEUR == "Service") else d)() %>%
-        group_by(DATE) %>%
-        summarise(VALEUR = sum(HEURES, na.rm = TRUE), .groups = "drop"),
-    n_semaines)
+    heures_variables_reelles(db_couts_travail), n_semaines)
 
   if (!is.null(reelles))
     return(list(table = renomme_mediane(reelles), source = "heures réelles",
@@ -351,6 +373,25 @@ heures_habituelles <- function(jour, db_couts_travail, n_semaines = 8) {
                                  " dernières semaines réellement travaillées")))
 
   list(table = NULL, source = "aucune", libelle = "pas encore de référence")
+}
+
+# Les heures RÉELLEMENT variables, au sens du volet Travail : le service, un
+# jour d'ouverture, sur un créneau de service. Une ligne par jour.
+#
+# Les colonnes sont vérifiées plutôt que supposées : DB_COUTS_TRAVAIL les porte
+# toutes, mais ce repli sert précisément quand les données sont incomplètes, et
+# il doit se taire plutôt que tomber.
+heures_variables_reelles <- function(db_travail) {
+  if (is.null(db_travail) || !nrow(db_travail) ||
+      !all(c("DATE", "HEURES") %in% names(db_travail))) return(NULL)
+
+  d <- db_travail %>% filter(!jour_ferme(DATE))
+  if ("SECTEUR" %in% names(d)) d <- filter(d, SECTEUR == "Service")
+  if ("CRENEAU" %in% names(d)) d <- filter(d, CRENEAU %in% c("Midi", "Soir"))
+  if (!nrow(d)) return(NULL)
+
+  d %>% group_by(DATE) %>%
+    summarise(VALEUR = sum(HEURES, na.rm = TRUE), .groups = "drop")
 }
 
 # La médiane générique s'appelle MEDIANE ; côté heures on la veut H_MEDIANE.
@@ -507,6 +548,16 @@ resume_projection <- function(proj) {
 # Infobulle commune aux deux graphiques : mêmes lignes, même ordre, quelle que
 # soit l'unité du graphe. On y glisse les couverts réservés, qui expliquent
 # souvent l'écart d'heures sans entrer dans le calcul.
+# Ce qu'il faut dire quand un jour ne porte aucune heure de service. Les deux
+# cas n'ont rien à voir et ne doivent pas se lire pareil : un lundi fermé est
+# normal, un jeudi sans personne en salle est une anomalie du planning.
+mention_sans_service <- function(dates, h_variable) {
+  ifelse(h_variable > 0, "",
+  ifelse(jour_ferme(dates),
+         "<br><i>jour de fermeture : pas de service</i>",
+         "<br><i>aucune heure de service planifiée</i>"))
+}
+
 infobulle_jour <- function(d, detail_fixe = NULL) {
   couverts <- ifelse(d$COUVERTS > 0,
                      paste0("<br>", d$COUVERTS, " couverts réservés (",
@@ -519,6 +570,7 @@ infobulle_jour <- function(d, detail_fixe = NULL) {
                                           round(d$ECART_H_PCT), " %)"))))
   paste0("<b>", d$JOUR_LABEL, "</b>",
          "<br>", round(d$H_VARIABLE), " h de service planifiées", habituel,
+         mention_sans_service(d$DATE, d$H_VARIABLE),
          texte_heures_fixes(d$DATE, d$H_FIXE, detail_fixe),
          couverts, "<extra></extra>")
 }
@@ -601,7 +653,8 @@ graph_planning_rentabilite <- function(proj) {
     ifelse(proj$OBJECTIF > 0,
            paste0("<br>", ifelse(proj$ECART_CA >= 0, "au-dessus de ", "manque "),
                   format_CA(abs(proj$ECART_CA), -1)), ""),
-    ifelse(is.na(proj$CA_H_REQUIS), "",
+    ifelse(is.na(proj$CA_H_REQUIS),
+           mention_sans_service(proj$DATE, proj$H_VARIABLE),
            paste0("<br>", round(proj$H_VARIABLE), " h de service, soit ",
                   format_CA(proj$CA_H_REQUIS, -1), " / h à tenir")),
     ifelse(proj$COUVERTS > 0,
