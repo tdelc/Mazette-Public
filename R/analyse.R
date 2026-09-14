@@ -484,7 +484,7 @@ graph_pont_marge <- function(pont, lib_actuel = "la période",
   # favorable en cinquième position sortirait sinon du cadre, silencieusement.
   chemin <- pont$DEPART[1] + cumsum(pont$EFFET)
   hauteurs <- c(pont$DEPART[1], chemin, pont$ARRIVEE[1])
-  marge_axe <- max(1000, 0.1 * diff(range(c(hauteurs, 0))))
+  marge_axe <- max(1000, 0.15 * diff(range(c(hauteurs, 0))))
   ymin <- min(hauteurs, 0) - marge_axe
   ymax <- max(hauteurs) + marge_axe
 
@@ -502,8 +502,8 @@ graph_pont_marge <- function(pont, lib_actuel = "la période",
   ) %>%
     layout(
       title = list(text = titre_pont(lib_actuel, lib_ref, unite, sous_titre),
-                   font = list(size = 14), x = 0, xanchor = "left",
-                   y = 0.97, yanchor = "top"),
+                   font = list(size = 14), x = 0.02, xanchor = "left",
+                   y = 0.95, yanchor = "top"),
       xaxis = list(title = "", tickangle = -25),
       yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68",
                    range = c(ymin, ymax)),
@@ -517,8 +517,9 @@ titre_pont <- function(lib_actuel, lib_ref, unite = "mois", sous_titre = NULL) {
   grain <- switch(unite, mois = "comparaison mensuelle",
                   trimestre = "comparaison trimestrielle",
                   annee = "comparaison annuelle", "comparaison")
-  contexte <- paste(c(grain, "marge avant amortissements", sous_titre),
-                    collapse = " · ")
+  # contexte <- paste(c(grain, "marge avant amortissements", sous_titre),
+  #                   collapse = " · ")
+  contexte <- ""
   paste0("Pont de marge — ", lib_actuel, " comparé à ", lib_ref,
          "<br><span style='font-size:11px;color:#8d7b68'>", contexte, "</span>")
 }
@@ -967,13 +968,14 @@ kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
 
   div(
     class = "kpi-grid",
-    kpi_tile(etiquette_periode(a$PERIODE, unite), "Période analysée",
-             COUL_BRUN, "calendar-day", sous_titre = paste("comparée à", lib_ref)),
+    # kpi_tile(etiquette_periode(a$PERIODE, unite), "Période analysée",
+    #          COUL_BRUN, "calendar-day", sous_titre = paste("comparée à", lib_ref)),
     tuile_eur("CA", "Écart de chiffre d'affaires", "euro-sign", 1),
     tuile_eur("MARGE_AA", "Écart de marge", "piggy-bank", 1),
     tuile_pt("PCT_MARGE_AA", "Écart de taux de marge", "percent", 1),
     tuile_pt("PCT_MATIERES", "Écart taux matières", "cart-shopping", -1),
-    tuile_pt("PCT_TRAVAIL", "Écart taux rémunérations", "users", -1)
+    tuile_pt("PCT_TRAVAIL", "Écart taux rémunérations", "users", -1),
+    tuile_pt("PCT_FRAIS_GENERAUX", "Écart frais généraux", "file-contract", -1)
   )
 }
 
