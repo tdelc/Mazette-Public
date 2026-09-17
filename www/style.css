@@ -471,3 +471,36 @@ span.value-box-title { display: block; }
 .diagnostic-ligne .small {
   color: #5c4a3a;
 }
+
+/* ----- Tableaux dans une carte à hauteur fixe ----- */
+/*
+  Sans cette règle, la note de bas de carte se retrouve RECOUVERTE par les
+  dernières lignes du tableau dès que celui-ci est plus long que la place
+  disponible — et seulement dans ce cas, d'où un défaut qui n'apparaît qu'à
+  certains mois.
+
+  Le mécanisme, vérifié au navigateur : bslib fait du conteneur DT un « fill
+  item » (flex:1 1 auto ; min-height:0), il se laisse donc comprimer sous la
+  taille de son contenu. htmlwidgets lui assigne alors une hauteur en pixels,
+  mais DT rend sa table à sa hauteur naturelle et le conteneur ne découpe rien :
+  la table se peint par-dessus ce qui suit. Le card-body a bien overflow:auto,
+  ce qui explique la barre de défilement — mais elle ne sauve pas la note, qui
+  défile AVEC le tableau en restant à sa place dans le flux.
+
+  On rend donc au tableau son propre défilement, dans sa boîte. La règle est
+  sans effet quand la carte n'a pas de hauteur fixe : le conteneur vaut alors
+  auto, il grandit, et overflow n'a rien à découper.
+
+  Les graphiques n'en ont pas besoin : plotly redimensionne son SVG à son
+  conteneur au lieu de déborder.
+*/
+/*
+  Sélecteur en DESCENDANT et non en enfant direct : les quatorze tableaux de
+  l'onglet « Chiffre d'affaires » vivent dans des div intermédiaires. Aucune de
+  leurs cartes n'a de hauteur fixe aujourd'hui, donc aucune n'est en défaut —
+  mais la règle doit les couvrir le jour où l'une en recevra une, sans quoi le
+  défaut réapparaîtrait à cet endroit précis, des mois plus tard.
+*/
+.bslib-card .card-body .datatables {
+  overflow: auto;
+}
