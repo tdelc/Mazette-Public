@@ -1658,9 +1658,10 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Travail" ####
-  # Les coûts affichés sont ceux d'Horeko : c'est la seule source qui se
-  # ventile par secteur. Le total comptable sert de point de contrôle, jamais
-  # de correcteur (cf. import.R et R/travail.R).
+  # DB_COUTS_TRAVAIL arrive déjà recalé sur la paie (cf. import.R et
+  # R/sources_travail.R) : HEURES et COUT_TRAVAIL sont les valeurs retenues,
+  # Horeko n'ayant servi qu'à les répartir sur les jours et les créneaux. Le
+  # total comptable sert de point de contrôle, jamais de correcteur.
 
   trav_unite <- reactive(input$trav_unite %||% "mois")
 

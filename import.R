@@ -806,9 +806,14 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
 # raison de suivre les heures pointées. La règle de trois déplaçait donc du
 # coût d'un secteur vers un autre, sans fondement.
 #
-# COUT_TRAVAIL reste donc l'estimation Horeko, la seule qui se ventile par
-# secteur. COUT_COMPTA et COUT_HOREKO restent disponibles côte à côte, pour
-# que l'écran puisse afficher l'écart plutôt que de le masquer.
+# COUT_COMPTA et COUT_HOREKO restent donc disponibles côte à côte, pour que
+# l'écran puisse afficher l'écart plutôt que de le masquer.
+#
+# À ce stade, COUT_TRAVAIL est encore l'estimation Horeko. C'est le recalage
+# juste en dessous qui lui substitue la paie quand elle est disponible — et là,
+# la règle de trois est légitime, parce qu'elle répartit un écart entre deux
+# mesures de la MÊME grandeur plutôt qu'entre deux périmètres différents
+# (cf. R/sources_travail.R).
 DB_HEURES_COMPTA <- DB_COMPTA |> 
   filter(TYPE == "compte", CATEGORIE == "REMUNERATION") |> 
   group_by(ANNEE,MOIS) |> 

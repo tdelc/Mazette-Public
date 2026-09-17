@@ -347,10 +347,17 @@ ui_travail_pilotage <- function() {
           tags$b("CA par heure"), " : rapporté aux seules heures de service.",
           " Le rapporter au total mélangerait l'ouverture et la structure.",
           tags$br(), tags$br(),
-          tags$b("Source"), " : les coûts viennent d'Horeko, la seule source",
-          " qui se ventile par secteur. Le total comptable est affiché à",
-          " côté comme point de contrôle — l'écart est normal, c'est sa",
-          " dérive qui compte.")
+          tags$b("Source"), " : heures et coûts viennent de la ",
+          tags$b("paie"), " dès qu'elle couvre le mois. Elle mesure le coût",
+          " employeur réel et les heures réellement travaillées, ventilés par",
+          " secteur.", tags$br(),
+          "Horeko ne sert alors qu'à les ", tags$b("répartir"), " sur les",
+          " jours et les créneaux, qu'elle seule connaît ; son estimation",
+          " reste affichée à côté dans le tableau de décomposition, et la",
+          " colonne « Source » dit ce qui a servi.", tags$br(),
+          "Le total comptable est le troisième repère : l'écart entre les",
+          " trois est normal, c'est sa ", tags$b("dérive"), " qui compte. Le",
+          " sous-onglet ", tags$i("Sources"), " les confronte mois par mois.")
     ),
     uiOutput("trav_kpi"),
     card(

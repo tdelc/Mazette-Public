@@ -25,10 +25,24 @@
 # bord — elle faisait apparaître une marge par créneau qui n'existe pas, et
 # dont la valeur dépendait entièrement de la clé de répartition choisie.
 #
-# Les coûts affichés sont ceux d'HOREKO, la seule source qui se ventile par
-# secteur. Le total comptable des rémunérations reste affiché à côté, comme
-# point de contrôle : l'écart entre les deux est une information, pas une
-# erreur à corriger par une règle de trois (cf. import.R).
+# ---------------------------------------------------------------------------
+# D'où viennent les heures et les coûts
+# ---------------------------------------------------------------------------
+# De la PAIE dès qu'elle couvre le mois : elle mesure le coût employeur réel et
+# les heures réellement travaillées, ventilés par secteur. Horeko ne sert alors
+# qu'à répartir ces totaux sur les jours et les créneaux — c'est la seule
+# source qui descende à ce grain, et c'est désormais son seul rôle ici.
+#
+# Sans paie, on retombe sur l'estimation Horeko : un taux horaire par type de
+# contrat multiplié par les heures pointées. SOURCE_HEURES le dit ligne à
+# ligne, et table_decomposition_travail() affiche les deux côte à côte.
+#
+# Le total comptable des rémunérations reste affiché comme troisième repère.
+# L'écart entre les trois est une information — pécules, provisions, charges
+# patronales, personnel non pointé — pas une erreur à corriger par une règle de
+# trois sur la comptabilité (cf. R/sources_travail.R, qui explique pourquoi le
+# recalage sur la PAIE est légitime là où celui sur la comptabilité ne l'était
+# pas).
 
 CRENEAUX_ORDRE <- c("Midi", "Soir", "Pizzwanze")
 PAL_CRENEAU <- c("Midi" = "#e67e22", "Soir" = "#9b59b6", "Pizzwanze" = "#c0392b")
