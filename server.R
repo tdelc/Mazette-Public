@@ -1268,6 +1268,97 @@ server <- function(input, output, session) {
     )
   })
 
+  #### Volet "Travail" — Sources ####
+  # DB_ONSS est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
+  # R/connect.R) : tout part donc de ce reactive, qui vaut NULL en son absence,
+  # et chaque sortie sait traiter le NULL. Le volet se dessine même sans elle —
+  # il compare alors Horeko et la comptabilité, ce qui reste utile.
+  SRC_ONSS <- reactive({
+    o <- if (exists("DB_ONSS")) DB_ONSS else NULL
+    if (onss_valide(o)) o else NULL
+  })
+
+  src_unite <- reactive(input$src_unite %||% "mois")
+
+  # Les sources au grain MENSUEL d'abord, puis consolidées : la paie est
+  # mensuelle par nature, agréger avant de comparer serait perdre le détail
+  # qu'on est venu voir.
+  src_mensuel <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    sources_mensuelles(DB_COUTS_TRAVAIL, SRC_ONSS())
+  })
+
+  src_serie <- reactive({
+    m <- src_mensuel()
+    req(!is.null(m), nrow(m) > 0)
+    d <- m %>%
+      mutate(PERIODE = switch(src_unite(),
+                              mois      = PERIODE,
+                              trimestre = floor_date(PERIODE, "quarter"),
+                              annee     = floor_date(PERIODE, "year"))) %>%
+      group_by(PERIODE, SOURCE, LIBELLE) %>%
+      summarise(HEURES = if (all(is.na(HEURES))) NA_real_
+                         else sum(HEURES, na.rm = TRUE),
+                COUT = sum(COUT, na.rm = TRUE), .groups = "drop")
+    # Le curseur coupe les périodes les plus anciennes, pas les sources.
+    gardees <- tail(sort(unique(d$PERIODE)), as.integer(input$src_nb %||% 24))
+    d %>% filter(PERIODE %in% gardees) %>% arrange(PERIODE, SOURCE)
+  })
+
+  src_secteurs <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    bornes <- range(src_serie()$PERIODE)
+    sources_par_secteur(DB_COUTS_TRAVAIL, SRC_ONSS()) %>%
+      filter(PERIODE >= bornes[1])
+  })
+
+  src_non_rattache <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    onss_non_rattache(DB_COUTS_TRAVAIL, SRC_ONSS())
+  })
+
+  output$src_alerte_onss <- renderUI({
+    if (is.null(SRC_ONSS()))
+      return(bandeau_alerte(
+        TRUE,
+        paste0("Le fichier de paie n'est pas encore importé : la clé ",
+               "PATH_HEURES_ONSS manque dans l'onglet PATHS, ou le classeur ",
+               "est illisible. Ce volet compare alors Horeko et la ",
+               "comptabilité, et le coût du travail reste l'estimation ",
+               "Horeko partout ailleurs."),
+        titre = "Pas encore de paie", couleur = COUL_NEUTRE,
+        icone = "circle-info"))
+    # Le contrôle de lecture est calculé à l'import : s'il n'a pas été
+    # conservé dans le .RData, on ne l'invente pas.
+    alerte_onss(if (exists("CONTROLE_ONSS")) CONTROLE_ONSS else NULL)
+  })
+
+  output$src_alerte_manque <- renderUI({
+    alerte_non_rattache(src_non_rattache())
+  })
+
+  output$src_kpi <- renderUI({ kpi_sources(src_serie()) })
+  output$src_heures <- renderPlotly({
+    graph_sources_heures(src_serie(), src_unite()) })
+  output$src_cout <- renderPlotly({
+    graph_sources_cout(src_serie(), src_unite()) })
+  output$src_ecart <- renderPlotly({
+    graph_ecart_sources(src_serie(), src_unite()) })
+  output$src_secteurs <- renderPlotly({
+    graph_sources_secteurs(src_secteurs()) })
+
+  # Le tableau reste MENSUEL quelle que soit la granularité choisie : la
+  # demande était « lister, par mois, les heures et le coût selon chaque
+  # source ». Les graphiques au-dessus servent la vue d'ensemble.
+  output$src_table <- renderDT({
+    datatable_simple(table_sources(src_mensuel()))
+  })
+
+  output$src_non_rattache <- renderDT({
+    datatable_simple(table_non_rattache(src_non_rattache()))
+  })
+
+
   #### Volet "Réservations" ####
 
   RESA <- reactive({

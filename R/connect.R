@@ -19,7 +19,12 @@ TABLES_DASHBOARD <- c(
 # dashboard : le volet qui la consomme sait se taire tant qu'elle manque, et on
 # n'a pas à livrer le code et l'import dans le même mouvement.
 TABLES_OPTIONNELLES <- c(
-  "DB_HEURES_PLANNING"   # heures planifiées par jour x service (cf. R/planning.R)
+  "DB_HEURES_PLANNING",  # heures planifiées par jour x service (cf. R/planning.R)
+  "DB_ONSS",             # heures et coût de paie par mois x secteur (cf. R/sources_travail.R)
+  # Une ligne, mais elle doit voyager : sans elle, le volet Sources ne peut pas
+  # dire qu'une colonne de secteur a changé de nom dans le fichier de paie —
+  # et ce contrôle-là ne se refait pas depuis le .RData, seulement à l'import.
+  "CONTROLE_ONSS"        # contrôle de lecture du fichier de paie
 )
 
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,

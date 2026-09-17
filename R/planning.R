@@ -223,10 +223,15 @@ historise_planning <- function(nouveau, ss,
 # dashboard vit donc ici, en un seul endroit : import.R l'utilise pour
 # DB_COUTS_TRAVAIL, ce volet pour le planning. Deux copies auraient fini par
 # diverger, et une couleur de secteur muette est un bug silencieux.
+# Chaque source a sa propre orthographe, et c'est la raison d'être de cette
+# fonction : Horeko écrit « Fabrik de boissons », le fichier de paie « Fabrique
+# de boissons ». Les deux désignent la brasserie. Un libellé non reconnu tombe
+# dans « Secteur inconnu » et se VOIT — plutôt que de disparaître d'un total.
 normalise_secteur <- function(x) {
   dplyr::case_when(
     x == "Transfo alimentaire"  ~ "Transformation alimentaire",
     x == "Fabrik de boissons"   ~ "Brasserie",
+    x == "Fabrique de boissons" ~ "Brasserie",
     x == "Support"              ~ "Support",
     x == "Service"              ~ "Service",
     x %in% names(COULEURS_SECTEURS) ~ x,   # déjà au bon format

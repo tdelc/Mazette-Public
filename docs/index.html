@@ -372,7 +372,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Pizzwanze</td><td><code>tab_pizzwanze</code></td><td>Analyse des soir&eacute;es pizza, d&eacute;tect&eacute;es automatiquement.</td></tr>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
         <tr><td>Compta</td><td><code>tab_compta</code></td><td>Trois sous-onglets d&eacute;riv&eacute;s de <code>DB_COMPTA</code>&nbsp;: <strong>Exploitation</strong> (du CA &agrave; la marge), <strong>Analyse</strong> (pourquoi la marge a boug&eacute;) et <strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong> (le compte de r&eacute;sultat).</td></tr>
-        <tr><td>Travail</td><td><code>tab_travail</code></td><td>Heures, co&ucirc;t du personnel, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
+<tr><td>Travail</td><td><code>tab_travail</code></td><td>Deux sous-onglets&nbsp;: <strong>Pilotage</strong> (heures pos&eacute;es, productivit&eacute;, cr&eacute;neaux types) et <strong>Sources</strong> (confrontation des trois sources d&rsquo;heures et de co&ucirc;t).</td></tr>
         <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em> &mdash; le service, un jour d&rsquo;ouverture&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
         <tr><td>Comparaison</td><td><code>tab_comparaison</code></td><td>Comparaison libre de plusieurs p&eacute;riodes.</td></tr>
@@ -613,6 +613,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td><code>compta.R</code>, <code>exploitation.R</code>, <code>plan_comptable.R</code>, <code>couts.R</code></td><td>Agr&eacute;gation comptable, compte d&rsquo;exploitation, classement des comptes, co&ucirc;ts mati&egrave;re.</td></tr>
         <tr><td><code>analyse.R</code></td><td>Pont de marge, contributions par compte, tendance, saisonnalit&eacute;, diagnostic automatique.</td></tr>
         <tr><td><code>travail.R</code></td><td>Heures, co&ucirc;ts, productivit&eacute; et marge par cr&eacute;neau.</td></tr>
+        <tr><td><code>sources_travail.R</code></td><td>Les trois sources d&rsquo;heures et de co&ucirc;t du travail&nbsp;: lecture de la paie, recalage, confrontation.</td></tr>
         <tr><td><code>reservations.R</code></td><td>R&eacute;servations, croisement avec le CA.</td></tr>
         <tr><td><code>simulation.R</code></td><td>Base de simulation de prix.</td></tr>
         <tr><td><code>sql.R</code></td><td>Aides Cloudflare&nbsp;D1. <span class="pill non">inutilis&eacute;</span> &mdash; cf. &Eacute;tat des lieux.</td></tr>
@@ -730,6 +731,7 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         <tr><td><code>ICS_SALLE</code> / <code>ICS_TERRASSE</code></td><td>Deux calendriers iCal, lus par <code>calendar::ic_read()</code>.</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>ICS_HEURES</code></td><td>Le calendrier iCal des shifts planifi&eacute;s. Il ne contient que l&rsquo;avenir&nbsp;: un jour pass&eacute; en dispara&icirc;t.</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>PATH_HEURES_PLANNING</code></td><td>Le Google&nbsp;Sheet o&ugrave; l&rsquo;import <strong>archive</strong> les shifts avant qu&rsquo;ils ne s&rsquo;effacent du calendrier. Lu puis r&eacute;&eacute;crit &agrave; chaque passage&nbsp;; onglet <code>HEURES PLANNING</code>.</td><td><span class="pill ok">oui</span></td></tr>
+        <tr><td><code>PATH_HEURES_ONSS</code></td><td>Le Google&nbsp;Sheet de <strong>paie</strong>&nbsp;: co&ucirc;t employeur r&eacute;el et heures r&eacute;ellement travaill&eacute;es, ventil&eacute;s par secteur, au grain mois&nbsp;&times;&nbsp;travailleur. Lu seulement&nbsp;; onglet <code>PAIE</code>, &agrave; d&eacute;faut le premier.</td><td><span class="pill ok">oui</span></td></tr>
         <tr><td><code>ID_MAZETTE_2023</code>, <code>ID_MAZETTE_2025</code>, <code>ID_OLD_COMPTA</code></td><td>Archives historiques, reprises une fois puis fig&eacute;es.</td><td><span class="pill non">comment&eacute;</span></td></tr>
       </tbody>
     </table></div>
@@ -785,6 +787,15 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
       <thead><tr><th>Table</th><th>Contrat</th><th>&Eacute;tat</th></tr></thead>
       <tbody>
         <tr>
+          <td><code>DB_ONSS</code></td>
+          <td>Une ligne par <code>ANNEE</code> &times; <code>MOIS</code> &times; <code>SECTEUR</code>,
+              avec <code>HEURES</code> (r&eacute;ellement travaill&eacute;es) et <code>COUT</code> (co&ucirc;t
+              employeur). Le secteur <code>Non ventil&eacute;</code> porte le co&ucirc;t des fiches
+              sans heures ventilables.</td>
+          <td><span class="pill att">&agrave; produire</span> Le sous-onglet Sources affiche un
+              bandeau explicatif tant que l&rsquo;import ne la fabrique pas.</td>
+        </tr>
+        <tr>
           <td><code>DB_HEURES_PLANNING</code></td>
           <td>Une ligne par <code>DATE</code> &times; <code>SERVICE</code>, avec
               <code>HEURES</code>. <code>SERVICE</code> emploie le m&ecirc;me vocabulaire de
@@ -795,6 +806,80 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         </tr>
       </tbody>
     </table></div>
+
+    <div class="note" data-profondeur="detail">
+      <span class="l">Trois sources pour le co&ucirc;t du travail, et laquelle croire</span>
+      <p>
+        Aucune des trois ne domine les autres sur tous les axes, d&rsquo;o&ugrave; une
+        r&eacute;conciliation plut&ocirc;t qu&rsquo;un choix.
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>Source</th><th>Grain</th><th>Heures</th><th>Co&ucirc;t</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Paie (ONSS)</strong><br><code>DB_ONSS</code></td>
+              <td>mois &times; travailleur &times; secteur</td>
+              <td><span class="pill ok">mesur&eacute;es</span> r&eacute;ellement travaill&eacute;es</td>
+              <td><span class="pill ok">r&eacute;el</span> co&ucirc;t employeur</td></tr>
+          <tr><td><strong>Horeko</strong><br><code>DB_COUTS_TRAVAIL</code></td>
+              <td>jour &times; secteur &times; <strong>cr&eacute;neau</strong></td>
+              <td><span class="pill ok">pointe&eacute;es</span></td>
+              <td><span class="pill att">estim&eacute;</span> taux horaire par contrat</td></tr>
+          <tr><td><strong>Comptabilit&eacute;</strong><br>comptes&nbsp;62</td>
+              <td>mois, <strong>sans ventilation</strong></td>
+              <td><span class="pill non">aucune</span></td>
+              <td><span class="pill ok">vrai</span> au centime</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Sur les deux grandeurs qui comptent &mdash; combien d&rsquo;heures, combien d&rsquo;euros &mdash;
+        la paie est la meilleure&nbsp;: elle <em>mesure</em>, l&agrave; o&ugrave; Horeko estime et o&ugrave; la
+        comptabilit&eacute; ne ventile pas. Mais elle ne descend pas au jour, donc elle ne
+        sait rien des cr&eacute;neaux. <strong>La paie fait donc autorit&eacute; sur le total du mois
+        et du secteur&nbsp;; Horeko ne sert plus qu&rsquo;&agrave; r&eacute;partir ce total sur les jours et
+        les cr&eacute;neaux.</strong>
+      </p>
+      <p>
+        C&rsquo;est bien une r&egrave;gle de trois, et il faut dire pourquoi elle est l&eacute;gitime ici
+        alors qu&rsquo;elle avait &eacute;t&eacute; <em>retir&eacute;e</em> de l&rsquo;ancien redressement par la
+        comptabilit&eacute;. La diff&eacute;rence est nette&nbsp;:
+      </p>
+      <ul>
+        <li>redresser le co&ucirc;t Horeko par le total <em>comptable</em> r&eacute;partissait un &eacute;cart
+            qui n&rsquo;a aucune raison de suivre les heures &mdash; p&eacute;cules, provisions et
+            personnel non point&eacute; ne se rangent pas au prorata des heures point&eacute;es.
+            On d&eacute;pla&ccedil;ait du co&ucirc;t d&rsquo;un secteur vers un autre sans fondement&nbsp;;</li>
+        <li>recaler les heures d&rsquo;un secteur sur le total de la <em>paie</em> r&eacute;partit
+            l&rsquo;&eacute;cart entre <strong>deux mesures de la m&ecirc;me grandeur</strong> &mdash; les heures
+            faites dans ce secteur, ce mois-l&agrave;. On ne sait pas quel jour l&rsquo;&eacute;cart est n&eacute;&nbsp;;
+            le prorata des heures point&eacute;es est alors la seule hypoth&egrave;se neutre, et elle
+            ne traverse jamais la fronti&egrave;re d&rsquo;un secteur.</li>
+      </ul>
+      <p>
+        Rien n&rsquo;est &eacute;cras&eacute;&nbsp;: <code>HEURES</code> et <code>COUT_TRAVAIL</code> portent les
+        valeurs retenues, <code>HEURES_HOREKO</code> et <code>COUT_HOREKO_LIGNE</code> les
+        valeurs d&rsquo;origine, et <code>SOURCE_HEURES</code> dit ligne &agrave; ligne laquelle a servi.
+        Le sous-onglet <strong>Travail&nbsp;&rsaquo; Sources</strong> les affiche c&ocirc;te &agrave; c&ocirc;te.
+      </p>
+      <p>
+        Deux fuites possibles, et toutes deux sont <em>affich&eacute;es</em> plut&ocirc;t que tues&nbsp;:
+        une fiche de paie sans aucune heure ventilable (mois d&rsquo;absence, solde de
+        cong&eacute;s) garde son co&ucirc;t sous le secteur <code>Non ventil&eacute;</code>, sans quoi le total
+        de <code>DB_ONSS</code> ne retomberait pas sur celui de la paie&nbsp;; et un secteur
+        pr&eacute;sent dans la paie mais absent du pointage ce mois-l&agrave; n&rsquo;a aucun jour auquel
+        se rattacher &mdash; ses heures comptent dans les totaux du volet Sources, pas dans
+        le d&eacute;tail journalier, et un bandeau le dit.
+      </p>
+      <p>
+        Enfin, chaque source a sa propre orthographe&nbsp;: Horeko &eacute;crit
+        &laquo;&nbsp;Fabrik de boissons&nbsp;&raquo;, la paie &laquo;&nbsp;Fabrique de boissons&nbsp;&raquo;. Les deux
+        d&eacute;signent la brasserie, et <code>normalise_secteur()</code> est le seul endroit o&ugrave;
+        cette correspondance vit. Un libell&eacute; non reconnu tombe dans &laquo;&nbsp;Secteur
+        inconnu&nbsp;&raquo; et se <em>voit</em>, plut&ocirc;t que de dispara&icirc;tre d&rsquo;un total&nbsp;; et un
+        contr&ocirc;le de lecture confronte la somme des colonnes sectorielles aux
+        &laquo;&nbsp;heures r&eacute;ellement travaill&eacute;es&nbsp;&raquo; du fichier, parce qu&rsquo;une colonne renomm&eacute;e
+        fait dispara&icirc;tre des heures sans la moindre erreur.
+      </p>
+    </div>
 
     <div class="note" data-profondeur="detail">
       <span class="l">Ce qu&rsquo;est une &laquo;&nbsp;heure variable&nbsp;&raquo;, et o&ugrave; la r&egrave;gle vit</span>
@@ -1048,6 +1133,7 @@ mkdir -p outputs   <span class="cmt"># le cache y sera écrit ; le dossier est i
             <tr><td><code>ICS_TERRASSE</code></td><td>URL du calendrier iCal &laquo;&nbsp;terrasse&nbsp;&raquo;</td></tr>
             <tr><td><code>ICS_HEURES</code></td><td>URL du calendrier iCal des shifts planifi&eacute;s</td></tr>
             <tr><td><code>PATH_HEURES_PLANNING</code></td><td>identifiant (ou URL) d&rsquo;un Google&nbsp;Sheet <em>vide</em>, partag&eacute; en &eacute;criture avec le compte de service&nbsp;: l&rsquo;import y cr&eacute;e l&rsquo;onglet <code>HEURES PLANNING</code> au premier passage</td></tr>
+            <tr><td><code>PATH_HEURES_ONSS</code></td><td>identifiant (ou URL) du Google&nbsp;Sheet de paie, partag&eacute; en <em>lecture</em> avec le compte de service</td></tr>
           </tbody>
         </table></div>
       </li>

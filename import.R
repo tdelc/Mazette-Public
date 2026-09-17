@@ -158,6 +158,47 @@ if (length(SS_PLANNING) == 1 && !is.na(SS_PLANNING) && nzchar(SS_PLANNING)) {
     "PATH_HEURES_PLANNING absent des PATHS : le planning reste sans historique")
 }
 
+# Import du fichier de paie (ONSS)
+#
+# Troisième source d'heures et de coût du travail, et la meilleure des trois
+# sur ces deux grandeurs : elle MESURE le coût employeur réel et les heures
+# réellement travaillées, ventilés par secteur, là où Horeko estime le coût et
+# où la comptabilité ne ventile rien. Elle ne descend pas au jour, en revanche,
+# d'où le recalage plus bas plutôt qu'un remplacement. Toute la logique (et le
+# pourquoi du détail) vit dans R/sources_travail.R.
+SS_ONSS <- get_path("PATH_HEURES_ONSS")
+
+if (length(SS_ONSS) == 1 && !is.na(SS_ONSS) && nzchar(SS_ONSS)) {
+  if (requireNamespace("googlesheets4", quietly = TRUE))
+    try(googlesheets4::gs4_auth(token = googledrive::drive_token()),
+        silent = TRUE)
+
+  IMPORT_ONSS <- lit_onss(SS_ONSS)
+
+  # Le contrôle de lecture est journalisé À L'IMPORT, pas seulement affiché
+  # dans le dashboard : c'est ici qu'on saura qu'une colonne a changé de nom,
+  # avant que le volet n'affiche une baisse d'heures qui n'existe pas.
+  CONTROLE_ONSS <- controle_onss(IMPORT_ONSS)
+  if (!is.null(CONTROLE_ONSS)) {
+    if (CONTROLE_ONSS$COLONNES_VUES < CONTROLE_ONSS$COLONNES_ATTENDUES)
+      cli::cli_alert_danger(
+        "Paie : {CONTROLE_ONSS$COLONNES_VUES}/{CONTROLE_ONSS$COLONNES_ATTENDUES} colonnes de secteur trouvees")
+    if (abs(CONTROLE_ONSS$ECART) > 1)
+      cli::cli_alert_warning(
+        "Paie : {round(CONTROLE_ONSS$ECART)} h d'ecart entre secteurs et heures reelles")
+  }
+
+  DB_ONSS <- construit_onss(IMPORT_ONSS)
+  if (onss_valide(DB_ONSS))
+    cli::cli_alert_success(
+      "Paie : {nrow(DB_ONSS)} lignes, {length(unique(paste(DB_ONSS$ANNEE, DB_ONSS$MOIS)))} mois")
+  else
+    cli::cli_alert_warning("Paie : aucune ligne exploitable")
+} else {
+  cli::cli_alert_warning(
+    "PATH_HEURES_ONSS absent des PATHS : le coût du travail reste estimé par Horeko")
+}
+
 # Old Mazette 2023 à 2025
 
 # drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
@@ -779,4 +820,23 @@ DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |>
   group_by(ANNEE,MOIS) |> 
   mutate(COUT_HOREKO = sum(COUT_TRAVAIL,na.rm=TRUE)) |> 
   ungroup()
+
+# Recalage sur la paie, si elle est disponible.
+#
+# La paie fait autorité sur le TOTAL du mois et du secteur ; Horeko ne sert
+# plus qu'à répartir ce total sur les jours et les créneaux, qu'elle seule
+# connaît. HEURES et COUT_TRAVAIL portent en sortie les valeurs retenues, les
+# valeurs Horeko d'origine restant côte à côte sous HEURES_HOREKO et
+# COUT_HOREKO_LIGNE. Sans paie, c'est un passe-plat.
+#
+# COUT_HOREKO ci-dessus est calculé AVANT le recalage, et c'est voulu : c'est
+# le total Horeko d'origine, celui que le volet Sources confronte à la paie.
+DB_COUTS_TRAVAIL <- recale_couts_travail(
+  DB_COUTS_TRAVAIL, if (exists("DB_ONSS")) DB_ONSS else NULL)
+
+if ("SOURCE_HEURES" %in% names(DB_COUTS_TRAVAIL)) {
+  .n_paie <- sum(DB_COUTS_TRAVAIL$SOURCE_HEURES == "Paie")
+  cli::cli_alert_info(
+    "Coût du travail : {.n_paie}/{nrow(DB_COUTS_TRAVAIL)} lignes recalées sur la paie")
+}
 

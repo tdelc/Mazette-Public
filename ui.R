@@ -145,6 +145,99 @@ ui_accueil <- function() {
 # Deux graphiques, une seule grammaire : la barre est ce qui est prévu, le
 # trait est la référence. Le premier ne parle qu'en heures, le second qu'en
 # euros. Aucun ne mélange les deux.
+# Confrontation des trois sources d'heures et de coût du travail.
+#
+# Trois sources, trois périmètres, et aucune qui domine les autres sur tous les
+# axes : ce volet existe pour que l'écart soit LU plutôt que découvert. Il
+# n'affiche aucun indicateur de gestion — rien que des chiffres et leurs
+# différences.
+ui_travail_sources <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Sources", width = 330,
+      radioButtons("src_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      sliderInput("src_nb", "Périodes affichées", min = 6, max = 48,
+                  value = 24, step = 1, ticks = FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Paie (ONSS)"), " : le coût employeur réel et les heures",
+          " réellement travaillées, ventilés par secteur, au grain mois ×",
+          " travailleur. La meilleure des trois sur ces deux grandeurs — elle",
+          " mesure là où les autres estiment.", tags$br(), tags$br(),
+          tags$b("Horeko"), " : le pointage. Seule source au grain jour ×",
+          " secteur × créneau, donc la seule qui sache dire « samedi soir ».",
+          " Son coût est une estimation : un taux horaire par type de contrat.",
+          tags$br(), tags$br(),
+          tags$b("Comptabilité"), " : le coût vrai au centime, mais un total",
+          " mensuel sans aucune ventilation. Elle ne connaît pas les heures.",
+          tags$br(), tags$br(),
+          "Ailleurs dans le dashboard, la paie fait autorité sur le total du",
+          " mois et du secteur ; Horeko ne sert plus qu'à le répartir sur les",
+          " jours et les créneaux.")
+    ),
+    uiOutput("src_alerte_onss", class = "zone-alerte"),
+    uiOutput("src_alerte_manque", class = "zone-alerte"),
+    uiOutput("src_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Heures par mois, selon la source"),
+      plotlyOutput("src_heures", height = "340px"),
+      div(class = "small text-muted",
+          "La comptabilité est absente de ce graphique : elle ne mesure aucune",
+          " heure. Deux courbes qui se suivent racontent la même histoire ;",
+          " deux courbes qui divergent signalent un pointage incomplet.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Coût du travail par mois, selon la source"),
+      plotlyOutput("src_cout", height = "340px"),
+      div(class = "small text-muted",
+          "Le seul endroit du dashboard où les trois sources se comparent sur",
+          " la même grandeur et le même axe. L'écart entre Horeko et la paie",
+          " est structurel — pécules, provisions, charges patronales réelles,",
+          " personnel non pointé.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Écart à la paie, en part de la paie"),
+      plotlyOutput("src_ecart", height = "320px"),
+      div(class = "small text-muted",
+          "Le graphique qui compte : un écart ", tags$b("constant"), " est une",
+          " différence de périmètre, et on peut vivre avec. Un écart qui ",
+          tags$b("dérive"), " est un problème de données.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Ventilation par secteur : paie contre Horeko"),
+      plotlyOutput("src_secteurs", height = "330px"),
+      div(class = "small text-muted",
+          "Un total mensuel identique peut cacher deux ventilations opposées —",
+          " et c'est justement la ventilation qu'on est venu chercher dans la",
+          " paie.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Mois par mois, toutes sources"),
+      DTOutput("src_table"),
+      div(class = "small text-muted mt-1",
+          "Les écarts sont donnés en euros et en pour cent : 3 000 € ne se",
+          " jugent pas sans savoir s'ils portent sur 20 000 € ou 200 000 €.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Heures de paie sans pointage en face"),
+      DTOutput("src_non_rattache"),
+      div(class = "small text-muted mt-1",
+          "Un secteur présent dans la paie mais absent du pointage ce mois-là",
+          " n'a aucun jour auquel se rattacher. Ces heures comptent dans les",
+          " totaux ci-dessus, mais pas dans le détail journalier du volet",
+          " Pilotage. La liste doit rester courte.")
+    )
+  )
+}
+
 ui_planning <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -211,7 +304,26 @@ ui_planning <- function() {
 
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
+# Deux sous-onglets : le pilotage (heures, productivité, créneaux) et la
+# confrontation des sources. Le second n'a rien à faire dans le premier — on
+# n'y va pas pour piloter mais pour vérifier d'où viennent les chiffres.
 ui_travail <- function() {
+  navset_card_tab(
+    id = "travail_tabs",
+    nav_panel(
+      title = "Pilotage",
+      icon = icon("gauge-high"),
+      ui_travail_pilotage()
+    ),
+    nav_panel(
+      title = "Sources",
+      icon = icon("layer-group"),
+      ui_travail_sources()
+    )
+  )
+}
+
+ui_travail_pilotage <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Travail", width = 300,
