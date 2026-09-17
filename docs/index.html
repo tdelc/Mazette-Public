@@ -858,8 +858,32 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         Rien n&rsquo;est &eacute;cras&eacute;&nbsp;: <code>HEURES</code> et <code>COUT_TRAVAIL</code> portent les
         valeurs retenues, <code>HEURES_HOREKO</code> et <code>COUT_HOREKO_LIGNE</code> les
         valeurs d&rsquo;origine, et <code>SOURCE_HEURES</code> dit ligne &agrave; ligne laquelle a servi.
-        Le sous-onglet <strong>Travail&nbsp;&rsaquo; Sources</strong> les affiche c&ocirc;te &agrave; c&ocirc;te.
+        Le sous-onglet <strong>Travail&nbsp;&rsaquo; Sources</strong> les affiche c&ocirc;te &agrave; c&ocirc;te par
+        mois.
       </p>
+      <p>
+        Le tableau de <strong>d&eacute;composition</strong> du sous-onglet Pilotage les affiche par
+        <em>secteur</em> &mdash; le seul endroit du dashboard o&ugrave; l&rsquo;&eacute;cart se lit &agrave; ce grain.
+        Ses trois totaux de bas de tableau portent chacun ses propres chiffres sur sa
+        propre ligne, plut&ocirc;t que de se partager une colonne&nbsp;: &laquo;&nbsp;Total retenu&nbsp;&raquo; est la
+        somme des lignes au-dessus, &laquo;&nbsp;Total paie&nbsp;&raquo; vient de <code>DB_ONSS</code> et peut
+        en diff&eacute;rer &mdash; il inclut le <code>Non ventil&eacute;</code> et les secteurs sans pointage,
+        qui sont justement ce qu&rsquo;on veut voir appara&icirc;tre &mdash; et &laquo;&nbsp;Total comptabilit&eacute;&nbsp;&raquo;
+        n&rsquo;a pas d&rsquo;heures du tout.
+      </p>
+      <div class="note">
+        <span class="l">Un en-t&ecirc;te de colonne qui mentait</span>
+        <p>
+          Avant le recalage, la colonne de co&ucirc;t de ce tableau s&rsquo;intitulait
+          &laquo;&nbsp;Co&ucirc;t (Horeko)&nbsp;&raquo; et c&rsquo;&eacute;tait juste&nbsp;: <code>COUT_TRAVAIL</code> ne pouvait
+          venir que de l&agrave;. Depuis, la m&ecirc;me colonne porte le co&ucirc;t de la <em>paie</em> d&egrave;s
+          qu&rsquo;elle couvre le mois. L&rsquo;en-t&ecirc;te est donc devenu faux sans que rien ne casse
+          &mdash; le genre de d&eacute;faut qu&rsquo;aucun test ne rattrape, parce que le chiffre affich&eacute;
+          est bon et que seul son nom est erron&eacute;. La colonne s&rsquo;appelle maintenant
+          <code>Co&ucirc;t</code>, l&rsquo;estimation Horeko a la sienne, et une colonne
+          <code>Source</code> dit d&rsquo;o&ugrave; vient chaque ligne.
+        </p>
+      </div>
       <p>
         Deux fuites possibles, et toutes deux sont <em>affich&eacute;es</em> plut&ocirc;t que tues&nbsp;:
         une fiche de paie sans aucune heure ventilable (mois d&rsquo;absence, solde de

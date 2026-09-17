@@ -405,39 +405,94 @@ table_creneaux <- function(stats) {
 #' Le seul endroit où le détail par secteur existe : on le montre donc tel
 #' quel, plutôt que de le résumer en variable / fixe.
 #'
-#' Les deux totaux de bas de tableau sont le point de contrôle entre les
-#' sources : Horeko pointe les heures, la comptabilité enregistre la paie.
-#' L'écart est normal — pécules, provisions, charges patronales, personnel non
-#' pointé — mais il doit rester stable. C'est sa DÉRIVE qui est un signal.
-table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_) {
+#' ---------------------------------------------------------------------------
+#' Trois sources, trois lignes de total
+#' ---------------------------------------------------------------------------
+#' Les colonnes `Heures` et `Coût` portent les valeurs RETENUES — celles que
+#' tout le dashboard consomme, c'est-à-dire la paie quand elle est disponible
+#' et Horeko sinon (cf. recale_couts_travail dans R/sources_travail.R).
+#'
+#' `Coût Horeko` donne l'estimation d'origine à côté, par secteur : c'est le
+#' seul endroit où l'écart entre les deux se lit AU GRAIN SECTEUR. Le volet
+#' Sources le montre par mois, jamais par secteur.
+#'
+#' Les trois totaux du bas sont le point de contrôle entre les sources. Chacun
+#' porte ses PROPRES heures et son propre coût, sur sa ligne, plutôt que de se
+#' partager une colonne :
+#'
+#'   - « Total retenu » est la somme des lignes au-dessus ;
+#'   - « Total paie » peut en différer, quand la paie porte des heures qu'aucun
+#'     jour pointé ne peut recevoir (cf. onss_non_rattache) ;
+#'   - « Total comptabilité » n'a pas d'heures du tout, et n'en aura jamais :
+#'     elle enregistre la paie, pas le temps.
+#'
+#' L'écart entre ces totaux est normal — pécules, provisions, charges
+#' patronales, personnel non pointé. C'est sa DÉRIVE qui est un signal.
+table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_,
+                                        db_onss = NULL) {
   if (is.null(db_couts) || !nrow(db_couts))
     return(tibble(Info = "Aucune heure sur la période."))
   d <- db_couts %>% filter(DATE >= as.Date(d1), DATE <= as.Date(d2))
   if (!nrow(d)) return(tibble(Info = "Aucune heure sur la période."))
 
+  # Les colonnes de comparaison n'existent que depuis le recalage : sur un
+  # .RData enregistré avant, on retombe sur les valeurs retenues, et l'écart
+  # affiché est alors nul — ce qui est juste, puisqu'il n'y avait qu'une source.
+  d <- d %>% mutate(
+    .H_HOR = if ("HEURES_HOREKO" %in% names(d)) HEURES_HOREKO else HEURES,
+    .C_HOR = if ("COUT_HOREKO_LIGNE" %in% names(d)) COUT_HOREKO_LIGNE
+             else COUT_TRAVAIL,
+    .SRC   = if ("SOURCE_HEURES" %in% names(d)) SOURCE_HEURES else "Horeko")
+
   detail <- d %>%
     group_by(Secteur = SECTEUR, Créneau = CRENEAU) %>%
     summarise(Heures = sum(HEURES, na.rm = TRUE),
-              Cout   = sum(COUT_TRAVAIL, na.rm = TRUE), .groups = "drop") %>%
+              Cout   = sum(COUT_TRAVAIL, na.rm = TRUE),
+              H_HOR  = sum(.H_HOR, na.rm = TRUE),
+              C_HOR  = sum(.C_HOR, na.rm = TRUE),
+              # Un secteur peut mélanger les deux sources si la paie ne couvre
+              # qu'une partie des mois de la période : on le dit plutôt que de
+              # choisir pour le lecteur.
+              Source = paste(sort(unique(.SRC)), collapse = " + "),
+              .groups = "drop") %>%
     arrange(desc(Cout))
 
-  horeko <- sum(detail$Cout, na.rm = TRUE)
+  eur <- function(x) ifelse(is.na(x), "—", trimws(format_CA(x, -1)))
+  h   <- function(x) ifelse(is.na(x), "—", as.character(round(x)))
+
   compta <- if ("COUT_COMPTA" %in% names(d))
     sum(unique(d[, c("ANNEE", "MOIS", "COUT_COMPTA")])$COUT_COMPTA, na.rm = TRUE)
   else NA_real_
 
+  # Le total de la paie vient de DB_ONSS et non de la somme des lignes : il
+  # inclut ainsi le « Non ventilé » et les secteurs sans pointage, qui sont
+  # justement ce qu'on veut voir apparaître ici.
+  paie <- if (!is.null(db_onss) && is.data.frame(db_onss) && nrow(db_onss) &&
+              all(c("ANNEE", "MOIS", "HEURES", "COUT") %in% names(db_onss))) {
+    mois <- unique(floor_date(seq(as.Date(d1), as.Date(d2), by = "day"), "month"))
+    db_onss %>%
+      mutate(.P = as.Date(sprintf("%04d-%02d-01",
+                                  as.integer(ANNEE), as.integer(MOIS)))) %>%
+      filter(.P %in% mois) %>%
+      summarise(H = sum(HEURES, na.rm = TRUE), C = sum(COUT, na.rm = TRUE))
+  } else NULL
+
+  ligne <- function(secteur, heures, cout, cout_hor = NA_real_) {
+    tibble(Secteur = secteur, Créneau = "", Heures = h(heures),
+           `Coût` = eur(cout), `Coût Horeko` = eur(cout_hor), Source = "")
+  }
+
   bind_rows(
-    detail %>% transmute(Secteur, Créneau,
-                         Heures = round(Heures),
-                         `Coût (Horeko)` = format_CA(Cout, -1)),
-    tibble(Secteur = "Total Horeko", Créneau = "",
-           Heures = round(sum(detail$Heures, na.rm = TRUE)),
-           `Coût (Horeko)` = format_CA(horeko, -1)),
-    tibble(Secteur = "Total comptabilité", Créneau = "", Heures = NA_real_,
-           `Coût (Horeko)` = if (is.na(compta)) "—" else format_CA(compta, -1)),
-    tibble(Secteur = "CA de la période", Créneau = "", Heures = NA_real_,
-           `Coût (Horeko)` = if (is.na(ca_periode)) "—"
-                             else format_CA(ca_periode, -1))
+    detail %>% transmute(Secteur, Créneau, Heures = h(Heures),
+                         `Coût` = eur(Cout), `Coût Horeko` = eur(C_HOR),
+                         Source),
+    ligne("Total retenu", sum(detail$Heures, na.rm = TRUE),
+          sum(detail$Cout, na.rm = TRUE), sum(detail$C_HOR, na.rm = TRUE)),
+    if (!is.null(paie)) ligne("Total paie (ONSS)", paie$H, paie$C),
+    ligne("Total Horeko", sum(detail$H_HOR, na.rm = TRUE),
+          sum(detail$C_HOR, na.rm = TRUE)),
+    ligne("Total comptabilité", NA_real_, compta),
+    ligne("CA de la période", NA_real_, ca_periode)
   )
 }
 

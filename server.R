@@ -1760,8 +1760,11 @@ server <- function(input, output, session) {
 
   output$trav_heures_decomp <- renderDT({
     p <- trav_periode_detail()
-    datatable_simple(table_decomposition_travail(DB_COUTS_TRAVAIL, p$d1, p$d2,
-                                                 ca_periode = p$ca))
+    # DB_ONSS sert au total de la paie, qui inclut le « Non ventilé » et les
+    # secteurs sans pointage — invisibles dans la somme des lignes.
+    datatable_simple(table_decomposition_travail(
+      DB_COUTS_TRAVAIL, p$d1, p$d2, ca_periode = p$ca,
+      db_onss = if (exists("DB_ONSS")) DB_ONSS else NULL))
   })
 
   # --- Créneaux types, sur la même fenêtre

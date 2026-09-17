@@ -364,9 +364,19 @@ ui_travail_pilotage <- function() {
           " heures ci-dessous.")
     ),
     card(
-      full_screen = TRUE, height = "420px",
+      full_screen = TRUE, height = "460px",
       card_header(textOutput("trav_decomp_titre", inline = TRUE)),
-      DTOutput("trav_heures_decomp")
+      DTOutput("trav_heures_decomp"),
+      div(class = "small text-muted mt-1",
+          tags$b("Heures"), " et ", tags$b("Coût"), " sont les valeurs retenues",
+          " — la paie quand elle couvre le mois, Horeko sinon, et la colonne ",
+          tags$b("Source"), " le dit. ", tags$b("Coût Horeko"), " donne",
+          " l'estimation d'origine à côté : c'est le seul endroit où l'écart",
+          " entre les deux se lit par secteur.", tags$br(),
+          "Les trois totaux du bas portent chacun ses propres chiffres. La",
+          " comptabilité n'a pas d'heures — elle enregistre la paie, pas le",
+          " temps. L'écart entre les sources est normal ; c'est sa ",
+          tags$b("dérive"), " qui est un signal.")
     ),
     card(
       full_screen = TRUE,
