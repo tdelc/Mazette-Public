@@ -1079,6 +1079,17 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         prix-l&agrave;, la question ne se pose pas. Un cache plus ancien n&rsquo;a pas la colonne&nbsp;:
         le volet le dit, et le reste de la page ne d&eacute;pend pas d&rsquo;elle.
       </p>
+      <p>
+        Le volet Tickets signale aussi, pour la p&eacute;riode affich&eacute;e, les lignes de caisse
+        <strong>sans taux de TVA</strong>&nbsp;: leur nombre, ce qu&rsquo;elles p&egrave;sent en TVAC et
+        quelques exemples. Leur CA HTVA vaut <code>NA</code>, donc z&eacute;ro dans les totaux&nbsp;;
+        un ticket qui n&rsquo;en contient que s&rsquo;affichait &agrave; vide, ce qui se lisait comme un
+        ticket offert. Il porte maintenant un tiret, et le bandeau renvoie &agrave; l&rsquo;affichage
+        TVAC, o&ugrave; le montant est r&eacute;el. Sous la distribution des paniers, enfin, le nombre
+        de tickets, la m&eacute;diane, la moyenne et le <strong>plus gros ticket</strong> sont
+        &eacute;crits en toutes lettres&nbsp;: un histogramme ne permet pas de lire ses propres
+        extr&ecirc;mes, et c&rsquo;est pourtant le chiffre qu&rsquo;on veut confronter &agrave; la caisse.
+      </p>
     </div>
   </section>
 
@@ -1428,6 +1439,45 @@ observeEvent({ req(PRET()); base() }, { ... })</code></pre>
       <code>is.null()</code> ne l&rsquo;attrape pas, <code>as.integer("")</code> donne <code>NA</code>, et
       l&rsquo;erreur ressort bien plus loin &mdash; typiquement un <code>charToDate</code> incompr&eacute;hensible.
       Testez la valeur convertie, pas la pr&eacute;sence.
+    </p>
+
+    <h3>DT trie sur ce qu&rsquo;il affiche</h3>
+    <p>
+      Une colonne de montants format&eacute;s est une colonne de <em>texte</em>&nbsp;: elle se trie
+      dans l&rsquo;ordre du dictionnaire. &laquo;&nbsp;90&euro;&nbsp;&raquo; y passe devant
+      &laquo;&nbsp;1.234&euro;&nbsp;&raquo;, et le plus gros ticket d&rsquo;une p&eacute;riode n&rsquo;est pas celui que
+      le tri d&eacute;signe. M&ecirc;me pi&egrave;ge pour une date &eacute;crite &laquo;&nbsp;31/01/2026&nbsp;&raquo;, qui se classe
+      par son jour, et pour un pourcentage &eacute;crit &laquo;&nbsp;9&nbsp;%&nbsp;&raquo;. L&rsquo;erreur est
+      silencieuse&nbsp;: le tableau r&eacute;pond, il r&eacute;pond seulement autre chose que la question.
+    </p>
+    <p>
+      Le rem&egrave;de est dans <code>R/theme.R</code>&nbsp;: on joint &agrave; la table des colonnes de tri
+      <strong>cach&eacute;es</strong>, nomm&eacute;es <code>.tri:&lt;colonne visible&gt;</code> et portant la
+      valeur brute, et <code>defs_tri()</code> fabrique les instructions DataTables qui les
+      masquent et ordonnent chaque colonne visible sur la sienne. Toute colonne format&eacute;e
+      d&rsquo;un tableau <em>triable</em> doit avoir sa jumelle&nbsp;; les tableaux rendus par
+      <code>datatable_simple()</code>, o&ugrave; le tri est d&eacute;sactiv&eacute;, n&rsquo;en ont pas besoin.
+    </p>
+
+    <h3>Un produit peut porter plusieurs libell&eacute;s</h3>
+    <p>
+      La caisse laisse renommer une ligne&nbsp;: le m&ecirc;me <code>ID_PRODUIT</code> apparait sous
+      &laquo;&nbsp;Latte&nbsp;&raquo;, &laquo;&nbsp;Latte deca&nbsp;&raquo;, &laquo;&nbsp;Latte AVOINE&nbsp;&raquo;.
+      Deux cons&eacute;quences, l&rsquo;une et l&rsquo;autre silencieuses&nbsp;: une jointure sur
+      <code>ID_PRODUIT</code> seul <em>duplique</em> les lignes de caisse (d&rsquo;o&ugrave;
+      <code>ID_REF</code>, plus haut), et une recherche de taux de TVA men&eacute;e sur le seul
+      libell&eacute; canonique <em>perd</em> le produit entier d&egrave;s que ce libell&eacute;-l&agrave; manque &agrave;
+      l&rsquo;export produits.
+    </p>
+    <p>
+      D&rsquo;o&ugrave; trois fonctions dans <code>R/donnees.R</code>&nbsp;:
+      <code>libelle_canonique()</code> retient le libell&eacute; le plus <em>fr&eacute;quent</em> (et
+      l&rsquo;alphabet ne tranche qu&rsquo;&agrave; &eacute;galit&eacute;, pour que l&rsquo;import soit reproductible)&nbsp;;
+      <code>tva_par_produit()</code> cherche le taux sur <em>tous</em> les libell&eacute;s du
+      produit&nbsp;; <code>produits_sans_tva()</code> dresse la liste de ce qui reste, que
+      l&rsquo;import affiche apr&egrave;s chaque passage. Ce qui reste garde son montant TVAC &mdash; c&rsquo;est
+      de l&rsquo;argent encaiss&eacute; &mdash; mais n&rsquo;a pas de HTVA&nbsp;: le volet Tickets le dit et renvoie
+      vers l&rsquo;affichage TVAC.
     </p>
   </section>
 

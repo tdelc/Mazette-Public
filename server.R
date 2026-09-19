@@ -477,17 +477,9 @@ server <- function(input, output, session) {
   })
 
   output$det_tickets_alerte <- renderUI({
-    if (tickets_disponibles(if (exists("DB_TICKET")) DB_TICKET else NULL))
-      return(NULL)
-    bandeau_alerte(
-      TRUE,
-      paste0("Le cache actuel ne conserve pas l'identifiant de ticket : les ",
-             "lignes de caisse ne peuvent pas être regroupées. La colonne est ",
-             "désormais enregistrée par l'import, elle apparaîtra au prochain ",
-             "import complet. En attendant, le reste du volet ne dépend pas ",
-             "d'elle."),
-      titre = "Tickets pas encore dans le cache", couleur = COUL_AMBRE,
-      icone = "circle-info")
+    alerte_tickets(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                   debut_maille(det_periode(), det_maille()),
+                   fin_maille(det_periode(), det_maille()))
   })
 
   output$det_tickets <- renderDT({
@@ -496,10 +488,12 @@ server <- function(input, output, session) {
     if ("Info" %in% names(tbl)) return(datatable_simple(tbl))
     datatable(tbl, selection = "single", rownames = FALSE,
               options = list(pageLength = 12, dom = "ftp", scrollX = TRUE,
+                             columnDefs = defs_tri(tbl),
                              language = list(search = "Filtrer :")))
   })
 
   output$det_paniers <- renderPlotly({ graph_paniers(det_tickets()) })
+  output$det_resume_paniers <- renderText({ resume_paniers(det_tickets()) })
 
   det_ticket_choisi <- reactive({
     tk <- det_tickets()
@@ -575,9 +569,13 @@ server <- function(input, output, session) {
     df <- produits_df() %>%
       transmute(Produit = tronque_nom(Produit),
                 Quantité = Quantite,
-                !!sym(col_name) := format_CA(CA, -1))
+                !!sym(col_name) := format_CA(CA, -1),
+                # Sans sa jumelle, la colonne de CA se trie dans l'ordre du
+                # dictionnaire (cf. defs_tri dans R/theme.R).
+                !!sym(col_tri(col_name)) := CA)
     datatable(df, selection = "single", rownames = FALSE,
               options = list(pageLength = 12, dom = 'ftp', 
+                             columnDefs = defs_tri(df),
                              language = list(search = "Filtrer :")))
   })
 
@@ -619,16 +617,22 @@ server <- function(input, output, session) {
     category_column <- paste0("Part dans '",category,"'")
     
     df <- evo_produit_periode() %>%
+      # arrange() AVANT le formatage : trié sur « 31/01/2026 », l'ordre est
+      # celui du dictionnaire, donc celui des jours du mois.
+      arrange(desc(SEMAINE)) %>%
       transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
                 Quantité = Quantite,
                 !!sym(col_name) := format_CA(CA, -1),
                 `Part dans Total` = paste0(round(PC_ALL*100,0),"%"),
-                !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%")
-                ) %>%
-      arrange(desc(Semaine))
-    
+                !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%"),
+                !!sym(col_tri("Semaine")) := as.numeric(SEMAINE),
+                !!sym(col_tri(col_name)) := CA,
+                !!sym(col_tri("Part dans Total")) := PC_ALL,
+                !!sym(col_tri(category_column)) := PC_CATEGORIE)
+
     datatable(df, selection = "none", rownames = FALSE,
-              options = list(pageLength = 12, dom = 'tp'))
+              options = list(pageLength = 12, dom = 'tp',
+                             columnDefs = defs_tri(df)))
   })
 
   #### Volet "Historique" — CA par semaine / mois ####

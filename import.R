@@ -551,11 +551,8 @@ cli::cli_h3("Nomenclature Produits")
 # Correction faite ici : les product sont identifié par leur ID, et le PRODUCT
 # n'est qu'un nom sur le ticket. Ne stockons que l'ID, et créons une DB correspondance
 
-NOMEN_PRODUITS <- DB_TICKET |> 
-  count(ID_PRODUIT, PRODUIT) |>
-  arrange(PRODUIT,-n) |> 
-  group_by(ID_PRODUIT) |> filter(row_number() == 1) |> ungroup() |> 
-  select(ID_PRODUIT,PRODUIT) |> 
+# Un libellé par produit : le plus fréquent (cf. R/donnees.R).
+NOMEN_PRODUITS <- libelle_canonique(DB_TICKET) |> 
   mutate(PRODUIT = case_when(
     PRODUIT == "Cola maison" ~ "Cola maison 33cL",
     PRODUIT == "Dik effiloché de porc crémeux de carottes 1/2" ~ "Dik effiloché de porc crémeux de carottes",
@@ -583,9 +580,31 @@ vec_sucre <- PRODUITS_REF %>% filter(CATEGORIE == "SUCRÉ") %>%
 PRODUITS_REF[PRODUITS_REF$PRODUIT_FULL %in% vec_sale,"CATEGORIE"] <- "SALÉ"
 PRODUITS_REF[PRODUITS_REF$PRODUIT_FULL %in% vec_sucre,"CATEGORIE"] <- "SUCRÉ"
 
+# Le taux de TVA, cherché sur tous les libellés du produit (cf. R/donnees.R).
+TVA_PAR_ID <- tva_par_produit(DB_TICKET, PRODUITS_REF)
+
+# On GARDE les produits dont aucun libellé n'a de taux, au lieu de les écarter.
+#
+# Les écarter ne les faisait pas disparaître des tickets : leurs lignes y
+# restaient sans nom propre, sans catégorie et sans CA HTVA. Les garder leur
+# rend au moins leur libellé, leur volume et leur famille de boisson. Leur
+# montant TVAC est connu — c'est de l'argent réellement encaissé ; c'est le
+# HTVA, et lui seul, qui ne se déduit pas.
 NOMEN_PRODUITS <- NOMEN_PRODUITS |> 
-  left_join(PRODUITS_REF, by = "PRODUIT_FULL") |> 
-  filter(!is.na(TAUX_TVA))
+  left_join(TVA_PAR_ID, by = "ID_PRODUIT")
+
+# Contrôle : ce qui reste sans taux de TVA (cf. R/donnees.R).
+CONTROLE_TVA <- produits_sans_tva(DB_TICKET, TVA_PAR_ID)
+
+if (nrow(CONTROLE_TVA)) {
+  part <- 100 * sum(CONTROLE_TVA$CA_TVAC) / sum(DB_TICKET$PRIX_TOTAL, na.rm = TRUE)
+  cli::cli_alert_warning(
+    "{nrow(CONTROLE_TVA)} produit{?s} sans taux de TVA : {round(part, 2)} % du CA TVAC.")
+  for (i in seq_len(min(10, nrow(CONTROLE_TVA))))
+    cli::cli_alert_info("  {CONTROLE_TVA$PRODUIT[i]} — {round(CONTROLE_TVA$CA_TVAC[i])} € TVAC")
+} else {
+  cli::cli_alert_success("Tous les produits vendus ont un taux de TVA.")
+}
 
 #### Création des tables finales ####
 cli::cli_h2("Création des tables finales")

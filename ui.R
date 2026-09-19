@@ -1421,9 +1421,19 @@ ui_detail_periodes <- function() {
               DTOutput("det_tickets")),
           div(h6("Distribution des paniers", class = "section-sub"),
               plotlyOutput("det_paniers", height = "260px"),
+              # Un histogramme se lit mal dans ses extrêmes : la barre d'un
+              # ticket unique à 1 200 € fait un pixel. Les trois chiffres, eux,
+              # se confrontent à la caisse.
+              div(class = "small text-muted",
+                  textOutput("det_resume_paniers", inline = TRUE)),
               h6(textOutput("det_titre_ticket", inline = TRUE),
                  class = "section-sub mt-2"),
-              DTOutput("det_ticket_lignes"))
+              DTOutput("det_ticket_lignes"),
+              div(class = "small text-muted mt-1",
+                  "Les lignes sont celles de la caisse, avec ses libellés",
+                  " libres. Un ", tags$b("tiret"), " signale un produit sans",
+                  " taux de TVA connu — son montant TVAC, lui, est réel ;",
+                  " une case ", tags$b("vide"), " est une ligne à zéro euro."))
         )
       ),
       accordion_panel(

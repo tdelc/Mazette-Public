@@ -158,3 +158,65 @@ tickets_heures <- function(db_ticket) {
               .groups = "drop") %>%
     mutate(CA_HTVA = CA_TVAC / (1 + TAUX_TVA))
 }
+
+##### La nomenclature des produits #####
+
+# Ces trois fonctions vivent ici, et non dans import.R, parce qu'elles portent
+# les deux décisions qui ont fait perdre leur TVA à des produits entiers. Une
+# décision qu'on peut éprouver seule vaut mieux qu'une décision noyée dans
+# huit cents lignes d'import.
+
+# Le libellé canonique d'un produit : le plus FRÉQUENT.
+#
+# La caisse laisse renommer une ligne : un même ID_PRODUIT porte « Latte »
+# quatre mille fois et « Latte AVOINE » trois fois. Retenir le premier dans
+# l'ordre alphabétique faisait gagner la variante rare — et c'est ce libellé-là
+# qui sert ensuite à retrouver le taux de TVA dans l'export produits, où la
+# variante rare ne figure pas.
+#
+# À égalité de fréquence, l'ordre alphabétique tranche : le résultat doit être
+# le même d'un import à l'autre.
+libelle_canonique <- function(db_ticket) {
+  db_ticket %>%
+    count(ID_PRODUIT, PRODUIT) %>%
+    arrange(ID_PRODUIT, desc(n), PRODUIT) %>%
+    group_by(ID_PRODUIT) %>%
+    filter(row_number() == 1) %>%
+    ungroup() %>%
+    select(ID_PRODUIT, PRODUIT)
+}
+
+# Le taux de TVA d'un produit, cherché sur TOUS ses libellés.
+#
+# L'export produits est indexé par libellé, pas par identifiant. Il suffit donc
+# qu'un seul des libellés d'un ID_PRODUIT y figure pour que son taux soit
+# connu ; le chercher sur le seul libellé canonique privait de taux — et donc
+# de catégorie et de CA HTVA — toutes les lignes du produit.
+#
+# En cas de désaccord entre deux libellés, le plus vendu tranche.
+tva_par_produit <- function(db_ticket, produits_ref) {
+  db_ticket %>%
+    count(ID_PRODUIT, PRODUIT_FULL = PRODUIT) %>%
+    inner_join(produits_ref, by = "PRODUIT_FULL") %>%
+    filter(!is.na(TAUX_TVA)) %>%
+    arrange(ID_PRODUIT, desc(n)) %>%
+    group_by(ID_PRODUIT) %>%
+    filter(row_number() == 1) %>%
+    ungroup() %>%
+    select(ID_PRODUIT, TAUX_TVA, CATEGORIE)
+}
+
+# Ce qui reste sans taux, avec ce que ça pèse.
+#
+# À regarder après chaque import : un produit qui apparaît ici ne compte dans
+# aucun total HTVA ni dans aucun découpage par secteur. Son montant TVAC, lui,
+# est réel — c'est de l'argent encaissé. Le remède est en amont : que le
+# libellé du ticket existe aussi dans l'export produits.
+produits_sans_tva <- function(db_ticket, tva_par_id) {
+  db_ticket %>%
+    anti_join(tva_par_id, by = "ID_PRODUIT") %>%
+    group_by(ID_PRODUIT, PRODUIT) %>%
+    summarise(LIGNES = n(), QUANTITE = sum(QUANTITE, na.rm = TRUE),
+              CA_TVAC = sum(PRIX_TOTAL, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(CA_TVAC))
+}

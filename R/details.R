@@ -510,7 +510,11 @@ tickets_detail <- function(db_ticket, d1, d2, unite_tva = "HTVA") {
     group_by(ID_TICKET) %>%
     summarise(DATE = min(DATE), HEURE = min(HEURE, na.rm = TRUE),
               LIGNES = n(), ARTICLES = sum(QUANTITE, na.rm = TRUE),
-              CA = sum(.data[[col]], na.rm = TRUE),
+              # NA et non zéro quand AUCUNE ligne n'a de montant : « on ne sait
+              # pas » et « le ticket était gratuit » ne se lisent pas pareil, et
+              # c'est le second que na.rm affichait (cf. tva_inconnue).
+              CA = if (all(is.na(.data[[col]]))) NA_real_
+                   else sum(.data[[col]], na.rm = TRUE),
               # Le ticket se lit par son contenu, pas par son numéro : on
               # compose donc son résumé ici, une fois, plutôt qu'au rendu.
               CONTENU = paste(head(unique(PRODUIT), 4), collapse = " · "),
@@ -524,6 +528,7 @@ table_tickets <- function(tk, unite_tva = "HTVA") {
       "Le détail des tickets demande la colonne ID_TICKET, absente du cache. ",
       "Elle apparaîtra au prochain import complet.")))
   if (!nrow(tk)) return(tibble(Info = "Aucun ticket sur la période."))
+  ca <- paste("CA", unite_tva)
   tk %>% transmute(
     Jour = format(DATE, "%d/%m"),
     Heure = sprintf("%02dh", HEURE),
@@ -531,7 +536,11 @@ table_tickets <- function(tk, unite_tva = "HTVA") {
     Contenu = ifelse(AUTRES > 0, paste0(tronque_nom(CONTENU, 60), " (+", AUTRES, ")"),
                      tronque_nom(CONTENU, 60)),
     Articles = ARTICLES,
-    !!paste("CA", unite_tva) := trimws(format_CA(CA, -1)))
+    !!ca := trimws(format_CA(CA, -1)),
+    # Les jumelles de tri : sans elles, « 31/01 » se classe par son jour et
+    # « 90€ » passe devant « 1.234€ » (cf. defs_tri dans R/theme.R).
+    !!col_tri("Jour") := as.numeric(DATE),
+    !!col_tri(ca) := CA)
 }
 
 # Le détail d'un ticket : ses lignes, telles que la caisse les a enregistrées.
@@ -550,6 +559,89 @@ lignes_ticket <- function(db_ticket, id, unite_tva = "HTVA") {
               Catégorie = CATEGORIE,
               Quantité = QUANTITE,
               !!paste("CA", unite_tva) := trimws(format_CA(.data[[col]], -1)))
+}
+
+# Les lignes dont le taux de TVA est inconnu, sur la période.
+#
+# Leur montant TVAC est connu — c'est ce que le client a payé —, mais le HTVA
+# ne s'en déduit pas : il vaut NA, et compte donc pour zéro dans tout total
+# HTVA. Un ticket entièrement composé de ces lignes s'affiche alors à zéro
+# euro, ce qui se lit comme un ticket offert. Il faut le dire.
+#
+# La cause est en amont : le libellé de la ligne de caisse n'existe dans aucun
+# export produits, d'où l'absence de taux (cf. CONTROLE_TVA dans import.R).
+tva_inconnue <- function(db_ticket, d1, d2) {
+  if (is.null(db_ticket) || !nrow(db_ticket) ||
+      !all(c("CA_HTVA", "CA_TVAC") %in% names(db_ticket))) return(NULL)
+  d <- db_ticket %>% filter(DATE >= as.Date(d1), DATE <= as.Date(d2))
+  if (!nrow(d)) return(NULL)
+
+  # is.na(CA_HTVA) suffit : une ligne sans montant TVAC non plus est encore
+  # plus abîmée, et doit d'autant plus être signalée.
+  trou <- is.na(d$CA_HTVA)
+  if (!any(trou)) return(NULL)
+
+  ca <- sum(d$CA_TVAC[trou], na.rm = TRUE)
+  noms <- unique(d$PRODUIT_FULL[trou])
+  list(LIGNES = sum(trou),
+       PRODUITS = length(noms),
+       CA_TVAC = ca,
+       PART = ratio_pct(ca, sum(d$CA_TVAC, na.rm = TRUE)),
+       EXEMPLES = head(sort(noms), 3))
+}
+
+# L'alerte du volet Tickets : une seule place pour les deux choses qui peuvent
+# manquer, l'identifiant de ticket et le taux de TVA.
+alerte_tickets <- function(db_ticket, d1, d2) {
+  if (!tickets_disponibles(db_ticket))
+    return(bandeau_alerte(
+      TRUE,
+      paste0("Le cache actuel ne conserve pas l'identifiant de ticket : les ",
+             "lignes de caisse ne peuvent pas être regroupées. La colonne est ",
+             "désormais enregistrée par l'import, elle apparaîtra au prochain ",
+             "import complet. En attendant, le reste du volet ne dépend pas ",
+             "d'elle."),
+      titre = "Tickets pas encore dans le cache", couleur = COUL_AMBRE,
+      icone = "circle-info"))
+
+  t <- tva_inconnue(db_ticket, d1, d2)
+  if (is.null(t)) return(NULL)
+
+  pluriel <- function(n) if (n > 1) "s" else ""
+
+  bandeau_alerte(
+    TRUE,
+    # tagList et non paste0 : coller une balise dans une chaîne l'afficherait
+    # en toutes lettres.
+    tagList(
+      paste0(t$LIGNES, " ligne", pluriel(t$LIGNES), " de caisse sur la période",
+             " — ", t$PRODUITS, " produit", pluriel(t$PRODUITS), ", ",
+             trimws(format_CA(t$CA_TVAC, -1)), " TVAC, soit ",
+             format_pct(t$PART), " de l'encaissé — n'ont pas de taux de TVA",
+             " connu. Leur montant HTVA ne se calcule donc pas et compte pour",
+             " zéro dans les totaux ci-dessous : un ticket qui n'en contient",
+             " que s'affiche à vide. Basculez en "),
+      tags$b("TVAC"),
+      " (en haut à droite) pour voir ce qui a réellement été encaissé.",
+      tags$br(),
+      "Concernés, entre autres : ",
+      tags$i(paste(t$EXEMPLES, collapse = ", ")),
+      "."),
+    titre = "Des lignes sans taux de TVA", couleur = COUL_AMBRE,
+    icone = "circle-info")
+}
+
+# Ce que la distribution des paniers montre, en trois chiffres.
+#
+# Un histogramme se lit mal dans ses extrêmes : la barre d'un ticket unique à
+# 1 200 € fait un pixel. Donner le plus gros ticket en toutes lettres permet de
+# le confronter à la caisse, ce qu'aucune forme de courbe ne permet.
+resume_paniers <- function(tk) {
+  if (is.null(tk) || !nrow(tk)) return("")
+  paste0(nrow(tk), " ticket", if (nrow(tk) > 1) "s" else "",
+         " · médiane ", trimws(format_CA(median(tk$CA, na.rm = TRUE), 2)),
+         " · moyenne ", trimws(format_CA(mean(tk$CA, na.rm = TRUE), 2)),
+         " · plus gros ", trimws(format_CA(max(tk$CA, na.rm = TRUE), -1)))
 }
 
 # Distribution des tickets par tranche de montant : où se situe le panier.

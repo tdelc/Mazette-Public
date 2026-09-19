@@ -45,6 +45,40 @@ datatable_simple <- function(table){
   )
 }
 
+##### Le tri des tableaux #####
+
+# DT trie sur ce qu'il AFFICHE.
+#
+# Une colonne de montants formatés se trie donc dans l'ordre du dictionnaire :
+# « 90€ » y passe devant « 1.234€ », et le plus gros ticket d'une période n'est
+# pas celui que le tri désigne. Même piège pour une date écrite « 31/01/2026 »,
+# qui se classe par son jour, et pour un pourcentage écrit « 9 % ».
+#
+# Le remède : on joint à la table des colonnes de tri CACHÉES, nommées
+# « .tri:<colonne visible> » et portant la valeur brute. defs_tri() fabrique les
+# instructions DataTables qui masquent ces jumelles et ordonnent chaque colonne
+# visible sur la sienne.
+PREFIXE_TRI <- ".tri:"
+
+col_tri <- function(nom) paste0(PREFIXE_TRI, nom)
+
+defs_tri <- function(table) {
+  noms <- names(table)
+  cachees <- which(startsWith(noms, PREFIXE_TRI))
+  if (!length(cachees)) return(NULL)
+  visibles <- match(substring(noms[cachees], nchar(PREFIXE_TRI) + 1L), noms)
+
+  # as.list() : une cible unique doit tout de même être sérialisée en tableau
+  # JSON, sinon DataTables reçoit un scalaire là où il attend une liste.
+  defs <- list(list(targets = as.list(cachees - 1L), visible = FALSE,
+                    searchable = FALSE, orderable = FALSE))
+  # Une jumelle dont la colonne visible a disparu (renommée ailleurs) est
+  # simplement cachée : viser un indice absent ferait tomber le tableau entier.
+  appariees <- which(!is.na(visibles))
+  c(defs, lapply(appariees, function(i)
+    list(targets = visibles[i] - 1L, orderData = cachees[i] - 1L)))
+}
+
 change_cursor_plotly <- function(p){
   p |> htmlwidgets::onRender(
     paste0(
