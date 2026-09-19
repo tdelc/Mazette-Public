@@ -5,7 +5,7 @@ TABLES_DASHBOARD <- c(
   "DB_OBJECTIFS",        # objectifs journaliers calculés
   "DB_PRODUITS",         # ventes par jour x produit (+ brassin rattaché)
   "DB_TICKET",           # grain ticket, forme réduite (cf. R/donnees.R)
-  "REF_PRODUITS",        # ID_PRODUIT -> nom, catégorie, TVA, volume
+  "REF_PRODUITS",        # ID_REF -> produit, nom, catégorie, TVA, volume
   "DB_BIERES",           # suivi des fûts : volumes cumulés par brassin
   "DB_BRASSINS",         # référentiel des brassins
   "DB_COMPTA",           # Comptabilité générale

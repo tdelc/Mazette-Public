@@ -615,10 +615,27 @@ cli::cli_h3("Table DB_TICKETS_HEURES")
 # Passer par hydrate_donnees() garantit que la reconstruction complète est
 # définie à un seul endroit — cf. R/donnees.R — donc identique après un import
 # et après un simple chargement du .RData.
+
+# Garde-fou : une ligne par produit dans la nomenclature. Sinon la jointure
+# ci-dessous dupliquerait des lignes de caisse, et le CA avec elles.
+if (anyDuplicated(NOMEN_PRODUITS$ID_PRODUIT))
+  cli::cli_abort("NOMEN_PRODUITS porte plusieurs lignes pour un même ID_PRODUIT.")
+
+# Jointure sur le seul ID_PRODUIT, et non sur le couple (ID, libellé).
+#
+# Le libellé d'une ligne de caisse est libre : le même produit y apparaît sous
+# « Latte », « Latte deca », « Latte chaud »... Joindre sur le libellé laissait
+# toutes ces lignes sans TVA ni catégorie — d'où leur CA HTVA à NA, et leur
+# disparition des écrans qui découpent par secteur. Les attributs viennent donc
+# du produit ; le libellé de la ligne, lui, est conservé tel que la caisse l'a
+# enregistré.
 normalise <- normalise_tickets(
   DB_TICKET |> 
     rename(PRODUIT_FULL = PRODUIT) |> 
-    left_join(NOMEN_PRODUITS, by = c("ID_PRODUIT","PRODUIT_FULL")))
+    left_join(NOMEN_PRODUITS |> select(-PRODUIT_FULL), by = "ID_PRODUIT") |> 
+    # Un produit absent de la nomenclature garde au moins son libellé de
+    # caisse : « NA » n'est le nom d'aucun produit.
+    mutate(PRODUIT = coalesce(PRODUIT, PRODUIT_FULL)))
 DB_TICKET    <- normalise$DB_TICKET
 REF_PRODUITS <- normalise$REF_PRODUITS
 rm(normalise)
@@ -626,7 +643,18 @@ rm(normalise)
 # DB_TICKET reste sous sa forme réduite — c'est elle qu'on sauvegarde. Seul
 # DB_TICKETS_HEURES est nécessaire à la suite de ce fichier ; le DB_TICKET complet
 # sera reconstruit au chargement par hydrate_dans().
-DB_TICKETS_HEURES <- hydrate_donnees(DB_TICKET, REF_PRODUITS)$TICKETS_HEURES
+hydrate <- hydrate_donnees(DB_TICKET, REF_PRODUITS)
+
+# L'hydratation doit rendre exactement la table réduite, ligne pour ligne :
+# c'est la propriété qui a manqué pendant plusieurs mois, chaque ligne de
+# caisse ressortant autant de fois que son produit avait connu de libellés.
+if (nrow(hydrate$DB_TICKET) != nrow(DB_TICKET))
+  cli::cli_abort(paste0("La reconstruction des tickets duplique des lignes : ",
+                        nrow(DB_TICKET), " avant, ",
+                        nrow(hydrate$DB_TICKET), " après."))
+
+DB_TICKETS_HEURES <- hydrate$TICKETS_HEURES
+rm(hydrate)
 
 # Synthèse par catégorie
 DB_CATEGORIES_JOURS <- DB_TICKETS_HEURES %>%

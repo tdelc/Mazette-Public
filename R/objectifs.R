@@ -21,6 +21,28 @@ label_objectif <- function(reel, objectif) {
          paste0(round(100 * reel / objectif), " % de l'objectif"))
 }
 
+# Petite légende des couleurs des barres.
+chip_legende <- function(couleur, libelle) {
+  div(
+    class = "legende-row",
+    span(class = "legende-pastille", style = paste0("background:", couleur, ";")),
+    span(libelle)
+  )
+}
+
+# Légende de la convention « CA vs objectif », à poser sous les graphes en
+# barres. Elle vit ici, à côté de couleur_objectif(), et non dans ui.R : ui.R
+# et server.R sont évalués dans des environnements frères, et une légende
+# rendue conditionnellement par le serveur ne verrait pas celle de l'interface.
+legende_objectif <- function() {
+  div(
+    class = "d-flex gap-3 flex-wrap text-muted mt-1",
+    chip_legende(COUL_VERT, "Objectif atteint"),
+    chip_legende(COUL_AMBRE, "À partir de 90 %"),
+    chip_legende(COUL_ROUGE, "En dessous de 90 %")
+  )
+}
+
 # Fonction pour calculer les objectifs journaliers
 calculer_objectifs_journaliers <- function(annee, mois, ca_htva, ca_tvac) {
   # Nombre de jours dans le mois

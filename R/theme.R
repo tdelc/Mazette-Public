@@ -25,6 +25,10 @@ format_CA <- function(montant,nb_apres=0) {
   
   montant_formatte[str_trim(montant_formatte) == "0€"] <- ""
   montant_formatte[montant_formatte == "€"] <- ""
+  # Une valeur inconnue s'affichait « NA€ », ce qui se lit comme un montant.
+  # Le tiret est la convention du reste du tableau de bord (cf. format_pct) et
+  # se distingue du vide, qui dit zéro.
+  montant_formatte[is.na(montant)] <- "—"
   montant_formatte
 }
 

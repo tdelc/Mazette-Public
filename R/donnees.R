@@ -2,13 +2,14 @@
 #
 # Le fichier .RData ne contient qu'une forme réduite de DB_TICKET :
 #
-#   DB_TICKET    : DATE, DATE_TS, HEURE, ID_PRODUIT, QUANTITE, PRIX_TOTAL
-#   REF_PRODUITS : ID_PRODUIT -> PRODUIT, PRODUIT_FULL, BOISSON, CATEGORIE,
-#                  TAUX_TVA, VOLUME_CL
+#   DB_TICKET    : DATE, DATE_TS, HEURE, ID_TICKET, ID_REF, QUANTITE, PRIX_TOTAL
+#   REF_PRODUITS : ID_REF -> ID_PRODUIT, PRODUIT, PRODUIT_FULL, BOISSON,
+#                  CATEGORIE, TAUX_TVA, VOLUME_CL
 #
-# Ces six colonnes sont entièrement déterminées par ID_PRODUIT (843 valeurs
-# distinctes) : les répéter sur 245 000 lignes coûtait 1,2 Mo. Le référentiel
-# tient en 843 lignes, et une jointure au démarrage rend la table d'origine.
+# Ces six colonnes sont entièrement déterminées par la ligne du référentiel :
+# les répéter sur 245 000 lignes coûtait 1,2 Mo, alors que le référentiel tient
+# en quelques milliers de lignes et qu'une jointure au démarrage rend la table
+# d'origine.
 #
 # Pourquoi DATE *et* DATE_TS : sur 3,2 % des lignes le TIMESTAMP ne tombe pas le
 # même jour que DATE — les tickets d'après minuit sont rattachés au service de la
@@ -34,24 +35,75 @@
 # est resté dehors faute d'usage : le jour où un écran en aura besoin, il se
 # rajoutera de la même façon.
 
+# Pourquoi la clé du référentiel n'est PAS l'ID_PRODUIT
+#
+# La caisse laisse renommer une ligne : le même ID_PRODUIT y apparaît sous
+# « Latte », « Latte deca », « Latte chaud »... Le référentiel portait alors
+# plusieurs lignes pour cet ID, et la jointure de reconstruction, faite sur le
+# seul ID_PRODUIT, rendait CHAQUE ligne de caisse autant de fois qu'il existait
+# de libellés — un latte vendu une fois ressortait en six exemplaires, cinq
+# d'entre eux sans TVA ni catégorie. Quantités et CA TVAC s'en trouvaient
+# gonflés ; le CA HTVA, lui, survivait par accident, les lignes fantômes étant
+# à NA et écartées par na.rm.
+#
+# La clé est donc un identifiant de LIGNE DU RÉFÉRENTIEL (ID_REF), une par
+# combinaison d'attributs observée. La jointure redevient un à un, et
+# hydrate_donnees() est de nouveau l'inverse exact de normalise_tickets().
+# ID_REF remplace ID_PRODUIT dans la table stockée au lieu de s'y ajouter :
+# l'ID du produit se relit dans le référentiel.
+
+# Attributs déterminés par le produit vendu, et non par la vente elle-même.
+REF_COLONNES <- c("ID_PRODUIT", "PRODUIT", "PRODUIT_FULL", "BOISSON",
+                  "CATEGORIE", "TAUX_TVA", "VOLUME_CL")
+
 # Colonnes conservées dans le .RData (le reste se recalcule).
-TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_TICKET", "ID_PRODUIT",
+TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_TICKET", "ID_REF",
                      "QUANTITE", "PRIX_TOTAL")
 
 # Réduit un DB_TICKET complet à sa forme stockable, et en extrait le référentiel.
 # Renvoie les deux tables ; c'est l'inverse exact de hydrate_donnees().
 normalise_tickets <- function(db_ticket) {
+  cols <- intersect(REF_COLONNES, names(db_ticket))
+
+  # La clé de regroupement est la combinaison complète des attributs, collée
+  # avec un séparateur qu'aucun nom de produit ne contient. paste() rend "NA"
+  # pour un NA, et c'est le comportement voulu : deux lignes également
+  # inconnues appartiennent bien à la même entrée du référentiel.
+  cle <- do.call(paste, c(unname(as.list(db_ticket[cols])), sep = "\u001f"))
+  premiere <- !duplicated(cle)
+
   list(
     DB_TICKET = db_ticket %>%
       mutate(DATE_TS = as_date(ymd_hms(TIMESTAMP, quiet = TRUE)),
-             HEURE   = as.integer(hour(ymd_hms(TIMESTAMP, quiet = TRUE)))) %>%
+             HEURE   = as.integer(hour(ymd_hms(TIMESTAMP, quiet = TRUE))),
+             ID_REF  = match(cle, cle[premiere])) %>%
       # any_of et non all_of : une source d'où ID_TICKET serait absent doit
       # produire un cache amputé plutôt que faire tomber tout l'import.
       select(any_of(TICKET_COLONNES)),
-    REF_PRODUITS = db_ticket %>%
-      distinct(ID_PRODUIT, PRODUIT, PRODUIT_FULL, BOISSON, CATEGORIE,
-               TAUX_TVA, VOLUME_CL)
+    REF_PRODUITS = db_ticket[premiere, cols, drop = FALSE] %>%
+      as_tibble() %>%
+      mutate(ID_REF = seq_len(n()), .before = 1)
   )
+}
+
+# Rattache chaque ligne de caisse à sa ligne de référentiel.
+#
+# Le cas normal est la jointure sur ID_REF, un à un par construction. Un .RData
+# enregistré avant ID_REF ne porte que l'ID_PRODUIT : on ne peut alors joindre
+# que sur lui, et il faut d'abord ramener le référentiel à une ligne par
+# produit — sans quoi on reproduit exactement la duplication décrite plus haut.
+# On retient la ligne la mieux renseignée : celle qui porte un taux de TVA.
+joint_referentiel <- function(db_ticket, ref_produits) {
+  if ("ID_REF" %in% names(db_ticket) && "ID_REF" %in% names(ref_produits))
+    return(left_join(db_ticket, ref_produits, by = "ID_REF"))
+
+  ref1 <- ref_produits %>%
+    select(-any_of("ID_REF")) %>%
+    arrange(ID_PRODUIT, is.na(TAUX_TVA), is.na(CATEGORIE)) %>%
+    group_by(ID_PRODUIT) %>%
+    slice(1) %>%
+    ungroup()
+  left_join(db_ticket, ref1, by = "ID_PRODUIT")
 }
 
 # Reconstruit DB_TICKET dans sa forme complète, puis TICKETS_HEURES qui s'en
@@ -60,7 +112,7 @@ normalise_tickets <- function(db_ticket) {
 # Fonction pure : elle renvoie les deux tables, l'appelant les assigne.
 hydrate_donnees <- function(db_ticket, ref_produits) {
   complet <- db_ticket %>%
-    left_join(ref_produits, by = "ID_PRODUIT") %>%
+    joint_referentiel(ref_produits) %>%
     mutate(
       # heure_service() et hour() n'ont besoin que de l'heure : on recompose un
       # POSIXct à la minute près nulle, ce qui suffit à tous les appelants.

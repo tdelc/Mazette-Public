@@ -985,8 +985,8 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         la granularit&eacute; de Compta et de Travail&nbsp;: un seul chemin de lecture au lieu de
         trois, et le m&ecirc;me geste partout. La lecture <strong>descend</strong>&nbsp;: la fen&ecirc;tre
         d&rsquo;ensemble, la p&eacute;riode qu&rsquo;on y choisit d&rsquo;un clic, sa composition, ce qui s&rsquo;est
-        vendu, puis &mdash; repli&eacute;s dans un accord&eacute;on &mdash; le croisement produit&nbsp;&times;&nbsp;heure,
-        les tickets et les heures point&eacute;es.
+        vendu, puis &mdash; repli&eacute;s dans un accord&eacute;on &mdash; les tickets et les heures
+        travaill&eacute;es.
       </p>
       <p>
         <strong>La comptabilit&eacute; en a &eacute;t&eacute; retir&eacute;e enti&egrave;rement.</strong> Elle est mensuelle&nbsp;:
@@ -998,22 +998,72 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         un renvoi dit o&ugrave; le trouver &mdash; ce qui est plus utile qu&rsquo;une estimation.
       </p>
       <p>
-        Deux pr&eacute;cautions de lecture s&rsquo;y sont ajout&eacute;es. Les <strong>heures point&eacute;es</strong>
-        affich&eacute;es sont celles d&rsquo;Horeko et non les heures recal&eacute;es sur la paie&nbsp;: &agrave; la maille
-        du jour, la valeur recal&eacute;e est la r&eacute;partition d&rsquo;un total mensuel, pas une mesure.
-        Et une <strong>p&eacute;riode &agrave; cheval</strong> &mdash; une semaine partag&eacute;e entre deux mois &mdash;
-        est gris&eacute;e et marqu&eacute;e d&rsquo;un ast&eacute;risque&nbsp;: seuls ses jours affich&eacute;s y sont compt&eacute;s,
-        le total est juste, mais elle ne se compare pas aux autres barres.
+        Deux pr&eacute;cautions de lecture s&rsquo;y sont ajout&eacute;es. Les heures affich&eacute;es au jour et &agrave;
+        la semaine sont les heures <strong>point&eacute;es</strong> dans Horeko, et non les heures
+        recal&eacute;es sur la paie&nbsp;: &agrave; ces mailles, la valeur recal&eacute;e est la r&eacute;partition d&rsquo;un
+        total mensuel, pas une mesure. Et une <strong>p&eacute;riode &agrave; cheval</strong> &mdash; une
+        semaine partag&eacute;e entre deux mois &mdash; est hachur&eacute;e, estomp&eacute;e et marqu&eacute;e d&rsquo;un
+        ast&eacute;risque&nbsp;: seuls ses jours affich&eacute;s y sont compt&eacute;s, le total est juste, mais
+        elle ne se compare pas aux autres barres.
+      </p>
+      <p>
+        <strong>Au mois, les heures cessent d&rsquo;&ecirc;tre une estimation.</strong> Le pointage est la
+        seule mesure quotidienne, mais il ignore les heures pay&eacute;es sans &ecirc;tre point&eacute;es
+        (cong&eacute;s, maladie, solde) et son co&ucirc;t repose sur un tarif horaire suppos&eacute;. Le
+        fichier de paie, lui, donne des heures r&eacute;ellement pay&eacute;es et un co&ucirc;t employeur
+        r&eacute;el, par mois et par secteur&nbsp;; la comptabilit&eacute; donne le co&ucirc;t du mois. Aucune
+        des deux ne se d&eacute;coupe plus fin &mdash; les afficher &agrave; la semaine reviendrait &agrave;
+        r&eacute;partir un total, c&rsquo;est-&agrave;-dire &agrave; inventer. D&rsquo;o&ugrave; la r&egrave;gle&nbsp;: jour et semaine
+        montrent le pointage, le mois montre les trois sources c&ocirc;te &agrave; c&ocirc;te. C&rsquo;est la
+        seule exception au &laquo;&nbsp;aucun co&ucirc;t&nbsp;&raquo; de ce volet, et elle tient parce qu&rsquo;il
+        n&rsquo;y a l&agrave; rien de r&eacute;parti.
+      </p>
+      <p>
+        <strong>Le croisement produit&nbsp;&times;&nbsp;heure a &eacute;t&eacute; retir&eacute;.</strong> Il m&ecirc;lait des
+        produits trop diff&eacute;rents pour qu&rsquo;une m&ecirc;me &eacute;chelle d&rsquo;intensit&eacute; ait un sens&nbsp;:
+        douze caf&eacute;s et une pizza y occupaient la m&ecirc;me case sombre.
+      </p>
+      <p>
+        <strong>La d&eacute;composition se colore comme la vue d&rsquo;ensemble</strong>&nbsp;: la couleur dit
+        l&rsquo;atteinte de l&rsquo;objectif, tronqu&eacute; sur les m&ecirc;mes jours que le CA. Deux graphes qui
+        montrent la m&ecirc;me grandeur ne peuvent pas avoir deux conventions de couleur. Le
+        gris restant celui de &laquo;&nbsp;sans objectif&nbsp;&raquo;, la troncature a d&ucirc; changer de signe
+        et passer &agrave; la hachure.
       </p>
     </div>
 
     <div class="note" data-profondeur="detail">
       <span class="l">Pourquoi <code>DB_TICKET</code> est stock&eacute; en deux morceaux</span>
       <p>
-        Six colonnes de <code>DB_TICKET</code> sont enti&egrave;rement d&eacute;termin&eacute;es par
-        <code>ID_PRODUIT</code>. Les r&eacute;p&eacute;ter sur 245&nbsp;000 lignes co&ucirc;tait 1,2&nbsp;Mo&nbsp;; le
-        r&eacute;f&eacute;rentiel tient en 843 lignes. Le cache ne garde donc que la forme r&eacute;duite, et
+        Six colonnes de <code>DB_TICKET</code> sont enti&egrave;rement d&eacute;termin&eacute;es par le produit
+        vendu. Les r&eacute;p&eacute;ter sur 245&nbsp;000 lignes co&ucirc;tait 1,2&nbsp;Mo&nbsp;; le r&eacute;f&eacute;rentiel tient
+        en quelques milliers de lignes. Le cache ne garde donc que la forme r&eacute;duite, et
         <code>hydrate_dans()</code> refait la jointure au d&eacute;marrage.
+      </p>
+      <p>
+        <strong>La cl&eacute; de cette jointure n&rsquo;est pas l&rsquo;<code>ID_PRODUIT</code>.</strong> La caisse
+        laisse renommer une ligne&nbsp;: le m&ecirc;me identifiant y appara&icirc;t sous
+        &laquo;&nbsp;Latte&nbsp;&raquo;, &laquo;&nbsp;Latte deca&nbsp;&raquo;, &laquo;&nbsp;Latte chaud&nbsp;&raquo;&hellip;
+        Le r&eacute;f&eacute;rentiel portait alors plusieurs lignes pour ce produit, et la jointure de
+        reconstruction, faite sur le seul identifiant, rendait <em>chaque</em> ligne de
+        caisse autant de fois qu&rsquo;il existait de libell&eacute;s&nbsp;: un latte vendu une fois
+        ressortait en six exemplaires, dont cinq sans TVA ni cat&eacute;gorie. Les quantit&eacute;s et
+        le CA TVAC s&rsquo;en trouvaient gonfl&eacute;s&nbsp;; le CA HTVA, lui, survivait par accident,
+        les lignes fant&ocirc;mes &eacute;tant &agrave; <code>NA</code> et &eacute;cart&eacute;es par <code>na.rm</code>. La
+        cl&eacute; est d&eacute;sormais un identifiant de <em>ligne du r&eacute;f&eacute;rentiel</em>
+        (<code>ID_REF</code>), une par combinaison d&rsquo;attributs observ&eacute;e&nbsp;: la jointure
+        redevient un &agrave; un, et l&rsquo;import s&rsquo;arr&ecirc;te si la reconstruction ne rend pas
+        exactement le nombre de lignes qu&rsquo;on lui a donn&eacute;. <code>ID_REF</code>
+        <em>remplace</em> <code>ID_PRODUIT</code> dans la table stock&eacute;e au lieu de s&rsquo;y
+        ajouter&nbsp;: l&rsquo;identifiant du produit se relit dans le r&eacute;f&eacute;rentiel.
+      </p>
+      <p>
+        M&ecirc;me cause, deuxi&egrave;me effet&nbsp;: &agrave; l&rsquo;import, la nomenclature &eacute;tait rattach&eacute;e aux
+        lignes de caisse par le couple <em>(identifiant, libell&eacute;)</em>. Toute ligne dont le
+        libell&eacute; n&rsquo;&eacute;tait pas le libell&eacute; canonique du produit restait donc sans TVA ni
+        cat&eacute;gorie, et disparaissait des &eacute;crans qui d&eacute;coupent par secteur. Le rattachement
+        se fait maintenant sur le seul identifiant&nbsp;; le libell&eacute; de la ligne est
+        conserv&eacute; tel que la caisse l&rsquo;a enregistr&eacute;.
       </p>
       <p>
         La fonction sait reconna&icirc;tre un ancien <code>.RData</code> qui contient d&eacute;j&agrave; la forme
@@ -1027,7 +1077,7 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
         plut&ocirc;t que suppos&eacute;&nbsp;: <strong>+60&nbsp;Ko</strong> sur un cache de 934&nbsp;Ko, les
         identifiants croissant avec le temps et se compressant donc tr&egrave;s bien. &Agrave; ce
         prix-l&agrave;, la question ne se pose pas. Un cache plus ancien n&rsquo;a pas la colonne&nbsp;:
-        le volet le dit et se rabat sur ce qui ne d&eacute;pend que de l&rsquo;heure et du produit.
+        le volet le dit, et le reste de la page ne d&eacute;pend pas d&rsquo;elle.
       </p>
     </div>
   </section>

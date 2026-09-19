@@ -84,26 +84,6 @@ ui_login <- function() {
   )
 }
 
-# Petite légende des couleurs des barres
-chip_legende <- function(couleur, libelle) {
-  div(
-    class = "legende-row",
-    span(class = "legende-pastille", style = paste0("background:", couleur, ";")),
-    span(libelle)
-  )
-}
-
-# Légende de la convention "CA vs objectif", à poser sous les graphes en barres.
-# Reprend les couleurs de couleur_objectif() dans functions.R.
-legende_objectif <- function() {
-  div(
-    class = "d-flex gap-3 flex-wrap text-muted mt-1",
-    chip_legende(COUL_VERT, "Objectif atteint"),
-    chip_legende(COUL_AMBRE, "À partir de 90 %"),
-    chip_legende(COUL_ROUGE, "En dessous de 90 %")
-  )
-}
-
 ui_app <- function() {
   navset_bar(
     title = span(class = "brand-title", 
@@ -1369,13 +1349,18 @@ ui_detail_periodes <- function() {
           " rapporte."),
       hr(),
       div(class = "small text-muted",
-          tags$b("Ce volet ne porte que des ventes"), " : chiffre d'affaires,",
-          " produits, heures de vente, tickets. Aucun coût, aucune marge.",
+          tags$b("Ce volet porte les ventes"), " : chiffre d'affaires,",
+          " produits, tickets, heures de vente. Aucune marge, aucun coût",
+          " réparti.",
           tags$br(), tags$br(),
           "La comptabilité est mensuelle : à la semaine, elle ne peut être",
           " qu'un prorata — et un prorata affiché finit par se lire comme une",
-          " mesure. Les coûts sont donc dans ", tags$b("Compta"), ", les heures",
-          " dans ", tags$b("Travail"), ".")
+          " mesure. Les coûts sont donc dans ", tags$b("Compta"), ", et leur",
+          " comparaison entre sources dans ", tags$b("Travail"), ".",
+          tags$br(), tags$br(),
+          "Seule exception, à la maille ", tags$b("mois"), " : les heures",
+          " payées et leur coût réel s'y mesurent sans être répartis, et",
+          " figurent donc en bas de page.")
     ),
     card(
       full_screen = TRUE,
@@ -1402,11 +1387,14 @@ ui_detail_periodes <- function() {
           col_widths = breakpoints(sm = 12, lg = c(7, 5)),
           div(h6(textOutput("det_titre_compo", inline = TRUE), class = "section-sub"),
               plotlyOutput("det_composition", height = "300px"),
+              uiOutput("det_legende_compo"),
               div(class = "small text-muted",
-                  "Une barre grisée et suivie d'un ", tags$b("*"), " est une",
+                  "Même convention de couleur que le graphe du haut. Une barre",
+                  " hachurée et estompée, suivie d'un ", tags$b("*"), ", est une",
                   " période à cheval — une semaine partagée entre deux mois,",
-                  " par exemple. Seuls ses jours affichés y sont comptés : le",
-                  " total est juste, mais elle ne se compare pas aux autres.")),
+                  " par exemple. Seuls ses jours affichés y sont comptés, et",
+                  " son objectif est tronqué d'autant : le total est juste,",
+                  " mais elle ne se compare pas aux autres.")),
           div(h6("Nature et moment", class = "section-sub"),
               plotlyOutput("det_repartition", height = "300px"),
               div(class = "small text-muted",
@@ -1424,16 +1412,6 @@ ui_detail_periodes <- function() {
             " Il dit en combien de produits se fait la période.")
       ),
       accordion_panel(
-        value = "heures", title = "Quand se vend quoi",
-        icon = icon("clock"),
-        plotlyOutput("det_produits_heures", height = "420px"),
-        div(class = "small text-muted mt-1",
-            "L'intensité est la ", tags$b("quantité"), " et non le CA : on",
-            " cherche le moment où un produit part, pas celui où il rapporte.",
-            " Les douze premiers produits de la période seulement — au-delà, la",
-            " carte devient un nuage de cases vides.")
-      ),
-      accordion_panel(
         value = "tickets", title = "Les tickets",
         icon = icon("receipt"),
         uiOutput("det_tickets_alerte", class = "zone-alerte"),
@@ -1449,13 +1427,10 @@ ui_detail_periodes <- function() {
         )
       ),
       accordion_panel(
-        value = "pointage", title = "Les heures pointées",
+        value = "pointage", title = "Les heures travaillées",
         icon = icon("user-clock"),
         DTOutput("det_heures"),
-        div(class = "small text-muted mt-1",
-            "Les heures ", tags$b("pointées"), " dans Horeko, pas les heures",
-            " recalées sur la paie : à cette maille, la valeur recalée est une",
-            " répartition d'un total mensuel, pas une mesure du jour.")
+        uiOutput("det_heures_note")
       )
     )
   )

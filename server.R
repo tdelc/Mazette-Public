@@ -443,10 +443,17 @@ server <- function(input, output, session) {
 
   output$det_composition <- renderPlotly({
     graph_composition_detail(
-      composition_detail(UPD_KPI_SIMPLE(),
+      composition_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                          if (exists("DB_TICKET")) DB_TICKET else NULL,
                          det_periode(), det_maille(), input$unite_tva),
       det_maille())
+  })
+
+  # Les heures d'une journée n'ont pas d'objectif : la légende de couleur n'y
+  # voudrait rien dire, et se lirait comme un jugement absent du graphe.
+  output$det_legende_compo <- renderUI({
+    if (identical(maille_detail(det_maille())$COMPOSITION, "heure")) NULL
+    else legende_objectif()
   })
 
   output$det_repartition <- renderPlotly({
@@ -459,13 +466,6 @@ server <- function(input, output, session) {
       produits_detail(DB_PRODUITS, det_periode(), det_maille(),
                       n = 25, unite_tva = input$unite_tva),
       input$unite_tva))
-  })
-
-  output$det_produits_heures <- renderPlotly({
-    graph_produits_heures(
-      produits_par_heure(if (exists("DB_TICKET")) DB_TICKET else NULL,
-                         det_periode(), det_maille(),
-                         unite_tva = input$unite_tva))
   })
 
   # --- Les tickets
@@ -484,8 +484,8 @@ server <- function(input, output, session) {
       paste0("Le cache actuel ne conserve pas l'identifiant de ticket : les ",
              "lignes de caisse ne peuvent pas être regroupées. La colonne est ",
              "désormais enregistrée par l'import, elle apparaîtra au prochain ",
-             "import complet. En attendant, « Quand se vend quoi » reste ",
-             "disponible : il ne dépend que de l'heure et du produit."),
+             "import complet. En attendant, le reste du volet ne dépend pas ",
+             "d'elle."),
       titre = "Tickets pas encore dans le cache", couleur = COUL_AMBRE,
       icone = "circle-info")
   })
@@ -520,9 +520,33 @@ server <- function(input, output, session) {
 
   output$det_heures <- renderDT({
     r <- det_resume()
-    datatable_simple(table_heures_pointees(
-      heures_pointees(DB_COUTS_TRAVAIL, det_periode(), det_maille()),
-      if (is.null(r)) NA_real_ else r$CA))
+    datatable_simple(table_heures_periode(
+      DB_COUTS_TRAVAIL, if (exists("DB_ONSS")) DB_ONSS else NULL,
+      det_periode(), det_maille(),
+      ca = if (is.null(r)) NA_real_ else r$CA))
+  })
+
+  # La note change avec la maille : au mois les heures sont mesurées, ailleurs
+  # elles sont pointées. Écrire les deux phrases en dur ferait lire la mauvaise.
+  output$det_heures_note <- renderUI({
+    if (identical(det_maille(), "mois"))
+      div(class = "small text-muted mt-1",
+          "Au mois, les heures sont ", tags$b("mesurées"), " : les heures",
+          " payées et le coût employeur viennent du fichier de paie, le coût",
+          " comptable de la comptabilité. Le pointage Horeko reste affiché à",
+          " côté — c'est lui qui ventile les journées, mais il ignore les",
+          " heures payées non pointées.",
+          tags$br(),
+          "Ces trois sources se comparent dans ", tags$b("Travail › Sources"),
+          ".")
+    else
+      div(class = "small text-muted mt-1",
+          "Les heures ", tags$b("pointées"), " dans Horeko, pas les heures",
+          " recalées sur la paie : à cette maille, la valeur recalée est une",
+          " répartition d'un total mensuel, pas une mesure du jour.",
+          tags$br(),
+          "Les heures payées et leur coût réel ne se connaissent qu'au ",
+          tags$b("mois"), " : choisissez cette maille pour les voir.")
   })
 
   #### Volet "Détail" — Par produit ####
