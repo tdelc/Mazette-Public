@@ -44,6 +44,7 @@ SHEET_PASS <- "IMPORT PASS NEW"
 vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
                 "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
+                "IMPORT OBJECTIFS 2022","IMPORT OBJECTIFS 2023",
                 "IMPORT OBJECTIFS 2026", SHEET_PASS)
 
 read_mazette <- function(sheet_name) suppressWarnings(
@@ -58,6 +59,8 @@ IMPORT_LIGHTSPEED    <- DB_sheets$`IMPORT LIGHTSPEED`
 IMPORT_TICKET        <- DB_sheets$`IMPORT TICKET`
 IMPORT_CAISSE        <- DB_sheets$`IMPORT CAISSE`
 IMPORT_OBJECTIF_2024 <- DB_sheets$`IMPORT OBJECTIFS`
+IMPORT_OBJECTIF_2022 <- DB_sheets$`IMPORT OBJECTIFS 2022`
+IMPORT_OBJECTIF_2023 <- DB_sheets$`IMPORT OBJECTIFS 2023`
 IMPORT_OBJECTIF_2025 <- DB_sheets$`IMPORT OBJECTIFS 2025`
 IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
 # [[ ]] et non $ : `$` sur une liste fait de l'appariement PARTIEL, en silence.
@@ -201,6 +204,8 @@ if (length(SS_ONSS) == 1 && !is.na(SS_ONSS) && nzchar(SS_ONSS)) {
 
 # Old Mazette 2023 à 2025
 
+
+
 # drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
 # load("IMPORT 2023-2024.RData")
 # 
@@ -227,6 +232,8 @@ if (class(drive_mazette_2023)[1] == "try-error"){
 }
 
 try({
+  if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
+    IMPORT_DB_JOURS_OLD$BRUSSELS = 0
   IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
   IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
   IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
@@ -245,6 +252,8 @@ if (class(drive_mazette_2025)[1] == "try-error"){
 }
 
 try({
+  if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
+    IMPORT_DB_JOURS_OLD$BRUSSELS = 0
   IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
   IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
   IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
@@ -394,6 +403,8 @@ cli::cli_h3("Import de la DB OBJECTIFS")
 DB_OBJECTIFS <- transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS`) |> 
   add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2025`)) %>%
   add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2026`)) |> 
+  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2023`)) |> 
+  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2022`)) |> 
   select(ANNEE,MOIS,DATE_DEBUT,DATE_FIN,CA_TVAC,CA_HTVA,
          CA_HTVA_NOURRITURE_6,CA_HTVA_NOURRITURE_12,CA_HTVA_BOISSON_21) |> 
   mutate(DATE_DEBUT = ymd(as.character(DATE_DEBUT)),
@@ -840,8 +851,8 @@ DB_COUTS_TRAVAIL <- recale_couts_travail(
   DB_COUTS_TRAVAIL, if (exists("DB_ONSS")) DB_ONSS else NULL)
 
 if ("SOURCE_HEURES" %in% names(DB_COUTS_TRAVAIL)) {
-  .n_paie <- sum(DB_COUTS_TRAVAIL$SOURCE_HEURES == "Paie")
+  n_paie <- sum(DB_COUTS_TRAVAIL$SOURCE_HEURES == "Paie")
   cli::cli_alert_info(
-    "Coût du travail : {.n_paie}/{nrow(DB_COUTS_TRAVAIL)} lignes recalées sur la paie")
+    "Coût du travail : {n_paie}/{nrow(DB_COUTS_TRAVAIL)} lignes recalées sur la paie")
 }
 
