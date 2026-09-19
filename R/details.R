@@ -275,10 +275,10 @@ kpi_detail <- function(res) {
     kpi_tile(if (is.na(res$N_TICKETS)) "—" else format(res$N_TICKETS),
              "Tickets", COUL_AMBRE, "receipt",
              sous_titre = if (is.na(res$N_TICKETS)) "identifiant absent du cache"
-                          else "lignes de caisse regroupées"),
-    kpi_tile(if (is.na(res$PANIER)) "—" else format_CA(res$PANIER, 2),
-             "Panier moyen", COUL_MATIERE, "basket-shopping",
-             sous_titre = "CA / ticket")
+                          else "lignes de caisse regroupées")
+    # kpi_tile(if (is.na(res$PANIER)) "—" else format_CA(res$PANIER, 2),
+    #          "Panier moyen", COUL_MATIERE, "basket-shopping",
+    #          sous_titre = "CA / ticket")
   )
 }
 

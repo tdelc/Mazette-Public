@@ -1321,7 +1321,7 @@ ui_detail <- function() {
   navset_card_tab(
     id = "detail_tabs",
     nav_panel(
-      title = "Périodes",
+      title = "Par périodes",
       icon = icon("calendar-day"),
       ui_detail_periodes()
     ),
@@ -1339,7 +1339,7 @@ ui_detail_periodes <- function() {
       title = "Détails", width = 310,
       radioButtons("det_maille", "Maille",
                    setNames(MAILLES_DETAIL$CLE, MAILLES_DETAIL$LIBELLE),
-                   selected = "jour"),
+                   selected = "semaine"),
       dateRangeInput("det_fenetre", "Fenêtre observée",
                      start = NULL, end = NULL, separator = " → ",
                      language = "fr", weekstart = 1, format = "dd/mm/yyyy"),
@@ -1388,19 +1388,10 @@ ui_detail_periodes <- function() {
           div(h6(textOutput("det_titre_compo", inline = TRUE), class = "section-sub"),
               plotlyOutput("det_composition", height = "300px"),
               uiOutput("det_legende_compo"),
-              div(class = "small text-muted",
-                  "Même convention de couleur que le graphe du haut. Une barre",
-                  " hachurée et estompée, suivie d'un ", tags$b("*"), ", est une",
-                  " période à cheval — une semaine partagée entre deux mois,",
-                  " par exemple. Seuls ses jours affichés y sont comptés, et",
-                  " son objectif est tronqué d'autant : le total est juste,",
-                  " mais elle ne se compare pas aux autres.")),
+              div(class = "small text-muted")),
           div(h6("Nature et moment", class = "section-sub"),
               plotlyOutput("det_repartition", height = "300px"),
-              div(class = "small text-muted",
-                  "Les deux seuls axes que la table des ventes porte sans",
-                  " recalcul — donc les deux seuls qui ne puissent pas diverger",
-                  " d'un autre écran."))
+              div(class = "small text-muted"))
         )
       ),
       accordion_panel(
