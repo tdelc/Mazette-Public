@@ -360,271 +360,170 @@ server <- function(input, output, session) {
     )
   })
 
-  #### Volet "Détail" — Par jour ####
+  #### Volet "Détails" — Périodes ####
+  #
+  # Une seule chaîne pour les trois mailles : la maille est une VARIABLE, pas
+  # trois copies du même code. L'ancienne version avait un bloc par maille et
+  # une fonction generatrice pour deux d'entre elles ; les trois divergeaient
+  # déjà sur des détails.
 
-  # Période par défaut : 8 dernières semaines jusqu'à la veille
+  det_maille <- reactive(input$det_maille %||% "jour")
+
+  # La fenêtre par défaut suit la maille : 8 semaines de jours, 6 mois de
+  # semaines, 2 ans de mois. Elle est semée à chaque changement de maille, et
+  # derrière ONGLETS_PRETS() comme tout sélecteur d'onglet (cf. R/acces.R).
   observe({
     req(ONGLETS_PRETS())
-    updateDateRangeInput(session, "detail_periode",
-                         start = date_veille - weeks(8),
+    m <- maille_detail(det_maille())
+    updateDateRangeInput(session, "det_fenetre",
+                         start = date_veille - days(m$FENETRE),
                          end   = date_veille)
   })
 
-  periode_detail <- reactive({
-    rng <- input$detail_periode
-    if (is.null(rng) || any(is.na(rng))) c(date_veille - weeks(8), date_veille) else rng
+  det_fenetre <- reactive({
+    rng <- input$det_fenetre
+    m <- maille_detail(det_maille())
+    if (is.null(rng) || any(is.na(rng)))
+      c(date_veille - days(m$FENETRE), date_veille) else rng
   })
 
-  output$detail_jour_graph <- renderPlotly({
-    p <- periode_detail()
-    graph_ca_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2], source = "detail_jour")
+  det_serie <- reactive({
+    serie_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                 det_fenetre()[1], det_fenetre()[2], det_maille())
   })
 
-  # Jour sélectionné (clic sur une barre, défaut = veille)
-  selected_jour <- reactiveVal(NULL)
-
-  observeEvent(event_data("plotly_click", source = "detail_jour"), {
-    ev <- event_data("plotly_click", source = "detail_jour")
-    if (!is.null(ev$x)) selected_jour(as.Date(ev$x))
+  output$det_titre_serie <- renderText({
+    m <- maille_detail(det_maille())
+    paste0("Vue d'ensemble — ", tolower(m$LIBELLE))
   })
 
-  jour_detail <- reactive({
-    j <- selected_jour()
-    if (is.null(j)) date_veille else j
-  })
-  
-  semaine_detail <- reactive({
-    req(jour_detail())
-    jour_detail()-lubridate::wday(jour_detail(),week_start = 1)+1
+  output$det_serie <- renderPlotly({
+    graph_serie_detail(det_serie(), det_maille(), source = "det_serie")
   })
 
-  output$detail_jour_titre <- renderText({
-    paste0("Journée du ", format(jour_detail(), "%A %d/%m/%Y"))
+  # La période choisie au clic. Le clic rend `customdata` (la date en texte) et
+  # non `x`, qui ne porte qu'un libellé d'axe : as.Date("ven 11/09") lève.
+  det_choisie <- reactiveVal(NULL)
+  observeEvent(event_data("plotly_click", source = "det_serie"), {
+    ev <- event_data("plotly_click", source = "det_serie")
+    d <- suppressWarnings(as.Date(ev$customdata %||% NA))
+    if (length(d) == 1 && !is.na(d)) det_choisie(d)
   })
 
-  output$detail_jour_box <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), jour_detail(), 0,
-                    format_date = "%d/%m", width = "100%",
-                    unite_tva = input$unite_tva)
+  # Changer de maille périme la sélection : un début de semaine n'est pas un
+  # début de mois. On la vide plutôt que de la traîner.
+  observeEvent(det_maille(), { det_choisie(NULL) })
+
+  det_periode <- reactive({
+    s <- det_serie()
+    c <- det_choisie()
+    # Défaut : la dernière période de la fenêtre, celle qu'on vient regarder.
+    if (is.null(c) || is.null(s) || !(c %in% s$PERIODE)) {
+      if (is.null(s) || !nrow(s)) debut_maille(date_veille, det_maille())
+      else max(s$PERIODE)
+    } else c
   })
 
-  output$detail_jour_produits <- renderDT({
-    datatable_simple(
-      top_produits_periode(DB_PRODUITS, jour_detail(), jour_detail(), n = 15, 
-                           unite_tva = input$unite_tva)
-    )
-  })
-  
-  # Personnel du jour, par secteur (le service est ventilé par créneau dans la
-  # base : on ré-agrège ici pour garder une ligne par secteur)
-  output$detail_jour_travail <- renderDT({
-    datatable_simple(
-      DB_COUTS_TRAVAIL %>%
-        filter(DATE == jour_detail()) %>%
-        group_by(SECTEUR) |>
-        summarise(HEURES = sum(HEURES),
-                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
-                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES, .groups = "drop") |>
-        arrange(SECTEUR) |>
-        transmute(Secteur = SECTEUR, Heures = round(HEURES),
-                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-                  Personnel = format_CA(COUT_TRAVAIL, -1))
-    )
-  })
-  
-  output$detail_jour_travail_semaine <- renderDT({
-    datatable_simple(
-      DB_COUTS_TRAVAIL %>%
-        filter(PREMIER_JOUR_SEMAINE == semaine_detail()) %>%
-        group_by(SECTEUR) |> 
-        summarise(HEURES = sum(HEURES),
-                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
-                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES) |> 
-        transmute(Secteur = SECTEUR, Heures = round(HEURES),
-                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-                  Personnel = format_CA(COUT_TRAVAIL, -1))
-    )
-  })
-  
-  # Matières de la semaine du jour sélectionné, par secteur
-  output$detail_jour_cout <- renderDT({
-    datatable_simple(
-      DB_COUTS_MATIERE() %>%
-        couts_matiere_du_jour(jour_detail()) %>%
-        transmute(Secteur = SECTEUR,
-                  Période = ifelse(GRANULARITE == "mois",
-                                   format(PERIODE, "%B %Y"),
-                                   paste("Sem.", format(PERIODE, "%d/%m"))),
-                  Achats = format_CA(ACHATS, -1),
-                  Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
-                  Matières = format_CA(COUT_MATIERE, -1))
-    )
+  det_resume <- reactive({
+    resume_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                  if (exists("DB_TICKET")) DB_TICKET else NULL,
+                  det_periode(), det_maille())
   })
 
-  #### Volet "Détail" — Par semaine / Par mois ####
-  # Un même bloc sert les deux sous-onglets (suffixes "sem" et "mois").
-  registre_detail_periode <- function(sfx, unite, defaut_debut) {
-    id <- function(x) paste0("detail_", sfx, "_", x)
-    src <- paste0("detail_", sfx)
+  output$det_titre_periode <- renderText({
+    libelle_maille(det_periode(), det_maille())
+  })
 
-    observe({
-      req(ONGLETS_PRETS())
-      updateDateRangeInput(session, id("periode"),
-                           start = defaut_debut, end = date_veille)
-    })
+  output$det_bandeau <- renderUI({ bandeau_ailleurs(det_maille()) })
+  output$det_kpi <- renderUI({ kpi_detail(det_resume()) })
 
-    periode <- reactive({
-      rng <- input[[id("periode")]]
-      if (is.null(rng) || any(is.na(rng))) c(defaut_debut, date_veille) else rng
-    })
+  output$det_titre_compo <- renderText({
+    maille_detail(det_maille())$COMPO_TITRE
+  })
 
-    output[[id("graph")]] <- renderPlotly({
-      p <- periode()
-      graph_ca_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2],
-                       unite = unite, source = src)
-    })
+  output$det_composition <- renderPlotly({
+    graph_composition_detail(
+      composition_detail(UPD_KPI_SIMPLE(),
+                         if (exists("DB_TICKET")) DB_TICKET else NULL,
+                         det_periode(), det_maille(), input$unite_tva),
+      det_maille())
+  })
 
-    # Période sélectionnée au clic (défaut : la dernière période connue)
-    choisie <- reactiveVal(NULL)
-    observeEvent(event_data("plotly_click", source = src), {
-      ev <- event_data("plotly_click", source = src)
-      if (!is.null(ev$x)) choisie(debut_periode(as.Date(ev$x), unite))
-    })
+  output$det_repartition <- renderPlotly({
+    graph_repartition_detail(
+      repartition_detail(UPD_KPI_SIMPLE(), det_periode(), det_maille()))
+  })
 
-    periode_sel <- reactive({
-      p <- choisie()
-      if (is.null(p)) debut_periode(date_veille, unite) else p
-    })
-    
-    bornes <- reactive({
-      d1 <- periode_sel()
-      list(d1 = d1, d2 = fin_periode(d1, unite))
-    })
+  output$det_produits <- renderDT({
+    datatable_simple(table_produits_detail(
+      produits_detail(DB_PRODUITS, det_periode(), det_maille(),
+                      n = 25, unite_tva = input$unite_tva),
+      input$unite_tva))
+  })
 
-    ca <- reactive({
-      b <- bornes()
-      UPD_KPI_SIMPLE() |> filter(DATE >= b$d1, DATE <= b$d2) |>
-        pull(ventes) |> sum(na.rm = TRUE)
-    })
+  output$det_produits_heures <- renderPlotly({
+    graph_produits_heures(
+      produits_par_heure(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                         det_periode(), det_maille(),
+                         unite_tva = input$unite_tva))
+  })
 
-    # Matieres : ventilees par secteur dans la compta, etalees au jour. Sur un
-    # mois entier le total est exact ; sur une semaine c'est un prorata, signale
-    # comme tel plutot que presente comme une mesure hebdomadaire.
-    cout_matiere <- reactive({
-      b <- bornes()
-      matieres_par_secteur(DB_COUTS_MATIERE_JOUR(), b$d1, b$d2)
-    })
+  # --- Les tickets
+  det_tickets <- reactive({
+    b <- list(d1 = debut_maille(det_periode(), det_maille()),
+              d2 = fin_maille(det_periode(), det_maille()))
+    tickets_detail(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                   b$d1, b$d2, input$unite_tva)
+  })
 
-    # Travail : DB_HEURES tant qu'elle couvre la periode, sinon le total de la
-    # comptabilite (qui n'a pas de ventilation par secteur).
-    cout_travail <- reactive({
-      b <- bornes()
-      travail_par_secteur(DB_COUTS_TRAVAIL,
-                          if (exists("DB_COMPTA")) DB_COMPTA else NULL,
-                          b$d1, b$d2)
-    })
+  output$det_tickets_alerte <- renderUI({
+    if (tickets_disponibles(if (exists("DB_TICKET")) DB_TICKET else NULL))
+      return(NULL)
+    bandeau_alerte(
+      TRUE,
+      paste0("Le cache actuel ne conserve pas l'identifiant de ticket : les ",
+             "lignes de caisse ne peuvent pas être regroupées. La colonne est ",
+             "désormais enregistrée par l'import, elle apparaîtra au prochain ",
+             "import complet. En attendant, « Quand se vend quoi » reste ",
+             "disponible : il ne dépend que de l'heure et du produit."),
+      titre = "Tickets pas encore dans le cache", couleur = COUL_AMBRE,
+      icone = "circle-info")
+  })
 
-    apercu <- reactive({
-      b <- bornes()
-      req(exists("DB_COMPTA"))
-      apercu_exploitation(DB_COMPTA, b$d1, b$d2)
-    })
+  output$det_tickets <- renderDT({
+    tk <- det_tickets()
+    tbl <- table_tickets(tk, input$unite_tva)
+    if ("Info" %in% names(tbl)) return(datatable_simple(tbl))
+    datatable(tbl, selection = "single", rownames = FALSE,
+              options = list(pageLength = 12, dom = "ftp", scrollX = TRUE,
+                             language = list(search = "Filtrer :")))
+  })
 
-    output[[id("kpi")]] <- renderUI({
-      a <- apercu()
-      if (is.null(a))
-        return(div(class = "text-muted small",
-                   "Pas de comptabilite sur cette periode. Les indicateurs de ",
-                   "gestion sont mensuels : ils apparaissent sur le sous-onglet ",
-                   "Par mois."))
-      kpi_exploitation(a, "mois")
-    })
+  output$det_paniers <- renderPlotly({ graph_paniers(det_tickets()) })
 
-    marge <- reactive({ marge_par_secteur(cout_matiere(), cout_travail(), ca()) })
+  det_ticket_choisi <- reactive({
+    tk <- det_tickets()
+    if (is.null(tk) || !nrow(tk)) return(NULL)
+    i <- input$det_tickets_rows_selected
+    if (is.null(i)) NULL else tk$ID_TICKET[i]
+  })
 
-    output[[id("titre")]] <- renderText({
-      d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      paste0(label_periode(d1, unite), "  (",
-             format(d1, "%d/%m"), " → ", format(d2, "%d/%m/%Y"), ")")
-    })
+  output$det_titre_ticket <- renderText({
+    id <- det_ticket_choisi()
+    if (is.null(id)) "Détail d'un ticket" else paste0("Ticket ", id)
+  })
 
-    output[[id("repartition")]] <- renderPlotly({
-      graph_repartition_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                                periode_sel(), unite = unite)
-    })
+  output$det_ticket_lignes <- renderDT({
+    datatable_simple(lignes_ticket(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                                   det_ticket_choisi(), input$unite_tva))
+  })
 
-    output[[id("box")]] <- renderUI({
-      d1 <- periode_sel()
-      box_ventes_total(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), d1,
-                       as.numeric(fin_periode(d1, unite) - d1),
-                       titre = label_periode(d1, unite), is_semaine = TRUE,
-                       unite_tva = input$unite_tva)
-    })
-    
-    output[[id("travail")]] <- renderDT({
-      t <- cout_travail()
-      if (is.null(t) || !nrow(t))
-        return(datatable_simple(tibble(`Coût du travail` =
-          "Aucune donnée d'heures ni de comptabilité sur la période.")))
-      if (identical(t$SOURCE[1], "heures"))
-        datatable_simple(t |> transmute(
-          Secteur = SECTEUR, Heures = round(HEURES),
-          `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-          Personnel = format_CA(COUT_TRAVAIL, -1)))
-      else
-        # Hors couverture de DB_HEURES : la compta donne le total, pas la
-        # ventilation par secteur ni les heures.
-        datatable_simple(t |> transmute(
-          Secteur = SECTEUR, Personnel = format_CA(COUT_TRAVAIL, -1),
-          Source = "comptabilité"))
-    })
-
-    output[[id("cout")]] <- renderDT({
-      m <- cout_matiere()
-      if (is.null(m) || !nrow(m))
-        return(datatable_simple(tibble(`Coût matière` =
-          "Aucune comptabilité sur la période.")))
-      datatable_simple(m |> transmute(
-        Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
-        Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
-        `Matières` = format_CA(COUT_MATIERE, -1)))
-    })
-
-    output[[id("prorata")]] <- renderUI({
-      m <- cout_matiere()
-      bandeau_alerte(!is.null(m) && nrow(m) && isTRUE(m$PRORATA[1]),
-        paste("La comptabilité est mensuelle : les coûts affichés ici sont un",
-              "prorata du mois sur les jours de la période. Le total du mois est",
-              "juste, sa répartition à l'intérieur du mois est une hypothèse."),
-        titre = "Coûts au prorata", couleur = COUL_AMBRE,
-        icone = "circle-info")
-    })
-
-    output[[id("marge")]] <- renderDT({
-      m <- marge()
-      if (is.null(m) || !nrow(m))
-        return(datatable_simple(tibble(Marge = "Aucun coût sur la période.")))
-      datatable_simple(m |> transmute(
-        Secteur = SECTEUR,
-        Personnel = format_CA(COUT_TRAVAIL, -1),
-        `Matières` = format_CA(COUT_MATIERE, -1),
-        Total = format_CA(TOTAL, -1),
-        # `Chiffre d'affaires` = format_CA(CA, -1),
-        `% du CA` = format_pct(PCT_CA)))
-    })
-
-    output[[id("produits")]] <- renderDT({
-      d1 <- periode_sel()
-      datatable_simple(
-        top_produits_periode(DB_PRODUITS, d1, fin_periode(d1, unite), n = 20, 
-                             unite_tva = input$unite_tva)
-      )
-    })
-  }
-
-  registre_detail_periode("sem",  "semaine", date_veille - weeks(26))
-  registre_detail_periode("mois", "mois",    floor_date(date_veille, "month") %m-% months(12))
+  output$det_heures <- renderDT({
+    r <- det_resume()
+    datatable_simple(table_heures_pointees(
+      heures_pointees(DB_COUTS_TRAVAIL, det_periode(), det_maille()),
+      if (is.null(r)) NA_real_ else r$CA))
+  })
 
   #### Volet "Détail" — Par produit ####
   

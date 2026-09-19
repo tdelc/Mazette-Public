@@ -47,7 +47,7 @@ ONGLETS <- tibble::tribble(
   ~CLE,               ~TITRE,               ~ICONE,                    ~UI,
   # "tab_accueil",      "Accueil",            "home",                    "ui_accueil",
   "tab_maintenant",   "Maintenant",         "gauge-high",              "ui_maintenant",
-  "tab_detail",       "Chiffre d'affaires", "magnifying-glass-chart",  "ui_detail",
+  "tab_detail",       "Détails",            "magnifying-glass-chart",  "ui_detail",
   "tab_historique",   "Historique",         "chart-line",              "ui_historique",
   "tab_annee",        "Année",              "calendar-check",          "ui_annee",
   "tab_boissons",     "Boissons",           "champagne-glasses",       "ui_boissons",

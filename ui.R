@@ -1323,128 +1323,185 @@ ui_historique <- function() {
 
 
 
+# Volet « Détails » : la loupe sur UNE période, au grain le plus fin.
+#
+# La lecture descend, et c'est toute la structure : la fenêtre d'ensemble, puis
+# la période qu'on y choisit, puis sa composition, puis ce qui s'est vendu,
+# puis — repliés — le grain fin et les tickets.
+#
+# Les trois mailles ne sont plus trois sous-onglets mais un bouton de la barre
+# latérale, comme la granularité de Compta et de Travail. Un seul chemin de
+# lecture au lieu de trois presque identiques, et le même geste partout dans le
+# dashboard.
+# Deux axes, deux sous-onglets : le TEMPS (une période qu'on détaille) et le
+# PRODUIT (un produit qu'on suit dans le temps). Ils ne se lisent pas ensemble
+# et ne partagent aucun réglage — les mêler dans une seule page était une part
+# de la densité qu'on cherche à réduire.
 ui_detail <- function() {
   navset_card_tab(
-    selected = "sem",
+    id = "detail_tabs",
     nav_panel(
-      value = 'jour',
-      title = "Par jour",
+      title = "Périodes",
       icon = icon("calendar-day"),
-      layout_columns(
-        fill = FALSE,
-        col_widths = c(8, 4),
-        dateRangeInput("detail_periode", "Période",
-                       start = NULL, end = NULL,
-                       separator = " → ", language = "fr",
-                       weekstart = 1, format = "dd/mm/yyyy"),
-        div(class = "small text-muted align-self-end pb-2",
-            "Cliquez sur une barre pour détailler la journée.")
-      ),
-      plotlyOutput("detail_jour_graph", height = "300px"),
-      legende_objectif(),
-      hr(),
-      card_header(textOutput("detail_jour_titre", inline = TRUE)),
-      layout_columns(
-        col_widths = c(2, 5, 5),
-        uiOutput("detail_jour_box"),
-        div(
-          h6("Coût du jour", class = "section-sub"),
-          DTOutput("detail_jour_travail"),
-          h6("Coût de la semaine", class = "section-sub"),
-          DTOutput("detail_jour_travail_semaine"),
-          DTOutput("detail_jour_cout")
-        ),
-        div(
-          h6("Produits du jour", class = "section-sub"),
-          DTOutput("detail_jour_produits")
-        )
-      )
+      ui_detail_periodes()
     ),
     nav_panel(
-      value = 'sem',
-      title = "Par semaine",
-      icon = icon("calendar-week"),
-      ui_detail_periode("sem")
-    ),
-    nav_panel(
-      value = 'mois',
-      title = "Par mois",
-      icon = icon("calendar-days"),
-      ui_detail_periode("mois")
-    ),
-    nav_panel(
-      value = 'produit',
       title = "Par produit",
       icon = icon("box"),
-      layout_columns(
-        col_widths = c(5, 7),
-        div(
-          dateRangeInput("detail_produit_periode", "Période",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          h6("Produits (sélectionnez une ligne)", class = "section-sub"),
-          DTOutput("detail_produit_liste")
-        ),
-        div(
-          card_header(textOutput("detail_produit_titre", inline = TRUE)),
-          plotlyOutput("detail_produit_graph", height = "280px"),
-          div(class = "mt-3", DTOutput("detail_produit_table"))
+      ui_detail_produit()
+    )
+  )
+}
+
+ui_detail_periodes <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Détails", width = 310,
+      radioButtons("det_maille", "Maille",
+                   setNames(MAILLES_DETAIL$CLE, MAILLES_DETAIL$LIBELLE),
+                   selected = "jour"),
+      dateRangeInput("det_fenetre", "Fenêtre observée",
+                     start = NULL, end = NULL, separator = " → ",
+                     language = "fr", weekstart = 1, format = "dd/mm/yyyy"),
+      div(class = "small text-muted",
+          "Le graphe du haut couvre cette fenêtre. ", tags$b("Cliquez une barre"),
+          " pour détailler la période qu'elle représente — tout ce qui suit s'y",
+          " rapporte."),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Ce volet ne porte que des ventes"), " : chiffre d'affaires,",
+          " produits, heures de vente, tickets. Aucun coût, aucune marge.",
+          tags$br(), tags$br(),
+          "La comptabilité est mensuelle : à la semaine, elle ne peut être",
+          " qu'un prorata — et un prorata affiché finit par se lire comme une",
+          " mesure. Les coûts sont donc dans ", tags$b("Compta"), ", les heures",
+          " dans ", tags$b("Travail"), ".")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(textOutput("det_titre_serie", inline = TRUE)),
+      plotlyOutput("det_serie", height = "300px"),
+      legende_objectif(),
+      div(class = "small text-muted mt-1",
+          "Chaque barre est une période de la maille choisie. Sa couleur dit",
+          " l'atteinte de l'objectif, le trait pointillé l'objectif lui-même.")
+    ),
+    uiOutput("det_bandeau", class = "zone-alerte"),
+    div(class = "section-sub mt-2", textOutput("det_titre_periode", inline = TRUE)),
+    uiOutput("det_kpi"),
+    # L'accordéon EST la progressivité : ce qui répond à « comment ça s'est
+    # passé » reste ouvert, ce qui répond à « pourquoi, dans le détail » se
+    # déplie à la demande. Sans lui, la page redeviendrait le mur qu'elle était.
+    accordion(
+      id = "det_sections",
+      open = c("compo", "vendu"),
+      accordion_panel(
+        value = "compo", title = "Comment la période se compose",
+        icon = icon("chart-column"),
+        layout_columns(
+          col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+          div(h6(textOutput("det_titre_compo", inline = TRUE), class = "section-sub"),
+              plotlyOutput("det_composition", height = "300px"),
+              div(class = "small text-muted",
+                  "Une barre grisée et suivie d'un ", tags$b("*"), " est une",
+                  " période à cheval — une semaine partagée entre deux mois,",
+                  " par exemple. Seuls ses jours affichés y sont comptés : le",
+                  " total est juste, mais elle ne se compare pas aux autres.")),
+          div(h6("Nature et moment", class = "section-sub"),
+              plotlyOutput("det_repartition", height = "300px"),
+              div(class = "small text-muted",
+                  "Les deux seuls axes que la table des ventes porte sans",
+                  " recalcul — donc les deux seuls qui ne puissent pas diverger",
+                  " d'un autre écran."))
         )
+      ),
+      accordion_panel(
+        value = "vendu", title = "Ce qui s'est vendu",
+        icon = icon("list-ol"),
+        DTOutput("det_produits"),
+        div(class = "small text-muted mt-1",
+            tags$b("Cumul"), " : la part du CA atteinte en descendant la liste.",
+            " Il dit en combien de produits se fait la période.")
+      ),
+      accordion_panel(
+        value = "heures", title = "Quand se vend quoi",
+        icon = icon("clock"),
+        plotlyOutput("det_produits_heures", height = "420px"),
+        div(class = "small text-muted mt-1",
+            "L'intensité est la ", tags$b("quantité"), " et non le CA : on",
+            " cherche le moment où un produit part, pas celui où il rapporte.",
+            " Les douze premiers produits de la période seulement — au-delà, la",
+            " carte devient un nuage de cases vides.")
+      ),
+      accordion_panel(
+        value = "tickets", title = "Les tickets",
+        icon = icon("receipt"),
+        uiOutput("det_tickets_alerte", class = "zone-alerte"),
+        layout_columns(
+          col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+          div(h6("Liste des tickets (sélectionnez une ligne)", class = "section-sub"),
+              DTOutput("det_tickets")),
+          div(h6("Distribution des paniers", class = "section-sub"),
+              plotlyOutput("det_paniers", height = "260px"),
+              h6(textOutput("det_titre_ticket", inline = TRUE),
+                 class = "section-sub mt-2"),
+              DTOutput("det_ticket_lignes"))
+        )
+      ),
+      accordion_panel(
+        value = "pointage", title = "Les heures pointées",
+        icon = icon("user-clock"),
+        DTOutput("det_heures"),
+        div(class = "small text-muted mt-1",
+            "Les heures ", tags$b("pointées"), " dans Horeko, pas les heures",
+            " recalées sur la paie : à cette maille, la valeur recalée est une",
+            " répartition d'un total mensuel, pas une mesure du jour.")
       )
     )
   )
 }
+
+# Un produit, suivi semaine après semaine. Le seul écran du dashboard qui
+# prenne le PRODUIT comme axe principal : Boissons et Nourriture regardent des
+# familles, Comparaison regarde des périodes.
+ui_detail_produit <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Par produit", width = 310,
+      dateRangeInput("detail_produit_periode", "Période",
+                     start = NULL, end = NULL, separator = " → ",
+                     language = "fr", weekstart = 1, format = "dd/mm/yyyy"),
+      div(class = "small text-muted",
+          "Sélectionnez une ligne du tableau pour suivre un produit.",
+          tags$br(), tags$br(),
+          tags$b("Part"), " : ce que le produit pèse dans le CA total de la",
+          " semaine. ", tags$b("Part catégorie"), " : ce qu'il pèse dans sa",
+          " propre famille — c'est celle-là qui dit s'il gagne du terrain sur",
+          " ses voisins ou si toute la famille monte.")
+    ),
+    layout_columns(
+      col_widths = breakpoints(sm = 12, lg = c(5, 7)),
+      card(
+        full_screen = TRUE,
+        card_header("Produits de la période"),
+        DTOutput("detail_produit_liste")
+      ),
+      card(
+        full_screen = TRUE,
+        card_header(textOutput("detail_produit_titre", inline = TRUE)),
+        plotlyOutput("detail_produit_graph", height = "300px"),
+        div(class = "mt-2", DTOutput("detail_produit_table"))
+      )
+    )
+  )
+}
+
 
 # Drill-down "Par semaine" / "Par mois" de l'onglet Détail : même principe que
 # "Par jour" — on clique une barre pour détailler la période.
 # Périmètre : ce volet reste centré sur les VENTES (répartition, produits).
 # Le résultat financier de la période (coûts, marge, KPI) est dans l'onglet
 # Compta, qui offre la même granularité semaine / mois.
-ui_detail_periode <- function(sfx) {
-  id <- function(x) paste0("detail_", sfx, "_", x)
-
-  tagList(
-    layout_columns(
-      fill = FALSE,
-      col_widths = c(8, 4),
-      dateRangeInput(id("periode"), "Période",
-                     start = NULL, end = NULL,
-                     separator = " → ", language = "fr",
-                     weekstart = 1, format = "dd/mm/yyyy"),
-      div(class = "small text-muted align-self-end pb-2",
-          "Cliquez sur une barre pour détailler la période.")
-    ),
-    plotlyOutput(id("graph"), height = "300px"),
-    legende_objectif(),
-    hr(),
-    card_header(textOutput(id("titre"), inline = TRUE)),
-    layout_columns(
-      col_widths = c(7, 5),
-      div(
-        h6("Répartition du CA sur la période", class = "section-sub"),
-        plotlyOutput(id("repartition"), height = "260px"),
-        layout_columns(
-          col_widths = c(4, 8),
-          uiOutput(id("box")),
-          div(
-            h6("Coût de la période", class = "section-sub"),
-            uiOutput(id("prorata")),
-            DTOutput(id("travail")),
-            DTOutput(id("cout")),
-            h6("Coûts et marge par secteur", class = "section-sub mt-2"),
-            DTOutput(id("marge"))
-          )
-        ),
-        uiOutput(id("kpi"))
-      ),
-      div(
-        h6("Top produits de la période", class = "section-sub"),
-        DTOutput(id("produits"))
-      )
-    )
-  )
-}
 
 ui_maintenant <- function() {
   tagList(

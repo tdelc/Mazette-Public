@@ -363,7 +363,7 @@ R -e 'shiny::runApp()'</code></pre>
       <tbody>
         <tr><td>Accueil</td><td><code>tab_accueil</code></td><td>Une carte par onglet, avec l&rsquo;information marquante de chacun.</td></tr>
         <tr><td>Maintenant</td><td><code>tab_maintenant</code></td><td>CA de la veille, de la semaine et du mois, face aux objectifs.</td></tr>
-        <tr><td>Chiffre d&rsquo;affaires</td><td><code>tab_detail</code></td><td>D&eacute;tail du CA par p&eacute;riode, cr&eacute;neau et produit.</td></tr>
+        <tr><td>D&eacute;tails</td><td><code>tab_detail</code></td><td>La loupe sur <em>une</em> p&eacute;riode, au grain le plus fin&nbsp;: du graphe d&rsquo;ensemble jusqu&rsquo;au ticket. Deux sous-onglets, <strong>P&eacute;riodes</strong> (jour, semaine ou mois, au choix en barre lat&eacute;rale) et <strong>Par produit</strong>.</td></tr>
         <tr><td>Historique</td><td><code>tab_historique</code></td><td>S&eacute;ries longues et comparaisons dans le temps.</td></tr>
         <tr><td>Ann&eacute;e</td><td><code>tab_annee</code></td><td>Vue annuelle&nbsp;: &eacute;cart aux objectifs, marge cumul&eacute;e, ann&eacute;e pr&eacute;c&eacute;dente.</td></tr>
         <tr><td>F&ucirc;ts</td><td><code>tab_futs</code></td><td>Suivi des volumes par brassin et pr&eacute;diction d&rsquo;&eacute;puisement.</td></tr>
@@ -972,6 +972,42 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
     </div>
 
     <div class="note" data-profondeur="detail">
+      <span class="l">Le volet D&eacute;tails&nbsp;: ce qu&rsquo;on y a retir&eacute;, et pourquoi</span>
+      <p>
+        L&rsquo;onglet portait quatre sous-onglets presque identiques &mdash; par jour, par semaine,
+        par mois, par produit &mdash; chacun r&eacute;p&eacute;tant co&ucirc;ts, marge et ratios de gestion. Trois
+        d&eacute;fauts en d&eacute;coulaient&nbsp;: une page dense o&ugrave; l&rsquo;information utile se noyait, une
+        duplication de chiffres qui vivent mieux ailleurs, et un risque de divergence
+        entre deux &eacute;crans cens&eacute;s dire la m&ecirc;me chose.
+      </p>
+      <p>
+        Les trois mailles temporelles sont devenues un bouton de la barre lat&eacute;rale, comme
+        la granularit&eacute; de Compta et de Travail&nbsp;: un seul chemin de lecture au lieu de
+        trois, et le m&ecirc;me geste partout. La lecture <strong>descend</strong>&nbsp;: la fen&ecirc;tre
+        d&rsquo;ensemble, la p&eacute;riode qu&rsquo;on y choisit d&rsquo;un clic, sa composition, ce qui s&rsquo;est
+        vendu, puis &mdash; repli&eacute;s dans un accord&eacute;on &mdash; le croisement produit&nbsp;&times;&nbsp;heure,
+        les tickets et les heures point&eacute;es.
+      </p>
+      <p>
+        <strong>La comptabilit&eacute; en a &eacute;t&eacute; retir&eacute;e enti&egrave;rement.</strong> Elle est mensuelle&nbsp;:
+        pour l&rsquo;afficher sur une semaine, la version pr&eacute;c&eacute;dente &eacute;talait le mois au prorata
+        des jours et le signalait par un bandeau. Mais un prorata affich&eacute; reste un chiffre
+        lu&nbsp;: on retenait &laquo;&nbsp;la semaine a co&ucirc;t&eacute; 4&nbsp;200&nbsp;&euro; de mati&egrave;res&nbsp;&raquo; alors que
+        personne ne l&rsquo;a mesur&eacute;. Le bandeau pr&eacute;venait&nbsp;; il ne suffisait pas. Un chiffre
+        qu&rsquo;on ne peut pas mesurer &agrave; cette maille ne s&rsquo;affiche donc plus &agrave; cette maille, et
+        un renvoi dit o&ugrave; le trouver &mdash; ce qui est plus utile qu&rsquo;une estimation.
+      </p>
+      <p>
+        Deux pr&eacute;cautions de lecture s&rsquo;y sont ajout&eacute;es. Les <strong>heures point&eacute;es</strong>
+        affich&eacute;es sont celles d&rsquo;Horeko et non les heures recal&eacute;es sur la paie&nbsp;: &agrave; la maille
+        du jour, la valeur recal&eacute;e est la r&eacute;partition d&rsquo;un total mensuel, pas une mesure.
+        Et une <strong>p&eacute;riode &agrave; cheval</strong> &mdash; une semaine partag&eacute;e entre deux mois &mdash;
+        est gris&eacute;e et marqu&eacute;e d&rsquo;un ast&eacute;risque&nbsp;: seuls ses jours affich&eacute;s y sont compt&eacute;s,
+        le total est juste, mais elle ne se compare pas aux autres barres.
+      </p>
+    </div>
+
+    <div class="note" data-profondeur="detail">
       <span class="l">Pourquoi <code>DB_TICKET</code> est stock&eacute; en deux morceaux</span>
       <p>
         Six colonnes de <code>DB_TICKET</code> sont enti&egrave;rement d&eacute;termin&eacute;es par
@@ -982,6 +1018,16 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
       <p>
         La fonction sait reconna&icirc;tre un ancien <code>.RData</code> qui contient d&eacute;j&agrave; la forme
         compl&egrave;te, et le laisse tel quel.
+      </p>
+      <p>
+        <code>ID_TICKET</code> avait &eacute;t&eacute; &eacute;cart&eacute; avec le reste, et c&rsquo;&eacute;tait coh&eacute;rent&nbsp;: rien ne
+        s&rsquo;en servait. Le volet D&eacute;tails en a besoin &mdash; sans lui, deux lignes de la m&ecirc;me
+        minute sont indiscernables d&rsquo;un m&ecirc;me ticket, et &laquo;&nbsp;nombre de tickets&nbsp;&raquo; comme
+        &laquo;&nbsp;panier moyen&nbsp;&raquo; ne se calculent pas du tout. Le co&ucirc;t a &eacute;t&eacute; <em>mesur&eacute;</em>
+        plut&ocirc;t que suppos&eacute;&nbsp;: <strong>+60&nbsp;Ko</strong> sur un cache de 934&nbsp;Ko, les
+        identifiants croissant avec le temps et se compressant donc tr&egrave;s bien. &Agrave; ce
+        prix-l&agrave;, la question ne se pose pas. Un cache plus ancien n&rsquo;a pas la colonne&nbsp;:
+        le volet le dit et se rabat sur ce qui ne d&eacute;pend que de l&rsquo;heure et du produit.
       </p>
     </div>
   </section>

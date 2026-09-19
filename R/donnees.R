@@ -18,8 +18,24 @@
 # fausses. On garde donc les deux dates, qui coûtent 3 Ko chacune, au lieu du
 # TIMESTAMP en texte qui en coûtait 124.
 
+# Pourquoi ID_TICKET y est revenu
+#
+# Il avait été écarté avec le reste, et c'était cohérent : rien ne s'en servait.
+# Le volet Détails en a désormais besoin — sans lui, deux lignes de la même
+# minute sont indiscernables d'un même ticket, et « nombre de tickets » comme
+# « panier moyen » ne se calculent pas du tout.
+#
+# Le coût a été mesuré plutôt que supposé : sur 245 000 lignes, la colonne
+# ajoute 60 Ko au .RData compressé, soit 6 % de sa taille. Les identifiants
+# croissent avec le temps, donc xz les réduit très bien. À ce prix-là, la
+# question ne se pose pas.
+#
+# NB_CLIENTS coûterait 68 Ko de plus et donnerait le panier PAR PERSONNE. Il
+# est resté dehors faute d'usage : le jour où un écran en aura besoin, il se
+# rajoutera de la même façon.
+
 # Colonnes conservées dans le .RData (le reste se recalcule).
-TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_PRODUIT",
+TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_TICKET", "ID_PRODUIT",
                      "QUANTITE", "PRIX_TOTAL")
 
 # Réduit un DB_TICKET complet à sa forme stockable, et en extrait le référentiel.
@@ -29,7 +45,9 @@ normalise_tickets <- function(db_ticket) {
     DB_TICKET = db_ticket %>%
       mutate(DATE_TS = as_date(ymd_hms(TIMESTAMP, quiet = TRUE)),
              HEURE   = as.integer(hour(ymd_hms(TIMESTAMP, quiet = TRUE)))) %>%
-      select(all_of(TICKET_COLONNES)),
+      # any_of et non all_of : une source d'où ID_TICKET serait absent doit
+      # produire un cache amputé plutôt que faire tomber tout l'import.
+      select(any_of(TICKET_COLONNES)),
     REF_PRODUITS = db_ticket %>%
       distinct(ID_PRODUIT, PRODUIT, PRODUIT_FULL, BOISSON, CATEGORIE,
                TAUX_TVA, VOLUME_CL)
