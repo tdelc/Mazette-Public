@@ -104,8 +104,10 @@ path_resa <- drive_resa$local_path
 
 IMPORT_HIST <- read_excel(path_resa,sheet = "RESA")
 
-IMPORT_RESA_SALLE <- calendar::ic_read(get_path("ICS_SALLE"))
-IMPORT_RESA_EXT <- calendar::ic_read(get_path("ICS_TERRASSE"))
+IMPORT_RESA_SALLE <- NULL
+IMPORT_RESA_EXT <- NULL
+try({IMPORT_RESA_SALLE <- calendar::ic_read(get_path("ICS_SALLE"))},silent=T)
+try({IMPORT_RESA_EXT <- calendar::ic_read(get_path("ICS_TERRASSE"))},silent=T)
 
 # Import des heures planifiées
 
@@ -517,25 +519,34 @@ DB_RESA_HIST <- IMPORT_HIST |>
     A_VENIR = FALSE
   )
 
-DB_RESA_SALLE <- IMPORT_RESA_SALLE |> 
-  transmute(
-    # HEURE_RESA = ymd_hms(DTSTAMP),
-    NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
-    HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
-    HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
-    LOCATION = "SALLE",
-    A_VENIR = TRUE
-  )
+if (is.null(IMPORT_RESA_SALLE)){
+  DB_RESA_SALLE <- NULL
+}else{
+  DB_RESA_SALLE <- IMPORT_RESA_SALLE |> 
+    transmute(
+      # HEURE_RESA = ymd_hms(DTSTAMP),
+      NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
+      HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
+      HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
+      LOCATION = "SALLE",
+      A_VENIR = TRUE
+    )
+}
 
-DB_RESA_EXT <- IMPORT_RESA_EXT |> 
-  transmute(
-    # HEURE_RESA = ymd_hms(DTSTAMP),
-    NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
-    HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
-    HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
-    LOCATION = "TERRASSE",
-    A_VENIR = TRUE
-  )
+if (is.null(IMPORT_RESA_EXT)){
+  DB_RESA_EXT <- NULL
+}else{
+
+  DB_RESA_EXT <- IMPORT_RESA_EXT |> 
+    transmute(
+      # HEURE_RESA = ymd_hms(DTSTAMP),
+      NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
+      HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
+      HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
+      LOCATION = "TERRASSE",
+      A_VENIR = TRUE
+    )
+}
 
 DB_RESA <- rbind(DB_RESA_HIST,DB_RESA_SALLE,DB_RESA_EXT) |> distinct()
 
