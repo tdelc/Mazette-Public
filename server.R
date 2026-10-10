@@ -797,19 +797,53 @@ server <- function(input, output, session) {
 
   # Tout vient de DB_COMPTA. Aucune donnee simulee : si les chiffres ne sont pas
   # la, le volet reste vide.
-  expl_postes <- reactive({
+  # La compta BRUTE, jamais filtrée. C'est elle qui sert à repérer les mois
+  # douteux : la filtrer ici ferait disparaître de la liste le mois qu'on vient
+  # d'écarter, donc sa case, donc l'écartement — une boucle.
+  compta_brute <- reactive({
     req(exists("DB_COMPTA"))
-    postes_exploitation(DB_COMPTA)
+    DB_COMPTA
   })
+
+  compta_improbable <- reactive({
+    periodes_improbables(postes_exploitation(compta_brute()))
+  })
+
+  # Les mois proposés à l'écartement, et ceux que l'utilisateur a cochés.
+  compta_douteux <- reactive({ mois_douteux(compta_improbable()) })
+
+  output$compta_exclusion <- renderUI({
+    d <- compta_douteux()
+    if (!length(d)) return(NULL)
+    div(
+      class = "mb-2 small",
+      checkboxGroupInput(
+        "compta_exclus",
+        label = tagList(
+          tags$b("Écarter de l'analyse"),
+          " — ces mois paraissent incomplets et faussent les comparaisons :"),
+        choices = setNames(as.character(d), etiquette_periode(d, "mois")),
+        selected = isolate(input$compta_exclus), inline = TRUE))
+  })
+
+  # Cocher ÉCARTE, plutôt que décocher conserve. La nuance n'est pas
+  # cosmétique : un checkboxGroupInput sans rien de coché rend NULL, et NULL
+  # serait alors indistinguable de « pas encore affiché ». Dans ce sens-ci,
+  # NULL veut dire « rien d'écarté », ce qui est à la fois le bon défaut et le
+  # bon résultat quand on décoche tout.
+  compta_exclus <- reactive({
+    v <- input$compta_exclus
+    if (is.null(v) || !length(v)) as.Date(character(0)) else as.Date(v)
+  })
+
+  # La compta RETENUE : celle que lisent les trois sous-onglets.
+  compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
+
+  expl_postes <- reactive({ postes_exploitation(compta()) })
 
   # La granularite pilote tout l'onglet : la serie complete est agregee une
   # fois, et la cascade comme le tableau y puisent.
   expl_unite <- reactive(input$expl_unite %||% "mois")
-
-  # Le contrôle de vraisemblance se calcule UNE FOIS, au grain mensuel, et les
-  # trois sous-onglets y puisent. Le recalculer chacun de son côté finirait par
-  # donner trois verdicts sur les mêmes chiffres.
-  compta_improbable <- reactive({ periodes_improbables(expl_postes()) })
 
   expl_serie_complete <- reactive({
     p <- agrege_exploitation(expl_postes(), expl_unite())
@@ -878,11 +912,12 @@ server <- function(input, output, session) {
     dt
   })
   output$expl_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), expl_serie()$PERIODE, expl_unite())
+    bandeau_vraisemblance(compta_improbable(), expl_serie()$PERIODE, expl_unite(),
+                          compta_exclus())
   })
 
   output$expl_controle <- renderUI({
-    ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
+    ctrl <- controle_exploitation(compta(), expl_postes())
     n <- sum(abs(ctrl$ECART) > 1, na.rm = TRUE)
     bandeau_alerte(n > 0, paste0(
       n, " periode(s) ou la marge recomposee differe du solde comptable. ",
@@ -999,7 +1034,8 @@ server <- function(input, output, session) {
   })
 
   output$ana_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), ana_periode(), ana_unite())
+    bandeau_vraisemblance(compta_improbable(), ana_periode(), ana_unite(),
+                          compta_exclus())
   })
 
   output$ana_alerte <- renderUI({
@@ -1072,7 +1108,7 @@ server <- function(input, output, session) {
     req(exists("DB_COMPTA"))
     # Le même gabarit que la série : sans lui, les contributions ne sommeraient
     # plus à l'écart affiché juste au-dessus.
-    contributions_comptes(DB_COMPTA, ana_periode(), ana_ref_periodes(),
+    contributions_comptes(compta(), ana_periode(), ana_ref_periodes(),
                           ana_unite(), ana_offsets())
   })
 
@@ -1114,7 +1150,7 @@ server <- function(input, output, session) {
 
   ana_diagnostic <- reactive({
     req(exists("DB_COMPTA"))
-    diagnostic_compta(DB_COMPTA, ana_serie(), ana_actuel(), ana_unite())
+    diagnostic_compta(compta(), ana_serie(), ana_actuel(), ana_unite())
   })
 
   output$ana_diagnostic <- renderUI({ rendu_diagnostic(ana_diagnostic()) })
@@ -1132,7 +1168,7 @@ server <- function(input, output, session) {
 
   cg_dispo <- reactive({
     req(exists("DB_COMPTA"))
-    periodes_compta(DB_COMPTA, cg_unite())
+    periodes_compta(compta(), cg_unite())
   })
 
   observe({
@@ -1163,14 +1199,15 @@ server <- function(input, output, session) {
   })
 
   output$cg_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), cg_periodes(), cg_unite())
+    bandeau_vraisemblance(compta_improbable(), cg_periodes(), cg_unite(),
+                          compta_exclus())
   })
 
   output$cg_kpi <- renderUI({
-    kpi_compta_generale(DB_COMPTA, cg_periodes(), cg_unite()) })
+    kpi_compta_generale(compta(), cg_periodes(), cg_unite()) })
 
   cg_table_data <- reactive({
-    table_compte_resultat(DB_COMPTA, cg_periodes(),
+    table_compte_resultat(compta(), cg_periodes(),
                           detail = isTRUE(input$cg_detail),
                           en_pct = isTRUE(input$cg_pct),
                           unite = cg_unite())
@@ -1188,11 +1225,16 @@ server <- function(input, output, session) {
   })
 
   output$cg_soldes <- renderPlotly({
-    graph_soldes(DB_COMPTA, cg_periodes(), cg_unite()) })
+    graph_soldes(compta(), cg_periodes(), cg_unite()) })
 
   # Contrôle : un compte que le plan ne sait pas ranger n'entre dans aucun total.
+  #
+  # Les deux diagnostics qui suivent lisent la compta BRUTE, à dessein : ils
+  # répondent à « quels comptes le plan ignore-t-il » et « quand ce compte
+  # a-t-il vécu ». Les amputer des mois écartés masquerait précisément le
+  # compte qu'on cherche.
   output$cg_controle <- renderDT({
-    nc <- comptes_non_classes(DB_COMPTA)
+    nc <- comptes_non_classes(compta_brute())
     if (!nrow(nc))
       return(datatable_simple(tibble(
         Contrôle = "Tous les comptes sont classés par leur numéro.")))
@@ -1203,7 +1245,7 @@ server <- function(input, output, session) {
 
   output$cg_vie <- renderDT({
     datatable_simple(
-      vie_des_comptes(DB_COMPTA) %>%
+      vie_des_comptes(compta_brute()) %>%
         transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
                   Poste = POSTE,
                   `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),

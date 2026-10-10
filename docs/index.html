@@ -434,6 +434,38 @@ R -e 'shiny::runApp()'</code></pre>
         par construction. Les peindre pareil ferait lire le second comme le
         premier.
       </p>
+      <p>
+        <strong>Rep&eacute;rer ne suffit pas&nbsp;: un mois faux pollue aussi les autres.</strong>
+        Il entre dans les m&eacute;dianes, dans les p&eacute;riodes de r&eacute;f&eacute;rence du pont de marge,
+        dans les moyennes de tendance &mdash; un seul septembre &agrave; z&eacute;ro rend illisible
+        la comparaison de tout un trimestre. D&rsquo;o&ugrave;, en t&ecirc;te du volet Compta, une
+        ligne de cases &agrave; cocher&nbsp;: <code>mois_douteux()</code> propose les mois que
+        le contr&ocirc;le juge faux, et <code>ecarte_mois()</code> les retire de
+        <code>DB_COMPTA</code> pour les <em>trois</em> sous-onglets &agrave; la fois.
+      </p>
+      <p>
+        Quatre d&eacute;cisions tiennent ce m&eacute;canisme. L&rsquo;&eacute;cartement est une op&eacute;ration de
+        <strong>lecture</strong>, d&eacute;cid&eacute;e &agrave; la main&nbsp;: le jour o&ugrave; le dashboard
+        choisirait seul les mois &agrave; ignorer, plus personne ne saurait ce qu&rsquo;il
+        regarde. Il est <strong>toujours annonc&eacute;</strong>&nbsp;: le bandeau nomme les
+        mois retir&eacute;s, dans une troisi&egrave;me couleur, neutre, et le dit m&ecirc;me quand il
+        n&rsquo;a plus rien d&rsquo;autre &agrave; signaler &mdash; c&rsquo;est le cas normal apr&egrave;s un
+        &eacute;cartement, et une analyse amput&eacute;e qui se tait est pire qu&rsquo;une analyse
+        pollu&eacute;e. La liste propos&eacute;e se calcule sur la compta <strong>brute</strong>,
+        jamais sur la compta retenue&nbsp;: sinon le mois qu&rsquo;on vient d&rsquo;&eacute;carter
+        dispara&icirc;trait de la liste, donc sa case, donc l&rsquo;&eacute;cartement. Et
+        <strong>cocher &eacute;carte</strong>, plut&ocirc;t que d&eacute;cocher conserve&nbsp;: un
+        <code>checkboxGroupInput</code> sans rien de coch&eacute; rend <code>NULL</code>, qui
+        serait indistinguable de &laquo;&nbsp;pas encore affich&eacute;&nbsp;&raquo;&nbsp;; dans ce sens-ci,
+        <code>NULL</code> veut dire &laquo;&nbsp;rien d&rsquo;&eacute;cart&eacute;&nbsp;&raquo;.
+      </p>
+      <p>
+        Deux diagnostics gardent d&eacute;lib&eacute;r&eacute;ment la compta brute&nbsp;:
+        <code>comptes_non_classes()</code> et <code>vie_des_comptes()</code>. Ils
+        r&eacute;pondent &agrave; &laquo;&nbsp;quels comptes le plan ignore-t-il&nbsp;&raquo; et &laquo;&nbsp;quand ce
+        compte a-t-il v&eacute;cu&nbsp;&raquo;&nbsp;: les amputer masquerait pr&eacute;cis&eacute;ment le compte
+        qu&rsquo;on cherche.
+      </p>
     </div>
     <div class="note" data-profondeur="detail">
       <span class="l">La grammaire du volet Planning</span>

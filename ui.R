@@ -534,6 +534,15 @@ ui_comparaison <- function() {
 }
 
 ui_compta <- function() {
+  tagList(
+    # Au-dessus des trois sous-onglets, parce que l'écartement vaut pour les
+    # trois : un mois retiré de l'analyse ne peut pas réapparaître dans le
+    # compte de résultat d'à côté.
+    #
+    # Pas de classe « zone-alerte » ici : elle masque les blocs vides, et Shiny
+    # suspend alors la sortie pour toujours (cf. reveille_zones_alerte() dans
+    # R/helpers.R). Ce bloc-là se rend vide sans conséquence.
+    uiOutput("compta_exclusion"),
   navset_card_tab(
     id = "compta_tabs",
     nav_panel(
@@ -551,7 +560,7 @@ ui_compta <- function() {
       icon = icon("book"),
       ui_compta_generale()
     )
-  )
+  ))
 }
 
 # Du chiffre d'affaires à la marge d'exploitation, mois par mois.
