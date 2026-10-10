@@ -289,27 +289,62 @@ Deux nouvelles clés dans la feuille des chemins, à côté de `ID_DB_COMPTA` :
 | `ID_ODOO_ANALYTIQUE`  | Le dernier export de lignes analytiques.          |
 | `ID_ODOO_CONTROLE`    | Le rapport agrégé de contrôle.                   |
 
-### 2.7 Le code : un fichier, quatre fonctions
+### 2.7 Le code — écrit : `R/odoo.R`
 
-Un nouveau `R/odoo.R`, sur le modèle de `R/sources_travail.R` : des fonctions
-**pures**, testables sans réseau ni fichier.
+Des fonctions **pures**, sur le modèle de `R/sources_travail.R` : ni réseau, ni
+chemin en dur, ni effet de bord. `R/` est balayé par `global.R`
+(`list.files("R")`), donc le fichier est chargé sans rien déclarer.
 
 ```r
-# Lecture brute. C'est la SEULE fonction que l'API remplacera (cf. §3).
-lit_ecritures_fichier <- function(chemin)        # -> tibble brut
+#### Lecture — la SEULE que l'API remplacera (cf. §3)
+lit_ecritures_fichier(chemin)                  # XLSX, CSV ou TSV
 
-# Mise en forme : types, code de compte, débit/crédit -> magnitude + sens.
-normalise_ecritures   <- function(brut)          # -> une ligne par écriture
+#### Mise en forme
+normalise_ecritures(brut, colonnes = ODOO_COLONNES)
 
-# Agrégation mensuelle : c'est elle qui produit DB_COMPTA.
-compta_mensuelle      <- function(ecritures, secteurs = NULL)
+#### Le secteur des comptes d'achat
+SECTEURS_ACHATS                                # la table du §2.4
+secteur_par_compte(comptes, table = SECTEURS_ACHATS)
 
-# Contrôles. Renvoie une table, jamais un stop().
-controle_ecritures    <- function(ecritures, compta, controle = NULL)
+#### Agrégation -> DB_COMPTA
+compta_mensuelle(ecritures, secteurs = SECTEURS_ACHATS)
+
+#### Garde-fous — rendent une table, jamais un stop()
+controle_ecritures(ecritures, compta = NULL, reprise = NULL)
+
+#### La couture avec l'ancienne source
+BASCULE_ODOO                                   # 2026-07-01
+coud_compta(ancien, odoo, bascule = BASCULE_ODOO)
+controle_couture(ancien, odoo, bascule = BASCULE_ODOO)
 ```
 
-Puis, dans `import.R`, un bloc qui enchaîne les quatre et **remplace** le
-`readRDS("DB_COMPTA.rds")` de la ligne 91.
+**Essayer sur un export, dès maintenant**, depuis la racine du dépôt :
+
+```r
+source("global.R")
+e  <- normalise_ecritures(lit_ecritures_fichier("outputs/ecritures.xlsx"))
+cp <- compta_mensuelle(e)
+controle_ecritures(e, cp, reprise = "2026-06-30")   # à lire EN PREMIER
+postes_exploitation(cp)                              # le compte de résultat
+```
+
+Rien n'est encore branché dans `import.R` : le module est inerte tant qu'un
+export n'existe pas. Le branchement est l'étape 4 du §4, et il vient **après**
+la comparaison avec l'ancien `.rds`.
+
+#### Où poser les fichiers
+
+| Quoi | Où | Pourquoi |
+|---|---|---|
+| Le code | `R/odoo.R` | chargé automatiquement par `global.R` |
+| Les tests | `tests/test_odoo.R`, `tests/lancer.R` | `Rscript tests/lancer.R` depuis la racine |
+| Un export, pour essayer | `outputs/ecritures.xlsx` | `.gitignore` y exclut `*.xlsx`, `*.csv`, `*.tsv` |
+| Un export, en production | le Drive, clé `ID_ODOO_ECRITURES` | même mécanique que `ID_DB_COMPTA` |
+
+**Jamais de données comptables dans le dépôt** : `Mazette-Public` est public.
+C'est aussi pourquoi `tests/fixtures/ecritures_odoo.tsv` est synthétique — même
+structure, mêmes codes de compte, mêmes pièges de format, mais des partenaires
+et des montants inventés.
 
 ### 2.8 Les contrôles à écrire, et pourquoi chacun
 

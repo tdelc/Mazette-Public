@@ -19,3 +19,7 @@ IMPORT 2023-2024.RData
 HISTO_COUTS_MATIERE.rds
 DB_COMPTA.rds
 *.xlsm
+
+# Exports comptables : jamais dans un dépôt public.
+outputs/*.csv
+outputs/*.tsv

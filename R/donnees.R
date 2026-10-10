@@ -56,6 +56,18 @@
 REF_COLONNES <- c("ID_PRODUIT", "PRODUIT", "PRODUIT_FULL", "BOISSON",
                   "CATEGORIE", "TAUX_TVA", "VOLUME_CL")
 
+# Taux de TVA qui désignent de la nourriture.
+#
+# Le test ne portait que sur le 12 % (nourriture sur place), et tout le reste
+# tombait dans « Boisson » — 6 % compris. Or le 6 % est de la nourriture à
+# emporter, et rien d'autre : chez Mazette, le compte de vente correspondant
+# (700100) ne porte que ça. Aucune de ces ventes n'arrivait donc du bon côté.
+#
+# Le cas n'est pas théorique : import.R force explicitement « Pain à emporter »
+# à 6 %. Les volumes sont faibles aujourd'hui, mais une règle fausse ne devient
+# pas juste en portant sur peu.
+TAUX_NOURRITURE <- c(0.06, 0.12)
+
 # Colonnes conservées dans le .RData (le reste se recalcule).
 TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_TICKET", "ID_REF",
                      "QUANTITE", "PRIX_TOTAL")
@@ -118,7 +130,8 @@ hydrate_donnees <- function(db_ticket, ref_produits) {
       # POSIXct à la minute près nulle, ce qui suffit à tous les appelants.
       TIMESTAMP          = as.POSIXct(DATE_TS) + hours(HEURE),
       CD_HEURE           = if_else(HEURE < 17, "Midi (<17h)", "Soir (>=17h)"),
-      CD_SECTEUR         = if_else(TAUX_TVA == 0.12, "Nourriture", "Boisson"),
+      CD_SECTEUR         = if_else(TAUX_TVA %in% TAUX_NOURRITURE,
+                                   "Nourriture", "Boisson"),
       CD_PERIODE_JOUR    = if_else(HEURE %in% 8:16, "Jour", "Soir"),
       CD_PERIODE_SEMAINE = if_else(
         wday(DATE_TS, week_start = 1) %in% c(6, 7)
