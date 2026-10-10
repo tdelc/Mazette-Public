@@ -590,6 +590,9 @@ ui_exploitation <- function() {
     # grille bslib lui accorde quand même son gap — d'où une bande blanche
     # quand il n'y a rien à signaler (cf. www/style.css).
     uiOutput("expl_controle", class = "zone-alerte"),
+    # Au-dessus de tout le reste : un chiffre invraisemblable rend faux tout ce
+    # qui en dérive, il doit donc se lire AVANT les graphes, pas à côté.
+    uiOutput("expl_vraisemblance", class = "zone-alerte"),
     uiOutput("expl_alerte_periode", class = "zone-alerte"),
     uiOutput("expl_kpi"),
     card(
@@ -663,6 +666,7 @@ ui_compta_analyse <- function() {
           "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
           " chiffre d'affaires seul.")
     ),
+    uiOutput("ana_vraisemblance", class = "zone-alerte"),
     uiOutput("ana_alerte", class = "zone-alerte"),
     uiOutput("ana_kpi"),
     card(
@@ -786,6 +790,7 @@ ui_compta_generale <- function() {
           tags$b("Soldes"), " : calculés en cumulant les postes qui les",
           " précèdent, selon leur définition comptable.")
     ),
+    uiOutput("cg_vraisemblance", class = "zone-alerte"),
     uiOutput("cg_kpi"),
     card(
       full_screen = TRUE,

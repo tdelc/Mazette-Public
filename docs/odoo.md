@@ -357,6 +357,14 @@ et des montants inventés.
 | Un mois déjà clôturé qui change entre deux imports    | Une écriture passée rétroactivement.                                 |
 | Journaux et dates des écritures de clôture            | Voir ci-dessous.                                                     |
 
+**Et dans l'application, pas seulement à l'import.** Les contrôles ci-dessus
+tournent au moment de l'import, où personne ne regarde forcément. Un export
+partiel qui passerait au travers se verrait quand même : `periodes_improbables()`
+(`R/exploitation.R`) compare chaque mois à la médiane des douze précédents sur
+le CA, les rémunérations et les frais généraux, et pose un bandeau rouge
+au-dessus des graphes des trois sous-onglets Compta dès qu'un poste tombe sous
+la moitié de sa médiane. C'est la dernière barrière avant qu'on lise une courbe.
+
 **Les OD de clôture.** Réponse obtenue : l'exercice fiscal est l'**année
 civile**, et la pièce `OD/2026/06/0001` du 30/06/2026 est une **reprise de
 balance** — le solde de l'ancien comptable, repris à l'ouverture d'Odoo. Elle ne

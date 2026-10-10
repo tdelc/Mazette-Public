@@ -379,6 +379,34 @@ R -e 'shiny::runApp()'</code></pre>
       </tbody>
     </table></div>
 
+    <div class="note">
+      <span class="l">Quand la comptabilit&eacute; est incompl&egrave;te</span>
+      <p>
+        Un export comptable partiel &mdash; un mois dont on n&rsquo;a t&eacute;l&eacute;charg&eacute; que la
+        moiti&eacute; des &eacute;critures &mdash; ne l&egrave;ve <strong>aucune erreur</strong>. Il produit
+        des chiffres&nbsp;: un CA divis&eacute; par dix, des r&eacute;mun&eacute;rations &agrave; z&eacute;ro, une marge
+        magnifique. Tout le volet Compta les affiche alors sans broncher, et c&rsquo;est
+        pire qu&rsquo;un &eacute;cran vide.
+      </p>
+      <p>
+        On ne peut pas d&eacute;tecter l&rsquo;incompl&eacute;tude depuis les chiffres eux-m&ecirc;mes, mais
+        on peut d&eacute;tecter l&rsquo;<strong>invraisemblance</strong>.
+        <code>periodes_improbables()</code> compare chaque mois &agrave; la
+        <strong>m&eacute;diane des douze pr&eacute;c&eacute;dents</strong>, sur les trois postes les plus
+        r&eacute;guliers &mdash; chiffre d&rsquo;affaires, r&eacute;mun&eacute;rations, frais g&eacute;n&eacute;raux. Sous la
+        moiti&eacute; de cette m&eacute;diane, un bandeau rouge se pose <em>au-dessus</em> des
+        graphes des trois sous-onglets.
+      </p>
+      <p>
+        Trois choix s&rsquo;y cachent. La <strong>m&eacute;diane</strong> et non le mois
+        pr&eacute;c&eacute;dent&nbsp;: un janvier creux rendrait f&eacute;vrier suspect, et r&eacute;ciproquement.
+        Un test &agrave; <strong>sens unique</strong>&nbsp;: un export partiel ne peut que
+        sous-estimer, tandis qu&rsquo;une flamb&eacute;e a d&rsquo;autres causes et m&eacute;rite d&rsquo;&ecirc;tre lue
+        plut&ocirc;t que masqu&eacute;e. Et <strong>trois p&eacute;riodes de r&eacute;f&eacute;rence minimum</strong>&nbsp;:
+        une m&eacute;diane de deux points n&rsquo;en est pas une, et une fausse alerte au
+        d&eacute;marrage apprend au lecteur &agrave; ignorer le bandeau.
+      </p>
+    </div>
     <div class="note" data-profondeur="detail">
       <span class="l">La grammaire du volet Planning</span>
       <p>

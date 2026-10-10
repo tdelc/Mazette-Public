@@ -806,6 +806,11 @@ server <- function(input, output, session) {
   # fois, et la cascade comme le tableau y puisent.
   expl_unite <- reactive(input$expl_unite %||% "mois")
 
+  # Le contrôle de vraisemblance se calcule UNE FOIS, au grain mensuel, et les
+  # trois sous-onglets y puisent. Le recalculer chacun de son côté finirait par
+  # donner trois verdicts sur les mêmes chiffres.
+  compta_improbable <- reactive({ periodes_improbables(expl_postes()) })
+
   expl_serie_complete <- reactive({
     p <- agrege_exploitation(expl_postes(), expl_unite())
     req(nrow(p) > 0)
@@ -872,6 +877,10 @@ server <- function(input, output, session) {
     }
     dt
   })
+  output$expl_vraisemblance <- renderUI({
+    bandeau_vraisemblance(compta_improbable(), expl_serie()$PERIODE, expl_unite())
+  })
+
   output$expl_controle <- renderUI({
     ctrl <- controle_exploitation(DB_COMPTA, expl_postes())
     n <- sum(abs(ctrl$ECART) > 1, na.rm = TRUE)
@@ -987,6 +996,10 @@ server <- function(input, output, session) {
       return(tail(sort(serie$PERIODE), 6))
     }
     r$ligne$PERIODE
+  })
+
+  output$ana_vraisemblance <- renderUI({
+    bandeau_vraisemblance(compta_improbable(), ana_periode(), ana_unite())
   })
 
   output$ana_alerte <- renderUI({
@@ -1147,6 +1160,10 @@ server <- function(input, output, session) {
     pluriel <- if (n > 1 && mot != "mois") paste0(mot, "s") else mot
     paste0("Compte de résultat — ", n, " ", pluriel,
            if (n > 1) " comparés" else "")
+  })
+
+  output$cg_vraisemblance <- renderUI({
+    bandeau_vraisemblance(compta_improbable(), cg_periodes(), cg_unite())
   })
 
   output$cg_kpi <- renderUI({

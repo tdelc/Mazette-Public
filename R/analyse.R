@@ -373,23 +373,9 @@ pont_marge <- function(actuel, reference) {
     mutate(DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = TRUE)
 }
 
-# format_CA() blanchit les montants nuls et aligne les largeurs sur le plus
-# long élément du vecteur. Les deux comportements sont utiles ailleurs et
-# nuisibles ici : dans un tableau dont l'objet est de refaire l'arithmétique,
-# une cellule vide se lit « donnée manquante » et non « zéro », et une cellule
-# rembourrée d'espaces ne se compare plus à ce qu'on attend. Un poste dont le
-# poids n'a pas bougé DOIT montrer 0 €, c'est même le résultat le plus parlant
-# du pont.
-euro_exact <- function(x) {
-  ifelse(is.na(x), "—",
-  ifelse(abs(x) < 0.5, "0 €", trimws(format_CA(x, -1))))
-}
-
-euro_signe <- function(x) {
-  ifelse(is.na(x), "—",
-  ifelse(abs(x) < 0.5, "0 €",
-         paste0(ifelse(x > 0, "+", ""), trimws(format_CA(x, -1)))))
-}
+# euro_exact() et euro_signe() vivaient ici ; elles sont passées dans
+# R/theme.R, à côté de format_CA(), le jour où le contrôle de vraisemblance
+# (R/exploitation.R) en a eu besoin lui aussi.
 
 # Un poids dans le CA, en pourcentage à une décimale.
 #
