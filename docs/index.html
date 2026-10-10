@@ -391,20 +391,48 @@ R -e 'shiny::runApp()'</code></pre>
       <p>
         On ne peut pas d&eacute;tecter l&rsquo;incompl&eacute;tude depuis les chiffres eux-m&ecirc;mes, mais
         on peut d&eacute;tecter l&rsquo;<strong>invraisemblance</strong>.
-        <code>periodes_improbables()</code> compare chaque mois &agrave; la
-        <strong>m&eacute;diane des douze pr&eacute;c&eacute;dents</strong>, sur les trois postes les plus
-        r&eacute;guliers &mdash; chiffre d&rsquo;affaires, r&eacute;mun&eacute;rations, frais g&eacute;n&eacute;raux. Sous la
-        moiti&eacute; de cette m&eacute;diane, un bandeau rouge se pose <em>au-dessus</em> des
-        graphes des trois sous-onglets.
+        <code>periodes_improbables()</code> le fait sur <strong>trois motifs</strong>,
+        et il en faut trois parce qu&rsquo;aucun ne couvre les deux autres.
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>Motif</th><th>R&egrave;gle</th><th>Ce qu&rsquo;il attrape seul</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>incoherence</code></td>
+            <td>des charges enregistr&eacute;es sans <em>aucune</em> vente</td>
+            <td>Il ne regarde aucun historique. C&rsquo;est le seul qui parle encore
+                quand <strong>toute</strong> la comptabilit&eacute; import&eacute;e est partielle.</td>
+          </tr>
+          <tr>
+            <td><code>chute</code></td>
+            <td>un poste sous la moiti&eacute; de la m&eacute;diane des douze mois pr&eacute;c&eacute;dents
+                &mdash; CA, r&eacute;mun&eacute;rations, frais g&eacute;n&eacute;raux</td>
+            <td>Un mois qui s&rsquo;effondre alors que les ventes continuent.</td>
+          </tr>
+          <tr>
+            <td><code>en_cours</code></td>
+            <td>le mois n&rsquo;est pas termin&eacute;</td>
+            <td>Il <em>&eacute;vite</em> une alerte&nbsp;: sans lui, les deux autres crieraient
+                au loup le 3 de chaque mois.</td>
+          </tr>
+        </tbody>
+      </table></div>
+      <p>
+        Le pi&egrave;ge que <code>incoherence</code> corrige m&eacute;rite d&rsquo;&ecirc;tre nomm&eacute;&nbsp;:
+        <strong>un contr&ocirc;le qui se compare &agrave; sa propre histoire se tait exactement
+        quand l&rsquo;histoire est fausse.</strong> Au premier import Odoo partiel, les
+        quatre mois disponibles &eacute;taient tous abim&eacute;s&nbsp;: la m&eacute;diane l&rsquo;&eacute;tait aussi, et
+        la r&egrave;gle de la chute ne voyait rien.
       </p>
       <p>
-        Trois choix s&rsquo;y cachent. La <strong>m&eacute;diane</strong> et non le mois
+        Trois autres choix s&rsquo;y cachent. La <strong>m&eacute;diane</strong> et non le mois
         pr&eacute;c&eacute;dent&nbsp;: un janvier creux rendrait f&eacute;vrier suspect, et r&eacute;ciproquement.
         Un test &agrave; <strong>sens unique</strong>&nbsp;: un export partiel ne peut que
         sous-estimer, tandis qu&rsquo;une flamb&eacute;e a d&rsquo;autres causes et m&eacute;rite d&rsquo;&ecirc;tre lue
-        plut&ocirc;t que masqu&eacute;e. Et <strong>trois p&eacute;riodes de r&eacute;f&eacute;rence minimum</strong>&nbsp;:
-        une m&eacute;diane de deux points n&rsquo;en est pas une, et une fausse alerte au
-        d&eacute;marrage apprend au lecteur &agrave; ignorer le bandeau.
+        plut&ocirc;t que masqu&eacute;e. Et <strong>deux gravit&eacute;s</strong>&nbsp;: rouge pour des
+        chiffres probablement faux, ambre pour un mois en cours, qui est partiel
+        par construction. Les peindre pareil ferait lire le second comme le
+        premier.
       </p>
     </div>
     <div class="note" data-profondeur="detail">
