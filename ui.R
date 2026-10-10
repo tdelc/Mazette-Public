@@ -84,26 +84,6 @@ ui_login <- function() {
   )
 }
 
-# Petite légende des couleurs des barres
-chip_legende <- function(couleur, libelle) {
-  div(
-    class = "legende-row",
-    span(class = "legende-pastille", style = paste0("background:", couleur, ";")),
-    span(libelle)
-  )
-}
-
-# Légende de la convention "CA vs objectif", à poser sous les graphes en barres.
-# Reprend les couleurs de couleur_objectif() dans functions.R.
-legende_objectif <- function() {
-  div(
-    class = "d-flex gap-3 flex-wrap text-muted mt-1",
-    chip_legende(COUL_VERT, "Objectif atteint"),
-    chip_legende(COUL_AMBRE, "À partir de 90 %"),
-    chip_legende(COUL_ROUGE, "En dessous de 90 %")
-  )
-}
-
 ui_app <- function() {
   navset_bar(
     title = span(class = "brand-title", 
@@ -145,6 +125,99 @@ ui_accueil <- function() {
 # Deux graphiques, une seule grammaire : la barre est ce qui est prévu, le
 # trait est la référence. Le premier ne parle qu'en heures, le second qu'en
 # euros. Aucun ne mélange les deux.
+# Confrontation des trois sources d'heures et de coût du travail.
+#
+# Trois sources, trois périmètres, et aucune qui domine les autres sur tous les
+# axes : ce volet existe pour que l'écart soit LU plutôt que découvert. Il
+# n'affiche aucun indicateur de gestion — rien que des chiffres et leurs
+# différences.
+ui_travail_sources <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Sources", width = 330,
+      radioButtons("src_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      sliderInput("src_nb", "Périodes affichées", min = 6, max = 48,
+                  value = 24, step = 1, ticks = FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Paie (ONSS)"), " : le coût employeur réel et les heures",
+          " réellement travaillées, ventilés par secteur, au grain mois ×",
+          " travailleur. La meilleure des trois sur ces deux grandeurs — elle",
+          " mesure là où les autres estiment.", tags$br(), tags$br(),
+          tags$b("Horeko"), " : le pointage. Seule source au grain jour ×",
+          " secteur × créneau, donc la seule qui sache dire « samedi soir ».",
+          " Son coût est une estimation : un taux horaire par type de contrat.",
+          tags$br(), tags$br(),
+          tags$b("Comptabilité"), " : le coût vrai au centime, mais un total",
+          " mensuel sans aucune ventilation. Elle ne connaît pas les heures.",
+          tags$br(), tags$br(),
+          "Ailleurs dans le dashboard, la paie fait autorité sur le total du",
+          " mois et du secteur ; Horeko ne sert plus qu'à le répartir sur les",
+          " jours et les créneaux.")
+    ),
+    uiOutput("src_alerte_onss", class = "zone-alerte"),
+    uiOutput("src_alerte_manque", class = "zone-alerte"),
+    uiOutput("src_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Heures par mois, selon la source"),
+      plotlyOutput("src_heures", height = "340px"),
+      div(class = "small text-muted",
+          "La comptabilité est absente de ce graphique : elle ne mesure aucune",
+          " heure. Deux courbes qui se suivent racontent la même histoire ;",
+          " deux courbes qui divergent signalent un pointage incomplet.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Coût du travail par mois, selon la source"),
+      plotlyOutput("src_cout", height = "340px"),
+      div(class = "small text-muted",
+          "Le seul endroit du dashboard où les trois sources se comparent sur",
+          " la même grandeur et le même axe. L'écart entre Horeko et la paie",
+          " est structurel — pécules, provisions, charges patronales réelles,",
+          " personnel non pointé.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Écart à la paie, en part de la paie"),
+      plotlyOutput("src_ecart", height = "320px"),
+      div(class = "small text-muted",
+          "Le graphique qui compte : un écart ", tags$b("constant"), " est une",
+          " différence de périmètre, et on peut vivre avec. Un écart qui ",
+          tags$b("dérive"), " est un problème de données.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Ventilation par secteur : paie contre Horeko"),
+      plotlyOutput("src_secteurs", height = "330px"),
+      div(class = "small text-muted",
+          "Un total mensuel identique peut cacher deux ventilations opposées —",
+          " et c'est justement la ventilation qu'on est venu chercher dans la",
+          " paie.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Mois par mois, toutes sources"),
+      DTOutput("src_table"),
+      div(class = "small text-muted mt-1",
+          "Les écarts sont donnés en euros et en pour cent : 3 000 € ne se",
+          " jugent pas sans savoir s'ils portent sur 20 000 € ou 200 000 €.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Heures de paie sans pointage en face"),
+      DTOutput("src_non_rattache"),
+      div(class = "small text-muted mt-1",
+          "Un secteur présent dans la paie mais absent du pointage ce mois-là",
+          " n'a aucun jour auquel se rattacher. Ces heures comptent dans les",
+          " totaux ci-dessus, mais pas dans le détail journalier du volet",
+          " Pilotage. La liste doit rester courte.")
+    )
+  )
+}
+
 ui_planning <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -156,12 +229,22 @@ ui_planning <- function() {
                   min = 2, max = 16, value = 8, step = 1, ticks = FALSE),
       hr(),
       div(class = "small text-muted",
-          tags$b("Heures habituelles"), " : la médiane des heures posées le",
-          " même jour de semaine, sur les semaines de référence. Un samedi se",
-          " compare à un samedi.", tags$br(), tags$br(),
-          tags$b("CA attendu"), " = heures planifiées × le CA par heure",
-          " habituel. C'est ce que ces heures rapportent d'ordinaire.",
+          tags$b("Heures de service"), " : seules les heures variables sont",
+          " comparées, comme dans l'onglet Travail. Les heures hors service",
+          " (transfo, brasserie, support) suivent la production, pas la",
+          " fréquentation : elles sont données en survol, jour par jour.",
+          tags$br(),
+          "Le ", tags$b("lundi"), " est un jour de fermeture : les heures que",
+          " l'équipe de salle y passe sont de la préparation, pas du service.",
+          " Elles comptent donc comme heures fixes, et apparaissent en survol",
+          " sous « Service (jour fermé) ».",
           tags$br(), tags$br(),
+          tags$b("Heures habituelles"), " : la médiane des heures de service",
+          " posées le même jour de semaine, sur les semaines de référence. Un",
+          " samedi se compare à un samedi.", tags$br(), tags$br(),
+          tags$b("CA habituel"), " : la médiane du chiffre d'affaires du même",
+          " jour de semaine, sur les mêmes semaines de référence. Un jeudi se",
+          " compare à un jeudi.", tags$br(), tags$br(),
           tags$b("Les couverts réservés"), " sont donnés en survol : ils",
           " expliquent souvent pourquoi on met plus de monde, sans entrer",
           " dans le calcul.", tags$br(), tags$br(),
@@ -173,21 +256,23 @@ ui_planning <- function() {
     uiOutput("plan_kpi"),
     card(
       full_screen = TRUE,
-      card_header("Combien d'heures, comparé à d'habitude ?"),
+      card_header("Combien d'heures de service, comparé à d'habitude ?"),
       plotlyOutput("plan_heures", height = "330px"),
       div(class = "small text-muted",
-          "Barre : les heures planifiées. Trait noir : ce qu'on met",
-          " habituellement ce jour-là. En ambre au-delà de +10 %.",
-          " Survolez pour les couverts déjà réservés.")
+          "Barre : les heures de service planifiées. Trait orange : ce qu'on",
+          " met habituellement ce jour-là. En ambre au-delà de +10 %.",
+          " Survolez pour les heures hors service prévues et les couverts",
+          " déjà réservés.")
     ),
     card(
       full_screen = TRUE,
-      card_header("Est-ce que ces heures couvrent l'objectif ?"),
+      card_header("L'objectif est-il à portée, vu ce que ce jour rapporte ?"),
       plotlyOutput("plan_rentabilite", height = "330px"),
       div(class = "small text-muted",
-          "Barre : le CA que ces heures rapportent au rythme habituel.",
+          "Barre : le CA que ce jour de semaine rapporte habituellement.",
           " Trait noir : l'objectif du jour. Verte, la barre passe l'objectif ;",
-          " rouge, elle reste dessous.")
+          " rouge, elle reste dessous. Survolez pour les heures de service",
+          " posées et le CA par heure que l'objectif imposerait.")
     ),
     card(
       full_screen = TRUE, height = "440px",
@@ -199,7 +284,26 @@ ui_planning <- function() {
 
 # Onglet "Travail" : productivité et coût du travail, dans le temps puis
 # créneau par créneau (midi / soir / Pizzwanze).
+# Deux sous-onglets : le pilotage (heures, productivité, créneaux) et la
+# confrontation des sources. Le second n'a rien à faire dans le premier — on
+# n'y va pas pour piloter mais pour vérifier d'où viennent les chiffres.
 ui_travail <- function() {
+  navset_card_tab(
+    id = "travail_tabs",
+    nav_panel(
+      title = "Pilotage",
+      icon = icon("gauge-high"),
+      ui_travail_pilotage()
+    ),
+    nav_panel(
+      title = "Sources",
+      icon = icon("layer-group"),
+      ui_travail_sources()
+    )
+  )
+}
+
+ui_travail_pilotage <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Travail", width = 300,
@@ -223,10 +327,17 @@ ui_travail <- function() {
           tags$b("CA par heure"), " : rapporté aux seules heures de service.",
           " Le rapporter au total mélangerait l'ouverture et la structure.",
           tags$br(), tags$br(),
-          tags$b("Source"), " : les coûts viennent d'Horeko, la seule source",
-          " qui se ventile par secteur. Le total comptable est affiché à",
-          " côté comme point de contrôle — l'écart est normal, c'est sa",
-          " dérive qui compte.")
+          tags$b("Source"), " : heures et coûts viennent de la ",
+          tags$b("paie"), " dès qu'elle couvre le mois. Elle mesure le coût",
+          " employeur réel et les heures réellement travaillées, ventilés par",
+          " secteur.", tags$br(),
+          "Horeko ne sert alors qu'à les ", tags$b("répartir"), " sur les",
+          " jours et les créneaux, qu'elle seule connaît ; son estimation",
+          " reste affichée à côté dans le tableau de décomposition, et la",
+          " colonne « Source » dit ce qui a servi.", tags$br(),
+          "Le total comptable est le troisième repère : l'écart entre les",
+          " trois est normal, c'est sa ", tags$b("dérive"), " qui compte. Le",
+          " sous-onglet ", tags$i("Sources"), " les confronte mois par mois.")
     ),
     uiOutput("trav_kpi"),
     card(
@@ -240,9 +351,19 @@ ui_travail <- function() {
           " heures ci-dessous.")
     ),
     card(
-      full_screen = TRUE, height = "420px",
+      full_screen = TRUE, height = "460px",
       card_header(textOutput("trav_decomp_titre", inline = TRUE)),
-      DTOutput("trav_heures_decomp")
+      DTOutput("trav_heures_decomp"),
+      div(class = "small text-muted mt-1",
+          tags$b("Heures"), " et ", tags$b("Coût"), " sont les valeurs retenues",
+          " — la paie quand elle couvre le mois, Horeko sinon, et la colonne ",
+          tags$b("Source"), " le dit. ", tags$b("Coût Horeko"), " donne",
+          " l'estimation d'origine à côté : c'est le seul endroit où l'écart",
+          " entre les deux se lit par secteur.", tags$br(),
+          "Les trois totaux du bas portent chacun ses propres chiffres. La",
+          " comptabilité n'a pas d'heures — elle enregistre la paie, pas le",
+          " temps. L'écart entre les sources est normal ; c'est sa ",
+          tags$b("dérive"), " qui est un signal.")
     ),
     card(
       full_screen = TRUE,
@@ -421,6 +542,11 @@ ui_compta <- function() {
       ui_exploitation()
     ),
     nav_panel(
+      title = "Analyse",
+      icon = icon("magnifying-glass-chart"),
+      ui_compta_analyse()
+    ),
+    nav_panel(
       title = "Comptabilité générale",
       icon = icon("book"),
       ui_compta_generale()
@@ -488,6 +614,144 @@ ui_exploitation <- function() {
           " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
           " s'il est défavorable. À vérifier en comptabilité avant d'y lire",
           " un fait de gestion.")
+    )
+  )
+}
+
+# Analyse : le POURQUOI des deux autres sous-onglets.
+#
+# Même grammaire que le volet Exploitation — la granularité d'abord, puis la
+# période — et un réglage de plus qui porte tout le volet : la RÉFÉRENCE. Rien
+# ici ne s'affiche sans dire à quoi il est comparé.
+ui_compta_analyse <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Analyse", width = 320,
+      radioButtons("ana_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      selectInput("ana_periode", "Période analysée", choices = NULL),
+      selectInput("ana_ref", "Comparée à", choices = MODES_REFERENCE,
+                  selected = "precedente"),
+      # Coché par défaut : sur une période complète le rabotage ne retire rien,
+      # il n'a donc d'effet que là où la comparaison était fausse.
+      checkboxInput("ana_raboter",
+                    "Raboter la référence à la même taille", TRUE),
+      div(class = "small text-muted",
+          "Une période en cours ne porte pas douze mois. Coché, la référence",
+          " est ramenée aux ", tags$b("mêmes mois"), " : huit mois de 2026 se",
+          " comparent à janvier-août 2025, pas à l'année entière. Sans effet",
+          " sur une période complète."),
+      hr(),
+      sliderInput("ana_nb", "Périodes de tendance", min = 6, max = 48,
+                  value = 18, step = 1, ticks = FALSE),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
+          " — le CA a bougé, les taux non — de ce qui vient de la dérive de",
+          " chaque poste. La somme des barres redonne exactement l'écart.",
+          tags$br(),
+          "Le calcul complet, chiffres à l'appui, est dans l'onglet",
+          " « Décomposition du pont ».",
+          tags$br(), tags$br(),
+          tags$b("Zone habituelle"), " : médiane de la série ± 2 MAD, la même",
+          " mesure que le tableau du volet Exploitation. Les deux écrans",
+          " signalent donc les mêmes périodes.", tags$br(), tags$br(),
+          tags$b("L'indicateur suivi"), " se choisit au-dessus des graphiques",
+          " de tendance et de saisonnalité. Le reste du volet porte toujours",
+          " sur la marge.", tags$br(), tags$br(),
+          "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
+          " chiffre d'affaires seul.")
+    ),
+    uiOutput("ana_alerte", class = "zone-alerte"),
+    uiOutput("ana_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Pourquoi la marge a bougé"),
+      plotlyOutput("ana_pont", height = "380px"),
+      div(class = "small text-muted",
+          "On part de la marge de référence, chaque barre la creuse ou la",
+          " remplit. ", tags$b("Effet volume"), " : l'écart de chiffre",
+          " d'affaires, au taux de marge de la référence. ",
+          tags$b("Les autres barres"), " : l'écart entre ce que le poste a",
+          " coûté et ce qu'il aurait coûté en gardant son poids de la",
+          " référence. Survolez une barre pour voir son calcul, ou ouvrez",
+          " l'onglet ", tags$i("Décomposition du pont"), " juste en dessous.")
+    ),
+    navset_card_tab(
+      nav_panel(
+        title = "Comptes qui expliquent l'écart",
+        icon = icon("list-ol"),
+        plotlyOutput("ana_contrib", height = "400px"),
+        div(class = "small text-muted mt-1",
+            "Effet de chaque compte sur la marge, signe compris : un achat en",
+            " hausse pèse négativement. Le forage sous le pont ci-dessus.")
+      ),
+      nav_panel(
+        title = "Détail chiffré",
+        icon = icon("table"),
+        DTOutput("ana_contrib_table")
+      ),
+      nav_panel(
+        title = "Décomposition du pont",
+        icon = icon("bridge"),
+        # Le graphe montre le résultat, cet onglet montre l'arithmétique.
+        # L'explication vient AVANT les tableaux : on lit la règle, puis on la
+        # vérifie sur les chiffres, jamais l'inverse.
+        uiOutput("ana_pont_explication"),
+        DTOutput("ana_pont_table")
+      )
+    ),
+    navset_card_tab(
+      # Le sélecteur vit dans l'en-tête de la carte, avec les deux graphiques
+      # qu'il pilote, et non dans la barre latérale : c'est là qu'on pense à
+      # s'en servir. Même disposition que le sélecteur de la heatmap du volet
+      # Travail.
+      #
+      # `title` et non `header` : en bslib 0.6.1, l'argument `header` de
+      # navset_card_tab() est SILENCIEUSEMENT ignoré — le contenu n'apparaît
+      # nulle part et rien ne le signale. Un test de placement le vérifie.
+      title = div(
+        class = "d-flex flex-wrap gap-2 align-items-center",
+        span(class = "small text-muted", "Indicateur suivi"),
+        div(class = "flex-shrink-0",
+            selectInput("ana_indic", NULL,
+                        choices = setNames(INDICATEURS_ANALYSE$CLE,
+                                           INDICATEURS_ANALYSE$LIBELLE),
+                        selected = "marge", width = "260px"))),
+      nav_panel(
+        title = "Tendance",
+        icon = icon("chart-line"),
+        plotlyOutput("ana_tendance", height = "360px"),
+        div(class = "small text-muted mt-1",
+            "La bande grise est la zone habituelle de la série. Un point",
+            " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+            " en sort défavorablement, un point ",
+            tags$span(style = "color:#5B7B5A;font-weight:600", "vert"),
+            " favorablement.")
+      ),
+      nav_panel(
+        title = "Saisonnalité",
+        icon = icon("calendar-days"),
+        plotlyOutput("ana_saison", height = "360px"),
+        div(class = "small text-muted mt-1",
+            "Le même indicateur mois par mois, une courbe par année, toujours",
+            " au grain mensuel. Sépare l'effet de saison de l'effet de gestion :",
+            " février est mauvais, mais février est-il toujours mauvais ?")
+      )
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Période contre référence"),
+      DTOutput("ana_table")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(
+        span("Est-ce que tout va bien ?"),
+        span(class = "small text-muted ms-2", textOutput("ana_diag_resume",
+                                                         inline = TRUE))),
+      uiOutput("ana_diagnostic")
     )
   )
 }
@@ -1039,128 +1303,181 @@ ui_historique <- function() {
 
 
 
+# Volet « Détails » : la loupe sur UNE période, au grain le plus fin.
+#
+# La lecture descend, et c'est toute la structure : la fenêtre d'ensemble, puis
+# la période qu'on y choisit, puis sa composition, puis ce qui s'est vendu,
+# puis — repliés — le grain fin et les tickets.
+#
+# Les trois mailles ne sont plus trois sous-onglets mais un bouton de la barre
+# latérale, comme la granularité de Compta et de Travail. Un seul chemin de
+# lecture au lieu de trois presque identiques, et le même geste partout dans le
+# dashboard.
+# Deux axes, deux sous-onglets : le TEMPS (une période qu'on détaille) et le
+# PRODUIT (un produit qu'on suit dans le temps). Ils ne se lisent pas ensemble
+# et ne partagent aucun réglage — les mêler dans une seule page était une part
+# de la densité qu'on cherche à réduire.
 ui_detail <- function() {
   navset_card_tab(
-    selected = "sem",
+    id = "detail_tabs",
     nav_panel(
-      value = 'jour',
-      title = "Par jour",
+      title = "Par périodes",
       icon = icon("calendar-day"),
-      layout_columns(
-        fill = FALSE,
-        col_widths = c(8, 4),
-        dateRangeInput("detail_periode", "Période",
-                       start = NULL, end = NULL,
-                       separator = " → ", language = "fr",
-                       weekstart = 1, format = "dd/mm/yyyy"),
-        div(class = "small text-muted align-self-end pb-2",
-            "Cliquez sur une barre pour détailler la journée.")
-      ),
-      plotlyOutput("detail_jour_graph", height = "300px"),
-      legende_objectif(),
-      hr(),
-      card_header(textOutput("detail_jour_titre", inline = TRUE)),
-      layout_columns(
-        col_widths = c(2, 5, 5),
-        uiOutput("detail_jour_box"),
-        div(
-          h6("Coût du jour", class = "section-sub"),
-          DTOutput("detail_jour_travail"),
-          h6("Coût de la semaine", class = "section-sub"),
-          DTOutput("detail_jour_travail_semaine"),
-          DTOutput("detail_jour_cout")
-        ),
-        div(
-          h6("Produits du jour", class = "section-sub"),
-          DTOutput("detail_jour_produits")
-        )
-      )
+      ui_detail_periodes()
     ),
     nav_panel(
-      value = 'sem',
-      title = "Par semaine",
-      icon = icon("calendar-week"),
-      ui_detail_periode("sem")
-    ),
-    nav_panel(
-      value = 'mois',
-      title = "Par mois",
-      icon = icon("calendar-days"),
-      ui_detail_periode("mois")
-    ),
-    nav_panel(
-      value = 'produit',
       title = "Par produit",
       icon = icon("box"),
-      layout_columns(
-        col_widths = c(5, 7),
-        div(
-          dateRangeInput("detail_produit_periode", "Période",
-                         start = NULL, end = NULL,
-                         separator = " → ", language = "fr",
-                         weekstart = 1, format = "dd/mm/yyyy"),
-          h6("Produits (sélectionnez une ligne)", class = "section-sub"),
-          DTOutput("detail_produit_liste")
-        ),
-        div(
-          card_header(textOutput("detail_produit_titre", inline = TRUE)),
-          plotlyOutput("detail_produit_graph", height = "280px"),
-          div(class = "mt-3", DTOutput("detail_produit_table"))
+      ui_detail_produit()
+    )
+  )
+}
+
+ui_detail_periodes <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Détails", width = 310,
+      radioButtons("det_maille", "Maille",
+                   setNames(MAILLES_DETAIL$CLE, MAILLES_DETAIL$LIBELLE),
+                   selected = "semaine"),
+      dateRangeInput("det_fenetre", "Fenêtre observée",
+                     start = NULL, end = NULL, separator = " → ",
+                     language = "fr", weekstart = 1, format = "dd/mm/yyyy"),
+      div(class = "small text-muted",
+          "Le graphe du haut couvre cette fenêtre. ", tags$b("Cliquez une barre"),
+          " pour détailler la période qu'elle représente — tout ce qui suit s'y",
+          " rapporte."),
+      hr(),
+      div(class = "small text-muted",
+          tags$b("Ce volet porte les ventes"), " : chiffre d'affaires,",
+          " produits, tickets, heures de vente. Aucune marge, aucun coût",
+          " réparti.",
+          tags$br(), tags$br(),
+          "La comptabilité est mensuelle : à la semaine, elle ne peut être",
+          " qu'un prorata — et un prorata affiché finit par se lire comme une",
+          " mesure. Les coûts sont donc dans ", tags$b("Compta"), ", et leur",
+          " comparaison entre sources dans ", tags$b("Travail"), ".",
+          tags$br(), tags$br(),
+          "Seule exception, à la maille ", tags$b("mois"), " : les heures",
+          " payées et leur coût réel s'y mesurent sans être répartis, et",
+          " figurent donc en bas de page.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(textOutput("det_titre_serie", inline = TRUE)),
+      plotlyOutput("det_serie", height = "300px"),
+      legende_objectif(),
+      div(class = "small text-muted mt-1",
+          "Chaque barre est une période de la maille choisie. Sa couleur dit",
+          " l'atteinte de l'objectif, le trait pointillé l'objectif lui-même.")
+    ),
+    uiOutput("det_bandeau", class = "zone-alerte"),
+    div(class = "section-sub mt-2", textOutput("det_titre_periode", inline = TRUE)),
+    uiOutput("det_kpi"),
+    # L'accordéon EST la progressivité : ce qui répond à « comment ça s'est
+    # passé » reste ouvert, ce qui répond à « pourquoi, dans le détail » se
+    # déplie à la demande. Sans lui, la page redeviendrait le mur qu'elle était.
+    accordion(
+      id = "det_sections",
+      open = c("compo", "vendu"),
+      accordion_panel(
+        value = "compo", title = "Comment la période se compose",
+        icon = icon("chart-column"),
+        layout_columns(
+          col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+          div(h6(textOutput("det_titre_compo", inline = TRUE), class = "section-sub"),
+              plotlyOutput("det_composition", height = "300px"),
+              uiOutput("det_legende_compo"),
+              div(class = "small text-muted")),
+          div(h6("Nature et moment", class = "section-sub"),
+              plotlyOutput("det_repartition", height = "300px"),
+              div(class = "small text-muted"))
         )
+      ),
+      accordion_panel(
+        value = "vendu", title = "Ce qui s'est vendu",
+        icon = icon("list-ol"),
+        DTOutput("det_produits"),
+        div(class = "small text-muted mt-1",
+            tags$b("Cumul"), " : la part du CA atteinte en descendant la liste.",
+            " Il dit en combien de produits se fait la période.")
+      ),
+      accordion_panel(
+        value = "tickets", title = "Les tickets",
+        icon = icon("receipt"),
+        uiOutput("det_tickets_alerte", class = "zone-alerte"),
+        layout_columns(
+          col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+          div(h6("Liste des tickets (sélectionnez une ligne)", class = "section-sub"),
+              DTOutput("det_tickets")),
+          div(h6("Distribution des paniers", class = "section-sub"),
+              plotlyOutput("det_paniers", height = "260px"),
+              # Un histogramme se lit mal dans ses extrêmes : la barre d'un
+              # ticket unique à 1 200 € fait un pixel. Les trois chiffres, eux,
+              # se confrontent à la caisse.
+              div(class = "small text-muted",
+                  textOutput("det_resume_paniers", inline = TRUE)),
+              h6(textOutput("det_titre_ticket", inline = TRUE),
+                 class = "section-sub mt-2"),
+              DTOutput("det_ticket_lignes"),
+              div(class = "small text-muted mt-1",
+                  "Les lignes sont celles de la caisse, avec ses libellés",
+                  " libres. Un ", tags$b("tiret"), " signale un produit sans",
+                  " taux de TVA connu — son montant TVAC, lui, est réel ;",
+                  " une case ", tags$b("vide"), " est une ligne à zéro euro."))
+        )
+      ),
+      accordion_panel(
+        value = "pointage", title = "Les heures travaillées",
+        icon = icon("user-clock"),
+        DTOutput("det_heures"),
+        uiOutput("det_heures_note")
       )
     )
   )
 }
+
+# Un produit, suivi semaine après semaine. Le seul écran du dashboard qui
+# prenne le PRODUIT comme axe principal : Boissons et Nourriture regardent des
+# familles, Comparaison regarde des périodes.
+ui_detail_produit <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Par produit", width = 310,
+      dateRangeInput("detail_produit_periode", "Période",
+                     start = NULL, end = NULL, separator = " → ",
+                     language = "fr", weekstart = 1, format = "dd/mm/yyyy"),
+      div(class = "small text-muted",
+          "Sélectionnez une ligne du tableau pour suivre un produit.",
+          tags$br(), tags$br(),
+          tags$b("Part"), " : ce que le produit pèse dans le CA total de la",
+          " semaine. ", tags$b("Part catégorie"), " : ce qu'il pèse dans sa",
+          " propre famille — c'est celle-là qui dit s'il gagne du terrain sur",
+          " ses voisins ou si toute la famille monte.")
+    ),
+    layout_columns(
+      col_widths = breakpoints(sm = 12, lg = c(5, 7)),
+      card(
+        full_screen = TRUE,
+        card_header("Produits de la période"),
+        DTOutput("detail_produit_liste")
+      ),
+      card(
+        full_screen = TRUE,
+        card_header(textOutput("detail_produit_titre", inline = TRUE)),
+        plotlyOutput("detail_produit_graph", height = "300px"),
+        div(class = "mt-2", DTOutput("detail_produit_table"))
+      )
+    )
+  )
+}
+
 
 # Drill-down "Par semaine" / "Par mois" de l'onglet Détail : même principe que
 # "Par jour" — on clique une barre pour détailler la période.
 # Périmètre : ce volet reste centré sur les VENTES (répartition, produits).
 # Le résultat financier de la période (coûts, marge, KPI) est dans l'onglet
 # Compta, qui offre la même granularité semaine / mois.
-ui_detail_periode <- function(sfx) {
-  id <- function(x) paste0("detail_", sfx, "_", x)
-
-  tagList(
-    layout_columns(
-      fill = FALSE,
-      col_widths = c(8, 4),
-      dateRangeInput(id("periode"), "Période",
-                     start = NULL, end = NULL,
-                     separator = " → ", language = "fr",
-                     weekstart = 1, format = "dd/mm/yyyy"),
-      div(class = "small text-muted align-self-end pb-2",
-          "Cliquez sur une barre pour détailler la période.")
-    ),
-    plotlyOutput(id("graph"), height = "300px"),
-    legende_objectif(),
-    hr(),
-    card_header(textOutput(id("titre"), inline = TRUE)),
-    layout_columns(
-      col_widths = c(7, 5),
-      div(
-        h6("Répartition du CA sur la période", class = "section-sub"),
-        plotlyOutput(id("repartition"), height = "260px"),
-        layout_columns(
-          col_widths = c(4, 8),
-          uiOutput(id("box")),
-          div(
-            h6("Coût de la période", class = "section-sub"),
-            uiOutput(id("prorata")),
-            DTOutput(id("travail")),
-            DTOutput(id("cout")),
-            h6("Coûts et marge par secteur", class = "section-sub mt-2"),
-            DTOutput(id("marge"))
-          )
-        ),
-        uiOutput(id("kpi"))
-      ),
-      div(
-        h6("Top produits de la période", class = "section-sub"),
-        DTOutput(id("produits"))
-      )
-    )
-  )
-}
 
 ui_maintenant <- function() {
   tagList(

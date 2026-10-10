@@ -195,7 +195,7 @@ server <- function(input, output, session) {
   })
   output$acc_planning <- renderUI({
     if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
-    acc_planning(PLAN_RESUME(), PLAN_REFERENCE())
+    acc_planning(PLAN_RESUME())
   })
 
   # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
@@ -360,271 +360,188 @@ server <- function(input, output, session) {
     )
   })
 
-  #### Volet "Détail" — Par jour ####
+  #### Volet "Détails" — Périodes ####
+  #
+  # Une seule chaîne pour les trois mailles : la maille est une VARIABLE, pas
+  # trois copies du même code. L'ancienne version avait un bloc par maille et
+  # une fonction generatrice pour deux d'entre elles ; les trois divergeaient
+  # déjà sur des détails.
 
-  # Période par défaut : 8 dernières semaines jusqu'à la veille
+  det_maille <- reactive(input$det_maille %||% "jour")
+
+  # La fenêtre par défaut suit la maille : 8 semaines de jours, 6 mois de
+  # semaines, 2 ans de mois. Elle est semée à chaque changement de maille, et
+  # derrière ONGLETS_PRETS() comme tout sélecteur d'onglet (cf. R/acces.R).
   observe({
     req(ONGLETS_PRETS())
-    updateDateRangeInput(session, "detail_periode",
-                         start = date_veille - weeks(8),
+    m <- maille_detail(det_maille())
+    updateDateRangeInput(session, "det_fenetre",
+                         start = date_veille - days(m$FENETRE),
                          end   = date_veille)
   })
 
-  periode_detail <- reactive({
-    rng <- input$detail_periode
-    if (is.null(rng) || any(is.na(rng))) c(date_veille - weeks(8), date_veille) else rng
+  det_fenetre <- reactive({
+    rng <- input$det_fenetre
+    m <- maille_detail(det_maille())
+    if (is.null(rng) || any(is.na(rng)))
+      c(date_veille - days(m$FENETRE), date_veille) else rng
   })
 
-  output$detail_jour_graph <- renderPlotly({
-    p <- periode_detail()
-    graph_ca_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2], source = "detail_jour")
+  det_serie <- reactive({
+    serie_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                 det_fenetre()[1], det_fenetre()[2], det_maille())
   })
 
-  # Jour sélectionné (clic sur une barre, défaut = veille)
-  selected_jour <- reactiveVal(NULL)
-
-  observeEvent(event_data("plotly_click", source = "detail_jour"), {
-    ev <- event_data("plotly_click", source = "detail_jour")
-    if (!is.null(ev$x)) selected_jour(as.Date(ev$x))
+  output$det_titre_serie <- renderText({
+    m <- maille_detail(det_maille())
+    paste0("Vue d'ensemble — ", tolower(m$LIBELLE))
   })
 
-  jour_detail <- reactive({
-    j <- selected_jour()
-    if (is.null(j)) date_veille else j
-  })
-  
-  semaine_detail <- reactive({
-    req(jour_detail())
-    jour_detail()-lubridate::wday(jour_detail(),week_start = 1)+1
+  output$det_serie <- renderPlotly({
+    graph_serie_detail(det_serie(), det_maille(), source = "det_serie")
   })
 
-  output$detail_jour_titre <- renderText({
-    paste0("Journée du ", format(jour_detail(), "%A %d/%m/%Y"))
+  # La période choisie au clic. Le clic rend `customdata` (la date en texte) et
+  # non `x`, qui ne porte qu'un libellé d'axe : as.Date("ven 11/09") lève.
+  det_choisie <- reactiveVal(NULL)
+  observeEvent(event_data("plotly_click", source = "det_serie"), {
+    ev <- event_data("plotly_click", source = "det_serie")
+    d <- suppressWarnings(as.Date(ev$customdata %||% NA))
+    if (length(d) == 1 && !is.na(d)) det_choisie(d)
   })
 
-  output$detail_jour_box <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), jour_detail(), 0,
-                    format_date = "%d/%m", width = "100%",
-                    unite_tva = input$unite_tva)
+  # Changer de maille périme la sélection : un début de semaine n'est pas un
+  # début de mois. On la vide plutôt que de la traîner.
+  observeEvent(det_maille(), { det_choisie(NULL) })
+
+  det_periode <- reactive({
+    s <- det_serie()
+    c <- det_choisie()
+    # Défaut : la dernière période de la fenêtre, celle qu'on vient regarder.
+    if (is.null(c) || is.null(s) || !(c %in% s$PERIODE)) {
+      if (is.null(s) || !nrow(s)) debut_maille(date_veille, det_maille())
+      else max(s$PERIODE)
+    } else c
   })
 
-  output$detail_jour_produits <- renderDT({
-    datatable_simple(
-      top_produits_periode(DB_PRODUITS, jour_detail(), jour_detail(), n = 15, 
-                           unite_tva = input$unite_tva)
-    )
-  })
-  
-  # Personnel du jour, par secteur (le service est ventilé par créneau dans la
-  # base : on ré-agrège ici pour garder une ligne par secteur)
-  output$detail_jour_travail <- renderDT({
-    datatable_simple(
-      DB_COUTS_TRAVAIL %>%
-        filter(DATE == jour_detail()) %>%
-        group_by(SECTEUR) |>
-        summarise(HEURES = sum(HEURES),
-                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
-                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES, .groups = "drop") |>
-        arrange(SECTEUR) |>
-        transmute(Secteur = SECTEUR, Heures = round(HEURES),
-                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-                  Personnel = format_CA(COUT_TRAVAIL, -1))
-    )
-  })
-  
-  output$detail_jour_travail_semaine <- renderDT({
-    datatable_simple(
-      DB_COUTS_TRAVAIL %>%
-        filter(PREMIER_JOUR_SEMAINE == semaine_detail()) %>%
-        group_by(SECTEUR) |> 
-        summarise(HEURES = sum(HEURES),
-                  COUT_TRAVAIL = sum(COUT_TRAVAIL),
-                  TAUX_HORAIRE = COUT_TRAVAIL / HEURES) |> 
-        transmute(Secteur = SECTEUR, Heures = round(HEURES),
-                  `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-                  Personnel = format_CA(COUT_TRAVAIL, -1))
-    )
-  })
-  
-  # Matières de la semaine du jour sélectionné, par secteur
-  output$detail_jour_cout <- renderDT({
-    datatable_simple(
-      DB_COUTS_MATIERE() %>%
-        couts_matiere_du_jour(jour_detail()) %>%
-        transmute(Secteur = SECTEUR,
-                  Période = ifelse(GRANULARITE == "mois",
-                                   format(PERIODE, "%B %Y"),
-                                   paste("Sem.", format(PERIODE, "%d/%m"))),
-                  Achats = format_CA(ACHATS, -1),
-                  Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
-                  Matières = format_CA(COUT_MATIERE, -1))
-    )
+  det_resume <- reactive({
+    resume_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                  if (exists("DB_TICKET")) DB_TICKET else NULL,
+                  det_periode(), det_maille())
   })
 
-  #### Volet "Détail" — Par semaine / Par mois ####
-  # Un même bloc sert les deux sous-onglets (suffixes "sem" et "mois").
-  registre_detail_periode <- function(sfx, unite, defaut_debut) {
-    id <- function(x) paste0("detail_", sfx, "_", x)
-    src <- paste0("detail_", sfx)
+  output$det_titre_periode <- renderText({
+    libelle_maille(det_periode(), det_maille())
+  })
 
-    observe({
-      req(ONGLETS_PRETS())
-      updateDateRangeInput(session, id("periode"),
-                           start = defaut_debut, end = date_veille)
-    })
+  output$det_bandeau <- renderUI({ bandeau_ailleurs(det_maille()) })
+  output$det_kpi <- renderUI({ kpi_detail(det_resume()) })
 
-    periode <- reactive({
-      rng <- input[[id("periode")]]
-      if (is.null(rng) || any(is.na(rng))) c(defaut_debut, date_veille) else rng
-    })
+  output$det_titre_compo <- renderText({
+    maille_detail(det_maille())$COMPO_TITRE
+  })
 
-    output[[id("graph")]] <- renderPlotly({
-      p <- periode()
-      graph_ca_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), p[1], p[2],
-                       unite = unite, source = src)
-    })
+  output$det_composition <- renderPlotly({
+    graph_composition_detail(
+      composition_detail(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
+                         if (exists("DB_TICKET")) DB_TICKET else NULL,
+                         det_periode(), det_maille(), input$unite_tva),
+      det_maille())
+  })
 
-    # Période sélectionnée au clic (défaut : la dernière période connue)
-    choisie <- reactiveVal(NULL)
-    observeEvent(event_data("plotly_click", source = src), {
-      ev <- event_data("plotly_click", source = src)
-      if (!is.null(ev$x)) choisie(debut_periode(as.Date(ev$x), unite))
-    })
+  # Les heures d'une journée n'ont pas d'objectif : la légende de couleur n'y
+  # voudrait rien dire, et se lirait comme un jugement absent du graphe.
+  output$det_legende_compo <- renderUI({
+    if (identical(maille_detail(det_maille())$COMPOSITION, "heure")) NULL
+    else legende_objectif()
+  })
 
-    periode_sel <- reactive({
-      p <- choisie()
-      if (is.null(p)) debut_periode(date_veille, unite) else p
-    })
-    
-    bornes <- reactive({
-      d1 <- periode_sel()
-      list(d1 = d1, d2 = fin_periode(d1, unite))
-    })
+  output$det_repartition <- renderPlotly({
+    graph_repartition_detail(
+      repartition_detail(UPD_KPI_SIMPLE(), det_periode(), det_maille()))
+  })
 
-    ca <- reactive({
-      b <- bornes()
-      UPD_KPI_SIMPLE() |> filter(DATE >= b$d1, DATE <= b$d2) |>
-        pull(ventes) |> sum(na.rm = TRUE)
-    })
+  output$det_produits <- renderDT({
+    datatable_simple(table_produits_detail(
+      produits_detail(DB_PRODUITS, det_periode(), det_maille(),
+                      n = 25, unite_tva = input$unite_tva),
+      input$unite_tva))
+  })
 
-    # Matieres : ventilees par secteur dans la compta, etalees au jour. Sur un
-    # mois entier le total est exact ; sur une semaine c'est un prorata, signale
-    # comme tel plutot que presente comme une mesure hebdomadaire.
-    cout_matiere <- reactive({
-      b <- bornes()
-      matieres_par_secteur(DB_COUTS_MATIERE_JOUR(), b$d1, b$d2)
-    })
+  # --- Les tickets
+  det_tickets <- reactive({
+    b <- list(d1 = debut_maille(det_periode(), det_maille()),
+              d2 = fin_maille(det_periode(), det_maille()))
+    tickets_detail(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                   b$d1, b$d2, input$unite_tva)
+  })
 
-    # Travail : DB_HEURES tant qu'elle couvre la periode, sinon le total de la
-    # comptabilite (qui n'a pas de ventilation par secteur).
-    cout_travail <- reactive({
-      b <- bornes()
-      travail_par_secteur(DB_COUTS_TRAVAIL,
-                          if (exists("DB_COMPTA")) DB_COMPTA else NULL,
-                          b$d1, b$d2)
-    })
+  output$det_tickets_alerte <- renderUI({
+    alerte_tickets(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                   debut_maille(det_periode(), det_maille()),
+                   fin_maille(det_periode(), det_maille()))
+  })
 
-    apercu <- reactive({
-      b <- bornes()
-      req(exists("DB_COMPTA"))
-      apercu_exploitation(DB_COMPTA, b$d1, b$d2)
-    })
+  output$det_tickets <- renderDT({
+    tk <- det_tickets()
+    tbl <- table_tickets(tk, input$unite_tva)
+    if ("Info" %in% names(tbl)) return(datatable_simple(tbl))
+    datatable(tbl, selection = "single", rownames = FALSE,
+              options = list(pageLength = 12, dom = "ftp", scrollX = TRUE,
+                             columnDefs = defs_tri(tbl),
+                             language = list(search = "Filtrer :")))
+  })
 
-    output[[id("kpi")]] <- renderUI({
-      a <- apercu()
-      if (is.null(a))
-        return(div(class = "text-muted small",
-                   "Pas de comptabilite sur cette periode. Les indicateurs de ",
-                   "gestion sont mensuels : ils apparaissent sur le sous-onglet ",
-                   "Par mois."))
-      kpi_exploitation(a, "mois")
-    })
+  output$det_paniers <- renderPlotly({ graph_paniers(det_tickets()) })
+  output$det_resume_paniers <- renderText({ resume_paniers(det_tickets()) })
 
-    marge <- reactive({ marge_par_secteur(cout_matiere(), cout_travail(), ca()) })
+  det_ticket_choisi <- reactive({
+    tk <- det_tickets()
+    if (is.null(tk) || !nrow(tk)) return(NULL)
+    i <- input$det_tickets_rows_selected
+    if (is.null(i)) NULL else tk$ID_TICKET[i]
+  })
 
-    output[[id("titre")]] <- renderText({
-      d1 <- periode_sel()
-      d2 <- fin_periode(d1, unite)
-      paste0(label_periode(d1, unite), "  (",
-             format(d1, "%d/%m"), " → ", format(d2, "%d/%m/%Y"), ")")
-    })
+  output$det_titre_ticket <- renderText({
+    id <- det_ticket_choisi()
+    if (is.null(id)) "Détail d'un ticket" else paste0("Ticket ", id)
+  })
 
-    output[[id("repartition")]] <- renderPlotly({
-      graph_repartition_periode(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                                periode_sel(), unite = unite)
-    })
+  output$det_ticket_lignes <- renderDT({
+    datatable_simple(lignes_ticket(if (exists("DB_TICKET")) DB_TICKET else NULL,
+                                   det_ticket_choisi(), input$unite_tva))
+  })
 
-    output[[id("box")]] <- renderUI({
-      d1 <- periode_sel()
-      box_ventes_total(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), d1,
-                       as.numeric(fin_periode(d1, unite) - d1),
-                       titre = label_periode(d1, unite), is_semaine = TRUE,
-                       unite_tva = input$unite_tva)
-    })
-    
-    output[[id("travail")]] <- renderDT({
-      t <- cout_travail()
-      if (is.null(t) || !nrow(t))
-        return(datatable_simple(tibble(`Coût du travail` =
-          "Aucune donnée d'heures ni de comptabilité sur la période.")))
-      if (identical(t$SOURCE[1], "heures"))
-        datatable_simple(t |> transmute(
-          Secteur = SECTEUR, Heures = round(HEURES),
-          `Taux/h` = format_CA(TAUX_HORAIRE, 2),
-          Personnel = format_CA(COUT_TRAVAIL, -1)))
-      else
-        # Hors couverture de DB_HEURES : la compta donne le total, pas la
-        # ventilation par secteur ni les heures.
-        datatable_simple(t |> transmute(
-          Secteur = SECTEUR, Personnel = format_CA(COUT_TRAVAIL, -1),
-          Source = "comptabilité"))
-    })
+  output$det_heures <- renderDT({
+    r <- det_resume()
+    datatable_simple(table_heures_periode(
+      DB_COUTS_TRAVAIL, if (exists("DB_ONSS")) DB_ONSS else NULL,
+      det_periode(), det_maille(),
+      ca = if (is.null(r)) NA_real_ else r$CA))
+  })
 
-    output[[id("cout")]] <- renderDT({
-      m <- cout_matiere()
-      if (is.null(m) || !nrow(m))
-        return(datatable_simple(tibble(`Coût matière` =
-          "Aucune comptabilité sur la période.")))
-      datatable_simple(m |> transmute(
-        Secteur = SECTEUR, Achats = format_CA(ACHATS, -1),
-        Stock = ifelse(STOCK_CONNU, format_CA(VARIATION_STOCK, -1), "—"),
-        `Matières` = format_CA(COUT_MATIERE, -1)))
-    })
-
-    output[[id("prorata")]] <- renderUI({
-      m <- cout_matiere()
-      bandeau_alerte(!is.null(m) && nrow(m) && isTRUE(m$PRORATA[1]),
-        paste("La comptabilité est mensuelle : les coûts affichés ici sont un",
-              "prorata du mois sur les jours de la période. Le total du mois est",
-              "juste, sa répartition à l'intérieur du mois est une hypothèse."),
-        titre = "Coûts au prorata", couleur = COUL_AMBRE,
-        icone = "circle-info")
-    })
-
-    output[[id("marge")]] <- renderDT({
-      m <- marge()
-      if (is.null(m) || !nrow(m))
-        return(datatable_simple(tibble(Marge = "Aucun coût sur la période.")))
-      datatable_simple(m |> transmute(
-        Secteur = SECTEUR,
-        Personnel = format_CA(COUT_TRAVAIL, -1),
-        `Matières` = format_CA(COUT_MATIERE, -1),
-        Total = format_CA(TOTAL, -1),
-        # `Chiffre d'affaires` = format_CA(CA, -1),
-        `% du CA` = format_pct(PCT_CA)))
-    })
-
-    output[[id("produits")]] <- renderDT({
-      d1 <- periode_sel()
-      datatable_simple(
-        top_produits_periode(DB_PRODUITS, d1, fin_periode(d1, unite), n = 20, 
-                             unite_tva = input$unite_tva)
-      )
-    })
-  }
-
-  registre_detail_periode("sem",  "semaine", date_veille - weeks(26))
-  registre_detail_periode("mois", "mois",    floor_date(date_veille, "month") %m-% months(12))
+  # La note change avec la maille : au mois les heures sont mesurées, ailleurs
+  # elles sont pointées. Écrire les deux phrases en dur ferait lire la mauvaise.
+  output$det_heures_note <- renderUI({
+    if (identical(det_maille(), "mois"))
+      div(class = "small text-muted mt-1",
+          "Au mois, les heures sont ", tags$b("mesurées"), " : les heures",
+          " payées et le coût employeur viennent du fichier de paie, le coût",
+          " comptable de la comptabilité. Le pointage Horeko reste affiché à",
+          " côté — c'est lui qui ventile les journées, mais il ignore les",
+          " heures payées non pointées.",
+          tags$br(),
+          "Ces trois sources se comparent dans ", tags$b("Travail › Sources"),
+          ".")
+    else
+      div(class = "small text-muted mt-1",
+          "Les heures ", tags$b("pointées"), " dans Horeko, pas les heures",
+          " recalées sur la paie : à cette maille, la valeur recalée est une",
+          " répartition d'un total mensuel, pas une mesure du jour.",
+          tags$br(),
+          "Les heures payées et leur coût réel ne se connaissent qu'au ",
+          tags$b("mois"), " : choisissez cette maille pour les voir.")
+  })
 
   #### Volet "Détail" — Par produit ####
   
@@ -652,9 +569,13 @@ server <- function(input, output, session) {
     df <- produits_df() %>%
       transmute(Produit = tronque_nom(Produit),
                 Quantité = Quantite,
-                !!sym(col_name) := format_CA(CA, -1))
+                !!sym(col_name) := format_CA(CA, -1),
+                # Sans sa jumelle, la colonne de CA se trie dans l'ordre du
+                # dictionnaire (cf. defs_tri dans R/theme.R).
+                !!sym(col_tri(col_name)) := CA)
     datatable(df, selection = "single", rownames = FALSE,
               options = list(pageLength = 12, dom = 'ftp', 
+                             columnDefs = defs_tri(df),
                              language = list(search = "Filtrer :")))
   })
 
@@ -696,16 +617,22 @@ server <- function(input, output, session) {
     category_column <- paste0("Part dans '",category,"'")
     
     df <- evo_produit_periode() %>%
+      # arrange() AVANT le formatage : trié sur « 31/01/2026 », l'ordre est
+      # celui du dictionnaire, donc celui des jours du mois.
+      arrange(desc(SEMAINE)) %>%
       transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
                 Quantité = Quantite,
                 !!sym(col_name) := format_CA(CA, -1),
                 `Part dans Total` = paste0(round(PC_ALL*100,0),"%"),
-                !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%")
-                ) %>%
-      arrange(desc(Semaine))
-    
+                !!sym(category_column) := paste0(round(PC_CATEGORIE*100,0),"%"),
+                !!sym(col_tri("Semaine")) := as.numeric(SEMAINE),
+                !!sym(col_tri(col_name)) := CA,
+                !!sym(col_tri("Part dans Total")) := PC_ALL,
+                !!sym(col_tri(category_column)) := PC_CATEGORIE)
+
     datatable(df, selection = "none", rownames = FALSE,
-              options = list(pageLength = 12, dom = 'tp'))
+              options = list(pageLength = 12, dom = 'tp',
+                             columnDefs = defs_tri(df)))
   })
 
   #### Volet "Historique" — CA par semaine / mois ####
@@ -954,6 +881,233 @@ server <- function(input, output, session) {
   })
 
 
+  #### Volet "Compta / Gestion" — Analyse ####
+
+  # Même socle que le volet Exploitation : postes_exploitation() puis
+  # agrege_exploitation() à la granularité choisie. Rien n'est recalculé ici,
+  # sinon les deux sous-onglets finiraient par afficher deux marges.
+  ana_unite <- reactive(input$ana_unite %||% "mois")
+
+  # Deux séries, et la distinction porte tout le rabotage.
+  #
+  # La série COMPLÈTE sert au sélecteur de période : toutes les périodes
+  # doivent rester choisissables, y compris celles qu'un rabotage viderait.
+  ana_serie_complete <- reactive({
+    p <- agrege_exploitation(expl_postes(), ana_unite())
+    req(nrow(p) > 0)
+    p
+  })
+
+  # Les rangs de mois présents dans la période analysée — le gabarit auquel on
+  # ramène les autres périodes (cf. R/analyse.R).
+  ana_offsets <- reactive({
+    if (!isTRUE(input$ana_raboter %||% TRUE))
+      return(seq_len(mois_attendus(ana_unite())) - 1L)
+    offsets_periode(expl_postes(), ana_periode(), ana_unite())
+  })
+
+  # La série COMPARABLE : chaque période ramenée à ces mêmes rangs. C'est elle
+  # qui alimente tout ce qui compare — référence, pont, tuiles, tableau — et
+  # aussi la tendance : un graphe où 2026 vaut huit mois et 2025 douze ferait
+  # exactement l'erreur que la case à cocher existe pour éviter.
+  #
+  # La période analysée y est identique à celle de la série complète : tous ses
+  # mois sont dans le gabarit, par construction.
+  ana_serie_comparable <- reactive({
+    p <- serie_rabotee(expl_postes(), ana_unite(), ana_offsets())
+    req(nrow(p) > 0)
+    p
+  })
+
+  # Rabote-t-on réellement quelque chose ? Faux sur une période complète, et
+  # c'est ce qui permet de n'annoncer le rabotage que lorsqu'il a lieu.
+  ana_rabotage <- reactive({
+    etiquette_rabotage(ana_offsets(), ana_unite())
+  })
+
+  # Le sélecteur de période. Comme partout, il n'est semé qu'une fois les
+  # onglets insérés : écrire dans un input qui n'existe pas encore est perdu
+  # en silence, et l'observateur ne rejoue pas (cf. R/acces.R).
+  observe({
+    req(ONGLETS_PRETS())
+    dispo <- sort(unique(ana_serie_complete()$PERIODE), decreasing = TRUE)
+    updateSelectInput(session, "ana_periode",
+                      choices = setNames(as.character(dispo),
+                                         etiquette_periode(dispo, ana_unite())),
+                      selected = as.character(dispo[1]))
+  })
+
+  ana_periode <- reactive({
+    p <- ana_serie_complete()
+    choisie <- suppressWarnings(as.Date(input$ana_periode %||% NA))
+    # Changer de granularité laisse un instant l'ancienne valeur dans le select
+    # — un début de mois qui n'est pas un début de trimestre. On retombe alors
+    # sur la période la plus récente plutôt que de rendre un volet vide.
+    if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
+      max(p$PERIODE) else choisie
+  })
+
+  ana_actuel <- reactive({
+    filter(ana_serie_comparable(), PERIODE == ana_periode())
+  })
+
+  # La série de tendance s'arrête à la période analysée : prolonger au-delà
+  # ferait juger une période sur des mois qu'elle n'a pas encore vécus.
+  ana_serie <- reactive({
+    ana_serie_comparable() %>%
+      filter(PERIODE <= ana_periode()) %>%
+      tail(as.integer(input$ana_nb %||% 18))
+  })
+
+  ana_reference <- reactive({
+    reference_analyse(ana_serie_comparable(), ana_periode(),
+                      mode = input$ana_ref %||% "precedente",
+                      unite = ana_unite())
+  })
+
+  # Le libellé dit le rabotage quand il a lieu : « 2025 » et « 2025 (janv.–août) »
+  # ne désignent pas les mêmes chiffres, et l'en-tête du tableau de comparaison
+  # comme le titre du graphe s'appuient dessus.
+  ana_lib_ref <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) return("aucune référence")
+    rab <- ana_rabotage()
+    if (is.null(rab)) r$libelle else paste0(r$libelle, " (", rab, ")")
+  })
+
+  # Les périodes dont la référence est faite : une seule pour les modes
+  # « précédente » et « an dernier », plusieurs pour la médiane. Le forage par
+  # compte en a besoin — il ne peut pas travailler sur une ligne médiane, qui
+  # n'est la comptabilité d'aucune période réelle.
+  ana_ref_periodes <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) return(as.Date(character()))
+    if (identical(r$mode, "habituelle")) {
+      serie <- ana_serie_comparable() %>% filter(PERIODE < ana_periode())
+      return(tail(sort(serie$PERIODE), 6))
+    }
+    r$ligne$PERIODE
+  })
+
+  output$ana_alerte <- renderUI({
+    rab <- ana_rabotage()
+    tagList(
+      # Sur une période partielle, l'alerte standard dit « les totaux ne sont
+      # pas comparables ». Quand le rabotage est actif, ils le redeviennent :
+      # on remplace donc l'avertissement par ce qui a été fait, sans quoi on
+      # lirait une mise en garde contre un problème déjà résolu.
+      if (is.null(rab)) alerte_periode(etat_periode(ana_actuel(), ana_unite()))
+      else bandeau_alerte(
+        TRUE,
+        paste0(etiquette_periode(ana_periode(), ana_unite()), " ne porte que ",
+               length(ana_offsets()), " mois. Toutes les périodes comparées ",
+               "sont donc ramenées aux mêmes mois (", rab, ") : les écarts ",
+               "affichés sont de vrais écarts, pas des différences de durée. ",
+               "Décochez « raboter la référence » pour retrouver les périodes ",
+               "entières."),
+        titre = "Périodes ramenées à la même taille", couleur = COUL_AMBRE,
+        icone = "scissors"),
+      if (is.null(ana_reference()))
+        bandeau_alerte(
+          TRUE,
+          paste0("Aucune période de référence n'existe pour ce mode de ",
+                 "comparaison. Le volet affiche alors les niveaux, sans écart. ",
+                 "Choisissez « période précédente » ou reculez la période ",
+                 "analysée."),
+          titre = "Pas de référence", couleur = COUL_NEUTRE,
+          icone = "circle-info"))
+  })
+
+  output$ana_kpi <- renderUI({
+    r <- ana_reference()
+    kpi_analyse(ana_actuel(), if (is.null(r)) NULL else r$ligne,
+                ana_lib_ref(), ana_unite())
+  })
+
+  ana_pont <- reactive({
+    r <- ana_reference()
+    if (is.null(r)) return(NULL)
+    pont_marge(ana_actuel(), r$ligne)
+  })
+
+  # Le libellé de la période analysée sert au graphe, au tableau de
+  # décomposition ET aux phrases de lecture : un seul reactive, pour que les
+  # trois nomment la même période de la même façon.
+  ana_lib_periode <- reactive(etiquette_periode(ana_periode(), ana_unite()))
+
+  output$ana_pont <- renderPlotly({
+    graph_pont_marge(ana_pont(), ana_lib_periode(), ana_lib_ref(), ana_unite(),
+                     sous_titre = if (is.null(ana_rabotage())) NULL
+                                  else "périodes ramenées aux mêmes mois")
+  })
+
+  output$ana_pont_explication <- renderUI({
+    explication_pont(ana_pont(), ana_lib_periode(), ana_lib_ref())
+  })
+
+  output$ana_pont_table <- renderDT({
+    datatable_simple(table_pont_marge(ana_pont(), ana_lib_periode(),
+                                      ana_lib_ref()))
+  })
+
+  output$ana_pont_verif <- renderDT({
+    datatable_simple(table_verification_pont(ana_pont(), ana_lib_periode(),
+                                             ana_lib_ref()))
+  })
+
+  ana_contrib <- reactive({
+    req(exists("DB_COMPTA"))
+    # Le même gabarit que la série : sans lui, les contributions ne sommeraient
+    # plus à l'écart affiché juste au-dessus.
+    contributions_comptes(DB_COMPTA, ana_periode(), ana_ref_periodes(),
+                          ana_unite(), ana_offsets())
+  })
+
+  output$ana_contrib <- renderPlotly({ graph_contributions(ana_contrib()) })
+  output$ana_contrib_table <- renderDT({
+    datatable_simple(table_contributions(ana_contrib()))
+  })
+
+  output$ana_tendance <- renderPlotly({
+    graph_tendance(serie_indicateur(ana_serie(), input$ana_indic),
+                   input$ana_indic, ana_unite())
+  })
+
+  # La saisonnalité travaille toujours au grain MENSUEL : superposer des
+  # années agrégées à l'année ne donnerait qu'un point par courbe.
+  output$ana_saison <- renderPlotly({
+    graph_saisonnalite(saisonnalite(expl_postes(), input$ana_indic),
+                       input$ana_indic)
+  })
+
+  output$ana_table <- renderDT({
+    r <- ana_reference()
+    tbl <- table_comparaison(ana_actuel(), if (is.null(r)) NULL else r$ligne,
+                             etiquette_periode(ana_periode(), ana_unite()),
+                             ana_lib_ref())
+    if (!".sens" %in% names(tbl)) return(datatable_simple(tbl))
+    # .sens colore l'écart sans être affichée : même mécanique que les
+    # colonnes .f_* du tableau d'exploitation.
+    cache <- which(names(tbl) == ".sens") - 1L
+    datatable(
+      tbl, rownames = FALSE,
+      options = list(dom = "t", paging = FALSE, ordering = FALSE,
+                     searching = FALSE, scrollX = TRUE,
+                     columnDefs = list(list(visible = FALSE, targets = cache)))) %>%
+      formatStyle("Écart", valueColumns = ".sens",
+                  color = styleEqual(c(-1L, 1L), c("#c0392b", "#5B7B5A")),
+                  fontWeight = styleEqual(c(-1L, 1L), c("600", "600")))
+  })
+
+  ana_diagnostic <- reactive({
+    req(exists("DB_COMPTA"))
+    diagnostic_compta(DB_COMPTA, ana_serie(), ana_actuel(), ana_unite())
+  })
+
+  output$ana_diagnostic <- renderUI({ rendu_diagnostic(ana_diagnostic()) })
+  output$ana_diag_resume <- renderText({ resume_diagnostic(ana_diagnostic()) })
+
+
   #### Volet "Compta / Gestion" — Comptabilité générale ####
 
   # Plus de reconstruction de plan : les comptes sont classés sur leur numéro
@@ -1040,6 +1194,97 @@ server <- function(input, output, session) {
                   `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1))
     )
   })
+
+  #### Volet "Travail" — Sources ####
+  # DB_ONSS est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
+  # R/connect.R) : tout part donc de ce reactive, qui vaut NULL en son absence,
+  # et chaque sortie sait traiter le NULL. Le volet se dessine même sans elle —
+  # il compare alors Horeko et la comptabilité, ce qui reste utile.
+  SRC_ONSS <- reactive({
+    o <- if (exists("DB_ONSS")) DB_ONSS else NULL
+    if (onss_valide(o)) o else NULL
+  })
+
+  src_unite <- reactive(input$src_unite %||% "mois")
+
+  # Les sources au grain MENSUEL d'abord, puis consolidées : la paie est
+  # mensuelle par nature, agréger avant de comparer serait perdre le détail
+  # qu'on est venu voir.
+  src_mensuel <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    sources_mensuelles(DB_COUTS_TRAVAIL, SRC_ONSS())
+  })
+
+  src_serie <- reactive({
+    m <- src_mensuel()
+    req(!is.null(m), nrow(m) > 0)
+    d <- m %>%
+      mutate(PERIODE = switch(src_unite(),
+                              mois      = PERIODE,
+                              trimestre = floor_date(PERIODE, "quarter"),
+                              annee     = floor_date(PERIODE, "year"))) %>%
+      group_by(PERIODE, SOURCE, LIBELLE) %>%
+      summarise(HEURES = if (all(is.na(HEURES))) NA_real_
+                         else sum(HEURES, na.rm = TRUE),
+                COUT = sum(COUT, na.rm = TRUE), .groups = "drop")
+    # Le curseur coupe les périodes les plus anciennes, pas les sources.
+    gardees <- tail(sort(unique(d$PERIODE)), as.integer(input$src_nb %||% 24))
+    d %>% filter(PERIODE %in% gardees) %>% arrange(PERIODE, SOURCE)
+  })
+
+  src_secteurs <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    bornes <- range(src_serie()$PERIODE)
+    sources_par_secteur(DB_COUTS_TRAVAIL, SRC_ONSS()) %>%
+      filter(PERIODE >= bornes[1])
+  })
+
+  src_non_rattache <- reactive({
+    req(exists("DB_COUTS_TRAVAIL"))
+    onss_non_rattache(DB_COUTS_TRAVAIL, SRC_ONSS())
+  })
+
+  output$src_alerte_onss <- renderUI({
+    if (is.null(SRC_ONSS()))
+      return(bandeau_alerte(
+        TRUE,
+        paste0("Le fichier de paie n'est pas encore importé : la clé ",
+               "PATH_HEURES_ONSS manque dans l'onglet PATHS, ou le classeur ",
+               "est illisible. Ce volet compare alors Horeko et la ",
+               "comptabilité, et le coût du travail reste l'estimation ",
+               "Horeko partout ailleurs."),
+        titre = "Pas encore de paie", couleur = COUL_NEUTRE,
+        icone = "circle-info"))
+    # Le contrôle de lecture est calculé à l'import : s'il n'a pas été
+    # conservé dans le .RData, on ne l'invente pas.
+    alerte_onss(if (exists("CONTROLE_ONSS")) CONTROLE_ONSS else NULL)
+  })
+
+  output$src_alerte_manque <- renderUI({
+    alerte_non_rattache(src_non_rattache())
+  })
+
+  output$src_kpi <- renderUI({ kpi_sources(src_serie()) })
+  output$src_heures <- renderPlotly({
+    graph_sources_heures(src_serie(), src_unite()) })
+  output$src_cout <- renderPlotly({
+    graph_sources_cout(src_serie(), src_unite()) })
+  output$src_ecart <- renderPlotly({
+    graph_ecart_sources(src_serie(), src_unite()) })
+  output$src_secteurs <- renderPlotly({
+    graph_sources_secteurs(src_secteurs()) })
+
+  # Le tableau reste MENSUEL quelle que soit la granularité choisie : la
+  # demande était « lister, par mois, les heures et le coût selon chaque
+  # source ». Les graphiques au-dessus servent la vue d'ensemble.
+  output$src_table <- renderDT({
+    datatable_simple(table_sources(src_mensuel()))
+  })
+
+  output$src_non_rattache <- renderDT({
+    datatable_simple(table_non_rattache(src_non_rattache()))
+  })
+
 
   #### Volet "Réservations" ####
 
@@ -1271,18 +1516,27 @@ server <- function(input, output, session) {
                        n_semaines = req(input$plan_ref_semaines))
   })
 
-  PLAN_REFERENCE <- reactive({
-    reference_productivite(PLAN_JOUR(), DB_COUTS_TRAVAIL, UPD_KPI_SIMPLE(),
-                           n_semaines = req(input$plan_ref_semaines))
+  # Le détail des heures hors service, pour le survol seulement : il ne passe
+  # par aucun calcul, d'où ce reactive séparé plutôt qu'une colonne de plus
+  # dans la projection.
+  PLAN_FIXE <- reactive({
+    detail_heures_fixes(PLANNING_BRUT())
+  })
+
+  # Le CA habituel de chaque jour de semaine, sur les mêmes semaines de
+  # référence que les heures : c'est lui qu'on confronte à l'objectif.
+  PLAN_CA_HABITUEL <- reactive({
+    ca_habituel(UPD_KPI_SIMPLE(), date_veille,
+                n_semaines = req(input$plan_ref_semaines))
   })
 
   PLAN_PROJECTION <- reactive({
-    projection_planning(PLAN_JOUR(), UPD_OBJECTIFS(), PLAN_REFERENCE(),
-                        PLAN_HABITUEL(), RESA())
+    projection_planning(PLAN_JOUR(), UPD_OBJECTIFS(), PLAN_HABITUEL(),
+                        PLAN_CA_HABITUEL(), RESA())
   })
 
   PLAN_RESUME <- reactive({
-    resume_projection(PLAN_PROJECTION(), PLAN_REFERENCE())
+    resume_projection(PLAN_PROJECTION())
   })
 
   # Deux messages distincts : pas de table du tout, ou une table sans passé à
@@ -1302,8 +1556,8 @@ server <- function(input, output, session) {
     bandeau_alerte(
       identical(hab$source, "heures réelles"),
       paste0("Le planning n'a pas encore assez de semaines écoulées pour ",
-             "servir de repère à lui-même. Les heures habituelles et le CA ",
-             "par heure viennent donc des heures RÉELLEMENT travaillées (",
+             "servir de repère à lui-même. Les heures habituelles viennent ",
+             "donc des heures RÉELLEMENT travaillées (",
              hab$libelle, ") — on ne travaille jamais exactement ce qu'on a ",
              "planifié, l'ordre de grandeur reste bon mais la comparaison ",
              "n'est pas exacte."),
@@ -1312,17 +1566,17 @@ server <- function(input, output, session) {
 
   output$plan_kpi <- renderUI({
     req(PLANNING_BRUT())
-    kpi_planning_tiles(PLAN_RESUME(), PLAN_REFERENCE(), PLAN_HABITUEL())
+    kpi_planning_tiles(PLAN_RESUME(), PLAN_HABITUEL(), PLAN_CA_HABITUEL())
   })
 
   output$plan_heures <- renderPlotly({
     req(PLANNING_BRUT())
-    graph_planning_heures(PLAN_PROJECTION(), PLAN_HABITUEL())
+    graph_planning_heures(PLAN_PROJECTION(), PLAN_HABITUEL(), PLAN_FIXE())
   })
 
   output$plan_rentabilite <- renderPlotly({
     req(PLANNING_BRUT())
-    graph_planning_rentabilite(PLAN_PROJECTION(), PLAN_REFERENCE())
+    graph_planning_rentabilite(PLAN_PROJECTION())
   })
 
   output$plan_table <- renderDT({
@@ -1331,9 +1585,10 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Travail" ####
-  # Les coûts affichés sont ceux d'Horeko : c'est la seule source qui se
-  # ventile par secteur. Le total comptable sert de point de contrôle, jamais
-  # de correcteur (cf. import.R et R/travail.R).
+  # DB_COUTS_TRAVAIL arrive déjà recalé sur la paie (cf. import.R et
+  # R/sources_travail.R) : HEURES et COUT_TRAVAIL sont les valeurs retenues,
+  # Horeko n'ayant servi qu'à les répartir sur les jours et les créneaux. Le
+  # total comptable sert de point de contrôle, jamais de correcteur.
 
   trav_unite <- reactive(input$trav_unite %||% "mois")
 
@@ -1433,8 +1688,11 @@ server <- function(input, output, session) {
 
   output$trav_heures_decomp <- renderDT({
     p <- trav_periode_detail()
-    datatable_simple(table_decomposition_travail(DB_COUTS_TRAVAIL, p$d1, p$d2,
-                                                 ca_periode = p$ca))
+    # DB_ONSS sert au total de la paie, qui inclut le « Non ventilé » et les
+    # secteurs sans pointage — invisibles dans la somme des lignes.
+    datatable_simple(table_decomposition_travail(
+      DB_COUTS_TRAVAIL, p$d1, p$d2, ca_periode = p$ca,
+      db_onss = if (exists("DB_ONSS")) DB_ONSS else NULL))
   })
 
   # --- Créneaux types, sur la même fenêtre
