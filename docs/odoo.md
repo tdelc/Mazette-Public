@@ -33,7 +33,7 @@ aujourd'hui ailleurs que dans le code qui les lit.
 | `VALEUR`    | num     | **Magnitude positive** — voir ci-dessous.                          |
 | `TYPE`      | chr     | `"compte"` pour une ligne de compte, `"solde"` pour un sous-total.  |
 | `AGREGE`    | lgl     | `TRUE` si la ligne entre dans les totaux (écarte les reprises « dont »). |
-| `SECTEUR`   | chr     | Vocabulaire de `normalise_secteur()` (`R/planning.R:50`).           |
+| `SECTEUR`   | chr     | Vocabulaire de `normalise_secteur()` (`R/planning.R:50`). **Ne sert qu'aux comptes d'achat** — voir §2.5. |
 | `CATEGORIE` | chr     | Étiquette héritée de l'export du comptable : `ACHATS`, `VARIATION_STOCK`, `REMUNERATION`… |
 | `SECTION`   | chr     | Idem, littéral : `"Coût des ventes et prestations"`.                |
 
@@ -44,6 +44,18 @@ via `SENS_G` (+1 produit, −1 charge) que `classe_comptes()` déduit du PCMN
 (`R/plan_comptable.R:28`). Une charge de 1 200 € s'écrit `VALEUR = 1200`, jamais
 `-1200`. C'est écrit noir sur blanc dans `R/exploitation.R:79` et tout le volet
 Compta en dépend.
+
+D'où la seule formule de conversion qui tienne, depuis un débit et un crédit :
+
+```r
+VALEUR = SENS_G * (CREDIT - DEBIT)
+```
+
+Une charge (`SENS_G = -1`) a un solde débiteur : la formule rend `DEBIT - CREDIT`,
+positif. Un produit (`SENS_G = +1`) a un solde créditeur : elle rend
+`CREDIT - DEBIT`, positif aussi. Une note de crédit sort négative, et c'est
+correct — elle diminue la charge. Se tromper de sens ici inverse tout le volet
+Compta sans lever la moindre erreur.
 
 ### Les quatre consommateurs
 
@@ -69,7 +81,7 @@ Deux remarques qui pèsent sur la suite :
    `controle_exploitation()` confronte à la marge *recalculée* par le dashboard.
    Si on reconstruit les soldes nous-mêmes à partir des écritures, le contrôle se
    compare à lui-même et ne vaut plus rien. Il faut donc une **seconde source,
-   indépendante** — voir §2.4.
+   indépendante** — voir §2.5.
 
 ---
 
@@ -135,28 +147,87 @@ COMPTE  <- stringr::str_extract(x, "^[0-9]+")
 LIBELLE <- stringr::str_trim(stringr::str_remove(x, "^[0-9]+"))
 ```
 
-#### Le secteur : le seul point vraiment dur
+### 2.4 Ce qu'un extrait réel confirme — et le secteur
 
-`DB_COMPTA` porte un `SECTEUR` (Service, Transformation alimentaire, Brasserie,
-Support). **Rien dans une écriture comptable ne le donne.** Deux voies :
+Mesuré sur un extrait de 51 lignes de septembre 2026 (journaux `MZACH`, `MZVEN`,
+`TRI1`), en appliquant la règle de préfixe de `PLAN_PCMN` :
 
-- **La bonne : la comptabilité analytique.** Un plan analytique à quatre comptes,
-  nommés exactement comme `normalise_secteur()` les attend. Les lignes
-  analytiques sont un *modèle à part* (`account.analytic.line`) : c'est un
-  **second export**, avec Date, Compte analytique, Compte général, Montant,
-  Pièce. Si l'analytique n'est pas tenue aujourd'hui, c'est le chantier à ouvrir
-  côté Odoo — et il n'est pas urgent : seuls les coûts matière par secteur en
-  dépendent.
-- **Le repli : une table de correspondance compte → secteur**, tenue dans une
-  feuille Google comme les autres paramètres, avec un défaut `Support` et un
-  contrôle qui liste ce qui est tombé dans le défaut. Moins juste, mais honnête
-  et visible.
+| Constat | Chiffre | Conséquence |
+|---|---|---|
+| Lignes de bilan (classes 1–5) | **47 sur 51** | voir ci-dessous |
+| Lignes de résultat (classes 6–7) | **4 sur 51** | c'est tout ce qui alimente `DB_COMPTA` |
+| Comptes non classés par `PLAN_PCMN` | 8, **tous de classe 1–5** | le plan couvre bien tout le résultat |
+| Pièces déséquilibrées | 2 sur 24 | artefact de l'extrait tronqué — le contrôle fonctionne |
 
-Dans les deux cas : **un compte sans secteur n'est pas jeté**, il va dans un
-secteur « Non ventilé » qu'on affiche. C'est la règle qu'on a déjà appliquée à la
-paie (`SECTEUR_NON_VENTILE`, `R/sources_travail.R:76`) et aux produits sans TVA.
+**Il faut donc filtrer sur les classes 6 et 7 avant de produire `DB_COMPTA`.**
+Sans ce filtre, `comptes_non_classes()` — le contrôle qui doit signaler un compte
+de résultat oublié — se retrouverait noyé sous 92 % de comptes de bilan et ne
+dirait plus rien. L'extrait complet, lui, se garde de côté : c'est le bilan de
+demain, et il ne coûte rien à conserver.
 
-### 2.4 Le contrôle indépendant
+Le classement, lui, tombe juste du premier coup :
+
+```
+623700  Titres-repas                      -> Rémunérations        sens -1   820,56
+700200  Ventes 12% (nourriture sur place) -> Chiffre d'affaires   sens +1  1785,50
+700300  Ventes 21% (boisson sur place)    -> Chiffre d'affaires   sens +1   620,00
+```
+
+Au passage : le journal se lit dans le préfixe du numéro de pièce
+(`str_extract(NUMERO, "^[^/]+")`), et le code de compte dans le préfixe du
+libellé (`str_extract(COMPTE, "^[0-9]+")`), `"623700 Titres-repas"` donnant
+`623700` et `Titres-repas`.
+
+#### Le secteur : un besoin beaucoup plus étroit qu'il n'y paraît
+
+Première chose à lever, parce que la question se pose naturellement :
+`normalise_secteur()` **ne peut pas servir ici**. Elle normalise des *libellés de
+secteur* déjà présents (« Transfo alimentaire » → « Transformation
+alimentaire ») ; elle ne peut pas déduire un secteur d'un numéro de compte. Il
+faut une table de correspondance, qui n'existe pas encore.
+
+Mais son périmètre est minuscule. `DB_COMPTA$SECTEUR` n'a **qu'un seul
+consommateur** : `DB_COUTS_MATIERE` (`server.R:47`), qui filtre
+`CATEGORIE ∈ {ACHATS, VARIATION_STOCK}` — c'est-à-dire, dans le vocabulaire du
+plan, les préfixes `60` et `609`. Tous les autres `SECTEUR` du dashboard viennent
+de `DB_COUTS_TRAVAIL` (Horeko et paie), pas de la comptabilité.
+
+**Seuls les comptes de la classe 60 ont besoin d'un secteur.** Ni les ventes, ni
+les rémunérations, ni les frais généraux, ni le bilan.
+
+La table vit dans une feuille Google, comme les autres paramètres — le plan
+comptable grandira, et une correspondance figée dans le code vieillirait mal :
+
+| `COMPTE` | `SECTEUR` |
+|---|---|
+| `604100` | Transformation alimentaire |
+| `604200` | Service |
+| … | … |
+
+avec trois règles : le préfixe le plus long l'emporte (comme dans `PLAN_PCMN`),
+un compte absent tombe dans **« Non ventilé »** plutôt que dans un secteur par
+défaut, et un contrôle affiche ce que « Non ventilé » pèse chaque mois. C'est la
+règle déjà appliquée à la paie (`SECTEUR_NON_VENTILE`, `R/sources_travail.R:76`)
+et aux produits sans taux de TVA.
+
+**Ce qu'il faut pour l'écrire** : le plan comptable des classes 6 et 7, code et
+libellé (Comptabilité → Configuration → Plan comptable, filtre sur le code,
+export). Un fichier de quelques dizaines de lignes.
+
+La question à laquelle ce fichier répondra — et qui décide de la suite : **les
+comptes d'achat distinguent-ils déjà la nourriture de la boisson ?** Les comptes
+de vente le font (`700200` nourriture, `700300` boisson) ; si les achats suivent
+la même logique, la correspondance s'écrit en dix minutes. Sinon — un seul
+`604000 Achats de marchandises` pour tout — aucune table ne pourra ventiler quoi
+que ce soit, et il faudra créer des sous-comptes dans Odoo. C'est le seul endroit
+où le travail retombe côté comptabilité plutôt que côté code.
+
+Bonus à garder en tête : ce découpage des ventes par taux de TVA donne, le jour
+où on le voudra, un **CA nourriture / boisson issu de la comptabilité** — donc
+un contrôle indépendant du point de vente, sur la grandeur la plus regardée du
+dashboard.
+
+### 2.5 Le contrôle indépendant
 
 Les lignes `TYPE == "solde"` disparaissent avec l'ancien export. Pour que
 `controle_exploitation()` garde un sens, télécharge **en plus, une fois par
@@ -169,7 +240,7 @@ Ce fichier n'alimente **aucun chiffre affiché**. Il sert uniquement à dire :
 celui qu'Odoo publie ? ». C'est le même principe que `controle_onss()` pour la
 paie, et c'est ce qui permet de faire confiance au reste.
 
-### 2.5 Où déposer les fichiers
+### 2.6 Où déposer les fichiers
 
 Sur le Drive, un dossier `compta/odoo/`, **un fichier par export, daté, jamais
 écrasé** : `ecritures_2026-10-10.xlsx`. Une anomalie repérée en mars doit pouvoir
@@ -183,7 +254,7 @@ Deux nouvelles clés dans la feuille des chemins, à côté de `ID_DB_COMPTA` :
 | `ID_ODOO_ANALYTIQUE`  | Le dernier export de lignes analytiques.          |
 | `ID_ODOO_CONTROLE`    | Le rapport agrégé de contrôle.                   |
 
-### 2.6 Le code : un fichier, quatre fonctions
+### 2.7 Le code : un fichier, quatre fonctions
 
 Un nouveau `R/odoo.R`, sur le modèle de `R/sources_travail.R` : des fonctions
 **pures**, testables sans réseau ni fichier.
@@ -205,7 +276,7 @@ controle_ecritures    <- function(ecritures, compta, controle = NULL)
 Puis, dans `import.R`, un bloc qui enchaîne les quatre et **remplace** le
 `readRDS("DB_COMPTA.rds")` de la ligne 91.
 
-### 2.7 Les contrôles à écrire, et pourquoi chacun
+### 2.8 Les contrôles à écrire, et pourquoi chacun
 
 | Contrôle                                              | Ce qu'il attrape                                                    |
 |-------------------------------------------------------|----------------------------------------------------------------------|
@@ -216,28 +287,50 @@ Puis, dans `import.R`, un bloc qui enchaîne les quatre et **remplace** le
 | Un mois déjà clôturé qui change entre deux imports    | Une écriture passée rétroactivement.                                 |
 | Journaux et dates des écritures de clôture            | Voir ci-dessous.                                                     |
 
-**Les OD de clôture.** Ta capture montre une pièce `OD/2026/06/0001` au
-**30/06/2026** sur des comptes 11, 14, 15 et 17 — capital, réserves, subsides,
-emprunts. Deux choses à vérifier sur tes données avant de sommer quoi que ce
-soit :
+**Les OD de clôture.** Réponse obtenue : l'exercice fiscal est l'**année
+civile**, et la pièce `OD/2026/06/0001` du 30/06/2026 est une **reprise de
+balance** — le solde de l'ancien comptable, repris à l'ouverture d'Odoo. Elle ne
+touche que des comptes de bilan (11, 14, 15, 17), donc elle n'entre pas dans le
+résultat. Le contrôle reste à écrire, parce que ce qui est vrai de cette
+pièce-là ne l'est pas forcément de la suivante : **aucune ligne de classe 6 ou 7
+ne doit porter la date de reprise.** Si l'une s'y glisse, elle ferait doublon
+avec l'ancienne source.
 
-- **Ton exercice se clôture-t-il au 30 juin ?** Si oui, l'« année » du dashboard
-  (civile) et l'exercice comptable ne coïncident pas, et il faudra décider
-  laquelle fait foi dans l'onglet Année.
-- **Y a-t-il une écriture qui solde les comptes 6 et 7 en fin d'exercice ?**
-  Si oui, l'agréger avec les autres annulerait un exercice entier. Le remède est
-  simple — exclure le journal ou la pièce de clôture — mais il faut le savoir.
-  Le contrôle à écrire : repérer tout mois où la somme des classes 6 et 7
-  s'approche de l'opposé exact du cumul de l'exercice.
+### 2.9 La jonction avec l'ancienne comptabilité
 
----
+C'est la conséquence structurelle de la reprise, et elle ne se contourne pas :
+**Odoo ne contient rien avant le 30/06/2026.** L'historique 2022 → juin 2026 ne
+vit que dans l'ancien `DB_COMPTA.rds`. La table finale est donc une couture :
+
+```
+DB_COMPTA  =  ancien .rds   jusqu'au 2026-06 inclus
+            + Odoo          à partir du 2026-07
+```
+
+La date de couture est une **constante nommée**, pas un nombre répété dans trois
+`filter()`. La coupure tombe heureusement sur une frontière de mois, ce qui évite
+le pire.
+
+Trois contrôles, tous nécessaires, parce que chacun attrape une faute que les
+deux autres laissent passer :
+
+1. **Aucun mois présent des deux côtés.** Un recouvrement double un mois entier.
+2. **Aucun mois manquant entre les deux.** Un trou se lit comme une chute
+   d'activité.
+3. **Aucune ligne de classe 6 ou 7 datée du 30/06/2026** dans Odoo (cf.
+   ci-dessus).
+
+Et une conséquence à accepter : **2026 est une année à deux sources**, moitié
+ancienne, moitié Odoo. Les comparaisons d'année à année du volet Analyse
+l'enjamberont. Ce n'est pas un bug, mais ça mérite d'être dit à l'écran le jour
+où on les regardera — comme on marque déjà les périodes à cheval dans Détails.
 
 ## 3. Phase 2 — avec l'API
 
 ### Ce qui change : une fonction. Vraiment.
 
 C'est l'argument central de tout ce document : si la phase 1 est découpée comme
-au §2.6, **seule `lit_ecritures_fichier()` est remplacée** par
+au §2.7, **seule `lit_ecritures_fichier()` est remplacée** par
 `lit_ecritures_odoo()`. La normalisation, l'agrégation, les contrôles, les tests
 et `DB_COMPTA` ne bougent pas. Le travail de la phase 1 n'est pas du jetable :
 c'est 90 % de la phase 2, écrit et éprouvé d'avance.
@@ -306,11 +399,11 @@ pagination : limit = 5000, offset croissant jusqu'à retour vide
 | # | Étape                                                                              | Bloque la suite ? |
 |---|------------------------------------------------------------------------------------|-------------------|
 | 1 | Un export XLSX d'écritures, tout l'historique, déposé sur le Drive                   | oui               |
-| 2 | Vérifier sur ce fichier : exercice, OD de clôture, comptes hors PCMN                 | oui               |
+| 2 | Vérifier sur ce fichier : date de reprise, aucune classe 6/7 à cette date, comptes hors PCMN | oui        |
 | 3 | `R/odoo.R` + ses tests, sur le fichier réel                                          | oui               |
-| 4 | Brancher `DB_COMPTA` dessus, et **comparer poste à poste avec l'ancien `.rds`**      | oui               |
+| 4 | Coudre Odoo à l'ancien `.rds` au 30/06/2026, et **comparer poste à poste sur un mois commun reconstruit** | oui |
 | 5 | Migrer `DB_COUTS_MATIERE` et `DB_HEURES_COMPTA` du couple `CATEGORIE`/`SECTION` vers `classe_comptes()` | non |
-| 6 | Décider du secteur : analytique Odoo ou table de correspondance                      | non               |
+| 6 | Table de correspondance compte 60 → secteur, d'après le plan comptable               | non               |
 | 7 | Remplacer la lecture fichier par l'API                                               | non               |
 
 L'étape 4 est la seule qui ne se saute pas : **tant que les deux sources ne
