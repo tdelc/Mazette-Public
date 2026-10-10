@@ -27,6 +27,11 @@
 #
 # Nommées ici plutôt que devinées : un export dont une colonne manque doit se
 # plaindre en nommant la colonne, pas rendre un tableau amputé.
+# Onglet préféré quand le fichier en porte plusieurs. Absent, on prend le
+# premier : un export brut d'Odoo n'a qu'une feuille, un classeur tenu à la
+# main en a souvent plusieurs.
+SHEET_ODOO <- "ECRITURES"
+
 ODOO_COLONNES <- c(DATE       = "Date",
                    PIECE      = "Numéro",
                    COMPTE     = "Compte",
@@ -41,12 +46,15 @@ ODOO_COLONNES <- c(DATE       = "Date",
 # CSV hérite du format belge (« 1.234,56 », « 30/06/2026 »). Les deux chemins
 # sont acceptés quand même — normalise_ecritures() retype ce qui arrive en
 # texte — mais le XLSX évite une conversion, donc une occasion de se tromper.
-lit_ecritures_fichier <- function(chemin) {
+lit_ecritures_fichier <- function(chemin, feuille = SHEET_ODOO) {
   if (is.null(chemin) || !length(chemin) || !file.exists(chemin)) return(NULL)
   ext <- tolower(tools::file_ext(chemin))
 
-  if (ext %in% c("xlsx", "xlsm", "xls"))
-    return(readxl::read_excel(chemin, guess_max = 100000))
+  if (ext %in% c("xlsx", "xlsm", "xls")) {
+    onglets <- readxl::excel_sheets(chemin)
+    cible <- if (!is.null(feuille) && feuille %in% onglets) feuille else onglets[1]
+    return(readxl::read_excel(chemin, sheet = cible, guess_max = 100000))
+  }
 
   # Odoo exporte en CSV avec la virgule, mais un passage par un tableur belge
   # le rend en point-virgule. On tranche sur la première ligne plutôt que de
@@ -297,6 +305,11 @@ controle_ecritures <- function(ecritures, compta = NULL, reprise = NULL) {
 # Une constante nommée, et pas une date recopiée dans trois filter() : le jour
 # où la bascule se déplace, elle se déplace à un seul endroit.
 BASCULE_ODOO <- as.Date("2026-07-01")
+
+# Date de la pièce de reprise : le solde de l'ancien comptable, repris à
+# l'ouverture d'Odoo. Elle ne doit toucher que des comptes de bilan — une
+# ligne de classe 6 ou 7 à cette date ferait doublon avec l'ancienne source.
+REPRISE_ODOO <- BASCULE_ODOO - 1
 
 periode_compta <- function(db) {
   as.Date(sprintf("%04d-%02d-01", as.integer(db$ANNEE), as.integer(db$MOIS)))

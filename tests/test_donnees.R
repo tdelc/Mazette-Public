@@ -3,7 +3,7 @@
 # Deux regles qui ont ete fausses, et dont l'erreur ne levait aucune exception.
 suppressMessages({library(dplyr); library(tibble); library(lubridate)})
 ok <- function(l, c) cat(if (isTRUE(c)) "  ok  " else "  FAIL", l, "\n")
-source("R/donnees.R", encoding = "UTF-8")
+source("R/donnees.R", encoding = "UTF-8", local = TRUE)
 
 # ---------- 1. un produit, plusieurs libelles ----------
 # La caisse laisse renommer une ligne : le meme ID_PRODUIT y apparait sous

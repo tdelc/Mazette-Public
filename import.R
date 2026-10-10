@@ -94,6 +94,71 @@ cli::cli_h3("Drive Compta")
 drive_download(drive_get(id =get_path("ID_DB_COMPTA")),overwrite = TRUE)
 DB_COMPTA <- readRDS("DB_COMPTA.rds")
 
+#### Compta Odoo ####
+
+# Source optionnelle, sur le modèle de la paie : tant que la clé n'est pas
+# renseignée dans les PATHS, l'import se comporte exactement comme avant.
+#
+# À renseigner côté Drive : une ligne `ID_ODOO_ECRITURES` dans l'onglet PATHS,
+# pointant vers l'export « Écritures comptables » d'Odoo — un classeur Google
+# (onglet « ECRITURES ») ou le .xlsx d'Odoo déposé tel quel, les deux marchent.
+#
+# Odoo ne contient rien avant la reprise du 30/06/2026 : il ne remplace donc
+# pas DB_COMPTA, il en prend la suite. Toute la logique vit dans R/odoo.R.
+ID_ODOO <- get_path("ID_ODOO_ECRITURES")
+
+if (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO)) {
+  cli::cli_h3("Drive Odoo")
+
+  # Un échec de lecture ne doit pas emporter tout l'import : la compta Odoo
+  # s'AJOUTE à une chaîne qui marchait sans elle. On le dit fort, et on laisse
+  # DB_COMPTA tel quel plutôt que d'en produire une moitié.
+  COMPTA_ODOO <- tryCatch({
+    drive_odoo <- drive_download(drive_get(id = ID_ODOO), overwrite = TRUE)
+    ECRITURES_ODOO <- normalise_ecritures(lit_ecritures_fichier(drive_odoo$local_path))
+    cli::cli_alert_info("Odoo : {nrow(ECRITURES_ODOO)} écritures lues")
+
+    cp <- compta_mensuelle(ECRITURES_ODOO)
+
+    # Les contrôles sont journalisés ICI, pas seulement disponibles : c'est au
+    # moment de l'import qu'on peut encore corriger un export tronqué.
+    # Flèche simple : tryCatch() évalue son bloc dans l'environnement appelant,
+    # et import.R est lui-même sourcé dans un environnement dédié (R/connect.R).
+    # Un `<<-` sauterait par-dessus, et CONTROLE_ODOO manquerait au cache.
+    CONTROLE_ODOO <- controle_ecritures(ECRITURES_ODOO, cp, reprise = REPRISE_ODOO)
+    for (i in seq_len(nrow(CONTROLE_ODOO))) {
+      msg <- paste0("Odoo — ", CONTROLE_ODOO$CONTROLE[i], " : ", CONTROLE_ODOO$DETAIL[i])
+      if (CONTROLE_ODOO$VERDICT[i] == "ok") cli::cli_alert_success(msg)
+      else                                  cli::cli_alert_warning(msg)
+    }
+    cp
+  }, error = function(e) {
+    cli::cli_alert_danger("Odoo : lecture impossible — {conditionMessage(e)}")
+    cli::cli_alert_warning("Odoo : la comptabilité reste celle de DB_COMPTA.rds")
+    NULL
+  })
+
+  # La couture ne se fait que s'il y a quelque chose à coudre. Sans ce garde,
+  # coud_compta() tronquerait DB_COMPTA à la bascule sans rien mettre après.
+  if (!is.null(COMPTA_ODOO) && nrow(COMPTA_ODOO)) {
+    CONTROLE_COUTURE <- controle_couture(DB_COMPTA, COMPTA_ODOO)
+    for (i in seq_len(nrow(CONTROLE_COUTURE))) {
+      msg <- paste0("Couture — ", CONTROLE_COUTURE$CONTROLE[i], " : ",
+                    CONTROLE_COUTURE$DETAIL[i])
+      if (CONTROLE_COUTURE$VERDICT[i] == "ok") cli::cli_alert_success(msg)
+      else                                     cli::cli_alert_warning(msg)
+    }
+
+    n_avant <- nrow(DB_COMPTA)
+    DB_COMPTA <- coud_compta(DB_COMPTA, COMPTA_ODOO)
+    cli::cli_alert_success(
+      "Compta cousue : {n_avant} lignes + {nrow(COMPTA_ODOO)} d'Odoo = {nrow(DB_COMPTA)}")
+  }
+} else {
+  cli::cli_alert_warning(
+    "ID_ODOO_ECRITURES absent des PATHS : la compta reste celle de DB_COMPTA.rds")
+}
+
 # Import des réservations
 
 cli::cli_h3("Drive Réservations")

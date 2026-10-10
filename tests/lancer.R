@@ -4,6 +4,12 @@
 # Pas de framework : chaque fichier imprime « ok » ou « FAIL » par assertion,
 # et ce script compte. Les paquets lourds du dashboard (plotly, DT, shiny) ne
 # sont pas requis — les tests ne chargent que ce dont ils ont besoin.
+#
+# Chaque fichier tourne dans SON environnement, pour qu'une doublure definie
+# dans l'un ne contamine pas le suivant. Consequence a connaitre : un fichier
+# de test doit sourcer le dashboard avec `local = TRUE`, sinon son `source()`
+# retombe dans l'environnement global et les fonctions chargees n'y voient
+# plus les constantes definies juste au-dessus d'elles.
 fichiers <- sort(list.files("tests", "^test_.*\\.R$", full.names = TRUE))
 total <- 0; echecs <- 0
 
