@@ -6,7 +6,7 @@
 ## Le problème, en une phrase
 
 `DB_COMPTA` arrive aujourd'hui dans le dashboard sous forme d'un `.rds` déjà
-consolidé, téléchargé du Drive (`ID_DB_COMPTA`, cf. `import.R:91`). Personne ne
+consolidé, téléchargé du Drive (`ID_DB_COMPTA`, cf. `import.R:95`). Personne ne
 peut dire, en lisant le dépôt, d'où sortent ses chiffres ni comment les refaire.
 C'est la dernière boîte noire du projet, et c'est elle qu'Odoo doit remplacer.
 
@@ -33,7 +33,7 @@ aujourd'hui ailleurs que dans le code qui les lit.
 | `VALEUR`    | num     | **Magnitude positive** — voir ci-dessous.                          |
 | `TYPE`      | chr     | `"compte"` pour une ligne de compte, `"solde"` pour un sous-total.  |
 | `AGREGE`    | lgl     | `TRUE` si la ligne entre dans les totaux (écarte les reprises « dont »). |
-| `SECTEUR`   | chr     | Vocabulaire de `normalise_secteur()` (`R/planning.R:50`). **Ne sert qu'aux comptes d'achat** — voir §2.5. |
+| `SECTEUR`   | chr     | Vocabulaire de `normalise_secteur()` (`R/planning.R:230`). **Ne sert qu'aux comptes d'achat** — voir §2.5. |
 | `CATEGORIE` | chr     | Étiquette héritée de l'export du comptable : `ACHATS`, `VARIATION_STOCK`, `REMUNERATION`… |
 | `SECTION`   | chr     | Idem, littéral : `"Coût des ventes et prestations"`.                |
 
@@ -42,7 +42,7 @@ aujourd'hui ailleurs que dans le code qui les lit.
 **`VALEUR` est une magnitude positive. Le signe vit dans le numéro de compte**,
 via `SENS_G` (+1 produit, −1 charge) que `classe_comptes()` déduit du PCMN
 (`R/plan_comptable.R:28`). Une charge de 1 200 € s'écrit `VALEUR = 1200`, jamais
-`-1200`. C'est écrit noir sur blanc dans `R/exploitation.R:79` et tout le volet
+`-1200`. C'est écrit noir sur blanc dans `R/exploitation.R:78` et tout le volet
 Compta en dépend.
 
 D'où la seule formule de conversion qui tienne, depuis un débit et un crédit :
@@ -63,7 +63,7 @@ Compta sans lever la moindre erreur.
 |-----------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `classe_comptes()` — tout le volet Compta      | `TYPE == "compte"`, `AGREGE`, puis classe sur `COMPTE`                                             |
 | `DB_COUTS_MATIERE` — `server.R:47`             | `CATEGORIE ∈ {ACHATS, VARIATION_STOCK}` **et** `SECTION == "Coût des ventes et prestations"`, par `SECTEUR` |
-| `DB_HEURES_COMPTA` — `import.R:742`            | `CATEGORIE == "REMUNERATION"`                                                                      |
+| `DB_HEURES_COMPTA` — `import.R:886`            | `CATEGORIE == "REMUNERATION"`                                                                      |
 | `controle_exploitation()` — `R/exploitation.R:132` | `TYPE == "solde"` et `LIBELLE` ≈ « Bénéfice … d'exploitation »                                 |
 
 Deux remarques qui pèsent sur la suite :
@@ -212,30 +212,31 @@ bar — et l'achat va toujours avec sa variation de stock.
 | `604100` | Achats de marchandises — Bar                                         | Service                    |
 | `609410` | Variation des stocks de marchandises — Bar                           | Service                    |
 | `601000` | Achats de fournitures                                                | Support                    |
-| `604000` | Achats de marchandises                                               | Support ⚠                  |
-| `606000` | Frais accessoires sur achats (Transports)                            | Support ⚠                  |
+| `604000` | Achats de marchandises                                               | **Non ventilé**            |
+| `606000` | Frais accessoires sur achats (Transports)                            | Support                    |
 
 Neuf comptes, et neuf seulement. Tout le reste des classes 6 et 7 n'a pas besoin
 de secteur : les ventes (`7001`, `7002`, `7003`), les autres produits (`7400`,
 `7461`, `7490`) et `640800 Droits de douane et accises`, qui est de classe 64
 et tombe donc dans les frais généraux.
 
-Trois remarques, par ordre d'importance.
+Quatre remarques, par ordre d'importance.
 
-**`604000 Achats de marchandises` n'est pas du Support.** La règle « ce qu'on ne
-sait pas classer va dans Support » vaut pour `601000` (fournitures) et `606000`
-(transports) : ce sont des frais. Mais `604000` est un compte de
-*marchandises* — de la nourriture ou de la boisson achetée pour être revendue.
-L'y mettre sort du coût matière un coût qui en est. On garde quand même la règle,
-pour une raison simple : on ne sait pas encore ce que ce compte pèse. Le contrôle
-mensuel du défaut le dira, et c'est lui qui décidera — quelques dizaines d'euros,
-on oublie ; quelques milliers, il faut un sous-compte dans Odoo. Mesurer avant
-d'arbitrer, pas l'inverse.
+**`604000 Achats de marchandises` va en « Non ventilé ».** La règle « ce qu'on
+ne sait pas classer va dans Support » vaut pour `601000` (fournitures) et
+`606000` (transports) : ce sont des frais, et les ranger en Support est une
+décision. `604000` est d'une autre nature — un compte de *marchandises*, donc de
+la nourriture ou de la boisson achetée pour être revendue. Le mettre en Support
+affirmerait que ce sont des frais généraux ; le mettre en « Non ventilé » dit ce
+qui est vrai : on ne sait pas encore. Le contrôle mensuel donnera son poids, et
+le poids décidera — quelques dizaines d'euros, on oublie ; quelques milliers, il
+faut un sous-compte dans Odoo. Mesurer avant d'arbitrer.
 
-**« Bar » n'est pas un secteur du dashboard, « Service » l'est.** C'est la seule
-ligne où le libellé ne se lit pas tout seul. Le rapprochement tient — le bar
-achète les boissons que le service vend — mais il mérite d'être confirmé plutôt
-que deviné.
+**« Bar » et « Service » sont deux mots pour la même chose** — confirmé : les
+deux s'emploient dans la maison selon le contexte, et le dashboard retient
+« Service ». Comme le cas se reproduira ailleurs — un fichier de paie, un
+planning — `normalise_secteur()` gagnerait à connaître « Bar », au même titre
+qu'elle connaît déjà « Transfo alimentaire » et « Fabrik de boissons ».
 
 **`640800 Droits de douane et accises` est hors du coût matière.** Les accises
 sur la bière sont un coût de la Brasserie, mais le compte est de classe 64 :
@@ -243,10 +244,11 @@ il part dans les frais généraux et n'entrera jamais dans le food cost. Si le
 montant est significatif, c'est une question à poser au comptable, pas une ligne
 de code à écrire.
 
-**Ne pas déduire le secteur du libellé.** Le compte dit « Fabrique de boisson »
-(au singulier) ; `normalise_secteur()` connaît « Fabrik de boissons ». Un
-caractère d'écart, et le secteur devient « Secteur inconnu ». C'est le code qui
-fait foi, jamais le texte à côté.
+**Ne pas déduire le secteur du libellé.** `normalise_secteur()` connaît déjà
+*deux* orthographes de la brasserie — « Fabrik de boissons » et « Fabrique de
+boissons ». Le compte en introduit une troisième, « Fabrique de boisson » au
+singulier, qui rendrait « Secteur inconnu ». Lire le secteur dans le texte, c'est
+courir après les orthographes ; le numéro de compte, lui, ne bouge pas.
 
 #### Où la table vit
 
@@ -447,31 +449,44 @@ donnent pas le même compte de résultat au centime près, on garde l'ancien.** 
 
 ## 5. Ce que le plan comptable apprend au dashboard
 
-Lire le plan des classes 6 et 7 a eu un effet de bord : il a mis en évidence une
-approximation du dashboard, sans rapport avec Odoo.
+Lire le plan des classes 6 et 7 a eu un effet de bord, sans rapport avec Odoo.
 
 Les ventes y sont découpées par taux de TVA :
 
-| Compte   | Taux | Contenu                                        |
-|----------|------|------------------------------------------------|
-| `700100` | 6 %  | nourriture **et boisson** à emporter, sauf alcool |
-| `700200` | 12 % | nourriture sur place                            |
-| `700300` | 21 % | boisson sur place et alcool                     |
+| Compte   | Taux | Contenu                      |
+|----------|------|------------------------------|
+| `700100` | 6 %  | nourriture à emporter        |
+| `700200` | 12 % | nourriture sur place         |
+| `700300` | 21 % | boisson sur place et alcool  |
+
+*(Le libellé du compte `700100` mentionne aussi la boisson à emporter, mais en
+pratique le 6 % ne porte que de la nourriture.)*
 
 Or le dashboard déduit la nature d'une vente du seul taux de TVA
-(`R/donnees.R:51`) :
+(`R/donnees.R:121`) :
 
 ```r
 CD_SECTEUR = if_else(TAUX_TVA == 0.12, "Nourriture", "Boisson")
 ```
 
-**Tout ce qui est à 6 % est donc compté comme « Boisson »** — y compris la
-nourriture à emporter. Ce n'est pas théorique : `import.R:490` force
-explicitement « Pain à emporter » à 6 %. Le pain vendu à emporter est donc
-rangé dans les boissons, dans le découpage Boisson/Nourriture que portent
-`DB_KPI_SIMPLE` et l'encart « Nature et moment » du volet Détails.
+Le test ne retient que le 12 %. **Tout ce qui est à 6 % tombe donc dans
+« Boisson »** — et puisque le 6 %, chez Mazette, est *exclusivement* de la
+nourriture à emporter, aucune de ces ventes n'arrive du bon côté. La
+clarification ne réduit pas le problème, elle le rend entier : s'il restait de
+la boisson à 6 %, une partie du bucket serait au moins correcte.
 
-Trois taux, deux catégories : le `if_else` binaire ne peut pas les porter. La
-correction demande de distinguer le 6 % plutôt que de le replier sur le 21 %, et
-le plan comptable donne au passage de quoi vérifier le résultat — le CA 6 % de
-la comptabilité contre celui du point de vente.
+Ce n'est pas théorique : `import.R:579` force explicitement « Pain à emporter »
+à 6 %.
+
+Le découpage Boisson / Nourriture est porté par `DB_KPI_SIMPLE` et s'affiche
+dans « Nature et moment » du volet Détails. La correction tient en deux
+caractères :
+
+```r
+CD_SECTEUR = if_else(TAUX_TVA %in% c(0.06, 0.12), "Nourriture", "Boisson")
+```
+
+Reste à savoir si ça vaut la peine, et ça dépend d'un chiffre que seul le CA 6 %
+peut donner. Le plan comptable fournit justement de quoi le mesurer — et, une
+fois corrigé, de quoi vérifier le résultat : le CA 6 % de la comptabilité contre
+celui du point de vente.
