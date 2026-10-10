@@ -13,7 +13,29 @@ propose deux niveaux de lecture, « j'ai cinq minutes » et « je veux tout savo
 Pour la publier en ligne : *Settings → Pages*, source *Deploy from a branch*,
 dossier `/docs`.
 
+**[`docs/odoo.md`](docs/odoo.md)** — brancher la comptabilité Odoo : ce qu'il
+faut exporter aujourd'hui, le contrat que `DB_COMPTA` doit respecter, et ce que
+l'API changera le jour venu (une seule fonction).
+
 Ce README ne garde que le résumé de la gestion des accès, qui change souvent.
+
+## Tests
+
+```sh
+Rscript tests/lancer.R
+```
+
+Pas de framework : chaque fichier imprime une ligne par assertion, le script
+compte et sort en erreur s'il reste un `FAIL`. Seuls `dplyr`, `tibble`,
+`stringr`, `lubridate`, `tidyr` et `readr` sont nécessaires — les paquets lourds
+du tableau de bord (shiny, plotly, DT) sont remplacés par des doublures inertes,
+parce qu'on y éprouve du **calcul**, pas du rendu.
+
+Les tests couvrent ce qui a déjà été faux au moins une fois : la duplication des
+lignes de caisse, le 6 % compté en boisson, `format_CA` qui rendait « NA€ », le
+tri lexicographique des tableaux, l'ordre des arguments de `summarise()`, le
+prorata du coût de paie, le bouclage du pont de marge. Chaque assertion porte en
+commentaire la raison d'être du test plutôt que sa paraphrase.
 
 ## Accès et mots de passe
 
