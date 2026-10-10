@@ -195,37 +195,70 @@ de `DB_COUTS_TRAVAIL` (Horeko et paie), pas de la comptabilité.
 **Seuls les comptes de la classe 60 ont besoin d'un secteur.** Ni les ventes, ni
 les rémunérations, ni les frais généraux, ni le bilan.
 
-La table vit dans une feuille Google, comme les autres paramètres — le plan
-comptable grandira, et une correspondance figée dans le code vieillirait mal :
+#### La table de correspondance
 
-| `COMPTE` | `SECTEUR` |
-|---|---|
-| `604100` | Transformation alimentaire |
-| `604200` | Service |
-| … | … |
+Le plan comptable des classes 6 et 7 a tranché : **les comptes d'achat sont déjà
+ventilés, et ils portent les noms des secteurs du dashboard.** La numérotation
+est elle-même une correspondance — `6001xx` / `6090xx` pour la fabrique de
+boisson, `6002xx` / `6090xx` pour la transformation, `6041xx` / `6094xx` pour le
+bar — et l'achat va toujours avec sa variation de stock.
 
-avec trois règles : le préfixe le plus long l'emporte (comme dans `PLAN_PCMN`),
-un compte absent tombe dans **« Non ventilé »** plutôt que dans un secteur par
-défaut, et un contrôle affiche ce que « Non ventilé » pèse chaque mois. C'est la
-règle déjà appliquée à la paie (`SECTEUR_NON_VENTILE`, `R/sources_travail.R:76`)
-et aux produits sans taux de TVA.
+| Compte   | Libellé                                                              | `SECTEUR`                  |
+|----------|----------------------------------------------------------------------|----------------------------|
+| `600100` | Achats de matières premières — Fabrique de boisson                   | Brasserie                  |
+| `609010` | Variation des stocks de matières premières — Fabrique de boisson     | Brasserie                  |
+| `600200` | Achats de matières premières — Transformation alimentaire            | Transformation alimentaire |
+| `609020` | Variation des stocks de matières premières — Transformation alimentaire | Transformation alimentaire |
+| `604100` | Achats de marchandises — Bar                                         | Service                    |
+| `609410` | Variation des stocks de marchandises — Bar                           | Service                    |
+| `601000` | Achats de fournitures                                                | Support                    |
+| `604000` | Achats de marchandises                                               | Support ⚠                  |
+| `606000` | Frais accessoires sur achats (Transports)                            | Support ⚠                  |
 
-**Ce qu'il faut pour l'écrire** : le plan comptable des classes 6 et 7, code et
-libellé (Comptabilité → Configuration → Plan comptable, filtre sur le code,
-export). Un fichier de quelques dizaines de lignes.
+Neuf comptes, et neuf seulement. Tout le reste des classes 6 et 7 n'a pas besoin
+de secteur : les ventes (`7001`, `7002`, `7003`), les autres produits (`7400`,
+`7461`, `7490`) et `640800 Droits de douane et accises`, qui est de classe 64
+et tombe donc dans les frais généraux.
 
-La question à laquelle ce fichier répondra — et qui décide de la suite : **les
-comptes d'achat distinguent-ils déjà la nourriture de la boisson ?** Les comptes
-de vente le font (`700200` nourriture, `700300` boisson) ; si les achats suivent
-la même logique, la correspondance s'écrit en dix minutes. Sinon — un seul
-`604000 Achats de marchandises` pour tout — aucune table ne pourra ventiler quoi
-que ce soit, et il faudra créer des sous-comptes dans Odoo. C'est le seul endroit
-où le travail retombe côté comptabilité plutôt que côté code.
+Trois remarques, par ordre d'importance.
 
-Bonus à garder en tête : ce découpage des ventes par taux de TVA donne, le jour
-où on le voudra, un **CA nourriture / boisson issu de la comptabilité** — donc
-un contrôle indépendant du point de vente, sur la grandeur la plus regardée du
-dashboard.
+**`604000 Achats de marchandises` n'est pas du Support.** La règle « ce qu'on ne
+sait pas classer va dans Support » vaut pour `601000` (fournitures) et `606000`
+(transports) : ce sont des frais. Mais `604000` est un compte de
+*marchandises* — de la nourriture ou de la boisson achetée pour être revendue.
+L'y mettre sort du coût matière un coût qui en est. On garde quand même la règle,
+pour une raison simple : on ne sait pas encore ce que ce compte pèse. Le contrôle
+mensuel du défaut le dira, et c'est lui qui décidera — quelques dizaines d'euros,
+on oublie ; quelques milliers, il faut un sous-compte dans Odoo. Mesurer avant
+d'arbitrer, pas l'inverse.
+
+**« Bar » n'est pas un secteur du dashboard, « Service » l'est.** C'est la seule
+ligne où le libellé ne se lit pas tout seul. Le rapprochement tient — le bar
+achète les boissons que le service vend — mais il mérite d'être confirmé plutôt
+que deviné.
+
+**`640800 Droits de douane et accises` est hors du coût matière.** Les accises
+sur la bière sont un coût de la Brasserie, mais le compte est de classe 64 :
+il part dans les frais généraux et n'entrera jamais dans le food cost. Si le
+montant est significatif, c'est une question à poser au comptable, pas une ligne
+de code à écrire.
+
+**Ne pas déduire le secteur du libellé.** Le compte dit « Fabrique de boisson »
+(au singulier) ; `normalise_secteur()` connaît « Fabrik de boissons ». Un
+caractère d'écart, et le secteur devient « Secteur inconnu ». C'est le code qui
+fait foi, jamais le texte à côté.
+
+#### Où la table vit
+
+Dans une feuille Google, comme les autres paramètres — le plan comptable
+grandira, et une correspondance figée dans le code vieillirait mal. Trois règles
+pour la lire :
+
+1. Le préfixe le plus long l'emporte, comme dans `PLAN_PCMN`.
+2. Un compte absent de la table tombe dans **« Non ventilé »**, pas dans Support.
+   C'est la différence entre « on a décidé que c'était du Support » et « on n'a
+   rien décidé » — et seule la seconde doit se voir.
+3. Un contrôle affiche chaque mois ce que pèsent « Non ventilé » et Support.
 
 ### 2.5 Le contrôle indépendant
 
@@ -403,9 +436,42 @@ pagination : limit = 5000, offset croissant jusqu'à retour vide
 | 3 | `R/odoo.R` + ses tests, sur le fichier réel                                          | oui               |
 | 4 | Coudre Odoo à l'ancien `.rds` au 30/06/2026, et **comparer poste à poste sur un mois commun reconstruit** | oui |
 | 5 | Migrer `DB_COUTS_MATIERE` et `DB_HEURES_COMPTA` du couple `CATEGORIE`/`SECTION` vers `classe_comptes()` | non |
-| 6 | Table de correspondance compte 60 → secteur, d'après le plan comptable               | non               |
+| 6 | Saisir la table compte 60 → secteur (§2.4) dans une feuille, et son contrôle          | non               |
 | 7 | Remplacer la lecture fichier par l'API                                               | non               |
 
 L'étape 4 est la seule qui ne se saute pas : **tant que les deux sources ne
 donnent pas le même compte de résultat au centime près, on garde l'ancien.** Un
 écart, même petit, est une question à résoudre, pas un arrondi à accepter.
+
+---
+
+## 5. Ce que le plan comptable apprend au dashboard
+
+Lire le plan des classes 6 et 7 a eu un effet de bord : il a mis en évidence une
+approximation du dashboard, sans rapport avec Odoo.
+
+Les ventes y sont découpées par taux de TVA :
+
+| Compte   | Taux | Contenu                                        |
+|----------|------|------------------------------------------------|
+| `700100` | 6 %  | nourriture **et boisson** à emporter, sauf alcool |
+| `700200` | 12 % | nourriture sur place                            |
+| `700300` | 21 % | boisson sur place et alcool                     |
+
+Or le dashboard déduit la nature d'une vente du seul taux de TVA
+(`R/donnees.R:51`) :
+
+```r
+CD_SECTEUR = if_else(TAUX_TVA == 0.12, "Nourriture", "Boisson")
+```
+
+**Tout ce qui est à 6 % est donc compté comme « Boisson »** — y compris la
+nourriture à emporter. Ce n'est pas théorique : `import.R:490` force
+explicitement « Pain à emporter » à 6 %. Le pain vendu à emporter est donc
+rangé dans les boissons, dans le découpage Boisson/Nourriture que portent
+`DB_KPI_SIMPLE` et l'encart « Nature et moment » du volet Détails.
+
+Trois taux, deux catégories : le `if_else` binaire ne peut pas les porter. La
+correction demande de distinguer le 6 % plutôt que de le replier sur le 21 %, et
+le plan comptable donne au passage de quoi vérifier le résultat — le CA 6 % de
+la comptabilité contre celui du point de vente.
