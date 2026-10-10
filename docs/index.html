@@ -1497,6 +1497,39 @@ observeEvent({ req(PRET()); base() }, { ... })</code></pre>
       Testez la valeur convertie, pas la pr&eacute;sence.
     </p>
 
+    <h3>Une zone d&rsquo;alerte vide ne s&rsquo;affiche jamais</h3>
+    <p>
+      Le plus silencieux de tous, et il a tu&eacute; <strong>dix bandeaux</strong> d&rsquo;un coup.
+      Le verrou se referme en trois temps&nbsp;:
+    </p>
+    <ol>
+      <li>Un <code>uiOutput</code> vide reste un <code>&lt;div&gt;</code>, et la grille
+        bslib lui accorde quand m&ecirc;me son gap. D&rsquo;o&ugrave;
+        <code>.zone-alerte:empty&nbsp;{ display: none }</code> dans
+        <code>www/style.css</code>, pour qu&rsquo;une alerte absente ne laisse pas une
+        bande blanche.</li>
+      <li>Mais Shiny <strong>suspend les sorties masqu&eacute;es</strong>
+        (<code>suspendWhenHidden</code>, vrai par d&eacute;faut)&nbsp;: il ne calcule pas ce
+        que personne ne regarde.</li>
+      <li>Au d&eacute;marrage, la zone est vide, donc masqu&eacute;e, donc suspendue, donc jamais
+        calcul&eacute;e, donc toujours vide.</li>
+    </ol>
+    <p>
+      Aucune erreur, aucun message&nbsp;: la sortie reste bloqu&eacute;e sur
+      <code>recalculating</code> et n&rsquo;affiche jamais rien. Rien ne le montre non
+      plus c&ocirc;t&eacute; serveur &mdash; <code>testServer()</code> rend le bandeau sans broncher,
+      parce qu&rsquo;y lire une sortie la force &agrave; se calculer. <strong>Seul un vrai
+      navigateur voit la panne.</strong>
+    </p>
+    <p>
+      Le rem&egrave;de&nbsp;: <code>reveille_zones_alerte()</code>
+      (<code>R/helpers.R</code>), appel&eacute;e <em>en dernier</em> dans
+      <code>server.R</code> &mdash; <code>outputOptions()</code> exige que les sorties
+      existent d&eacute;j&agrave;. La liste <code>ZONES_ALERTE</code> est nomm&eacute;e plut&ocirc;t que devin&eacute;e,
+      et un test v&eacute;rifie qu&rsquo;elle couvre exactement les <code>uiOutput</code> marqu&eacute;s
+      <code>zone-alerte</code> dans <code>ui.R</code>.
+    </p>
+
     <h3>DT trie sur ce qu&rsquo;il affiche</h3>
     <p>
       Une colonne de montants format&eacute;s est une colonne de <em>texte</em>&nbsp;: elle se trie

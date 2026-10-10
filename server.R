@@ -1993,4 +1993,9 @@ server <- function(input, output, session) {
   # CARTES_ACCUEIL : le second jeu d'observateurs qui vivait ici faisait
   # double emploi.
 
+  # EN DERNIER, parce que toutes les sorties doivent exister : sans ceci, les
+  # bandeaux d'alerte ne s'affichent JAMAIS. Masqués tant qu'ils sont vides,
+  # Shiny les suspend ; suspendus, ils ne se calculent pas ; jamais calculés,
+  # ils restent vides. Cf. reveille_zones_alerte() dans R/helpers.R.
+  reveille_zones_alerte(output)
 }
