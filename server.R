@@ -822,7 +822,8 @@ server <- function(input, output, session) {
         label = tagList(
           tags$b("Écarter de l'analyse"),
           " — ces mois paraissent incomplets et faussent les comparaisons :"),
-        choices = setNames(as.character(d), etiquette_periode(d, "mois")),
+        choices = setNames(as.character(d),
+                           etiquettes_douteux(compta_improbable(), d)),
         selected = isolate(input$compta_exclus), inline = TRUE))
   })
 
