@@ -379,6 +379,109 @@ R -e 'shiny::runApp()'</code></pre>
       </tbody>
     </table></div>
 
+    <div class="note">
+      <span class="l">Quand la comptabilit&eacute; est incompl&egrave;te</span>
+      <p>
+        Un export comptable partiel &mdash; un mois dont on n&rsquo;a t&eacute;l&eacute;charg&eacute; que la
+        moiti&eacute; des &eacute;critures &mdash; ne l&egrave;ve <strong>aucune erreur</strong>. Il produit
+        des chiffres&nbsp;: un CA divis&eacute; par dix, des r&eacute;mun&eacute;rations &agrave; z&eacute;ro, une marge
+        magnifique. Tout le volet Compta les affiche alors sans broncher, et c&rsquo;est
+        pire qu&rsquo;un &eacute;cran vide.
+      </p>
+      <p>
+        On ne peut pas d&eacute;tecter l&rsquo;incompl&eacute;tude depuis les chiffres eux-m&ecirc;mes, mais
+        on peut d&eacute;tecter l&rsquo;<strong>invraisemblance</strong>.
+        <code>periodes_improbables()</code> le fait sur <strong>trois motifs</strong>,
+        et il en faut trois parce qu&rsquo;aucun ne couvre les deux autres.
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>Motif</th><th>R&egrave;gle</th><th>Ce qu&rsquo;il attrape seul</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>incoherence</code></td>
+            <td>des charges enregistr&eacute;es sans <em>aucune</em> vente</td>
+            <td>Il ne regarde aucun historique. C&rsquo;est le seul qui parle encore
+                quand <strong>toute</strong> la comptabilit&eacute; import&eacute;e est partielle.</td>
+          </tr>
+          <tr>
+            <td><code>chute</code></td>
+            <td>un poste sous la moiti&eacute; de la m&eacute;diane des douze mois pr&eacute;c&eacute;dents
+                &mdash; CA, r&eacute;mun&eacute;rations, frais g&eacute;n&eacute;raux</td>
+            <td>Un mois qui s&rsquo;effondre alors que les ventes continuent.</td>
+          </tr>
+          <tr>
+            <td><code>en_cours</code></td>
+            <td>le mois n&rsquo;est pas termin&eacute;</td>
+            <td>Il <em>&eacute;vite</em> une alerte&nbsp;: sans lui, les deux autres crieraient
+                au loup le 3 de chaque mois.</td>
+          </tr>
+        </tbody>
+      </table></div>
+      <p>
+        Le pi&egrave;ge que <code>incoherence</code> corrige m&eacute;rite d&rsquo;&ecirc;tre nomm&eacute;&nbsp;:
+        <strong>un contr&ocirc;le qui se compare &agrave; sa propre histoire se tait exactement
+        quand l&rsquo;histoire est fausse.</strong> Au premier import Odoo partiel, les
+        quatre mois disponibles &eacute;taient tous abim&eacute;s&nbsp;: la m&eacute;diane l&rsquo;&eacute;tait aussi, et
+        la r&egrave;gle de la chute ne voyait rien.
+      </p>
+      <p>
+        Trois autres choix s&rsquo;y cachent. La <strong>m&eacute;diane</strong> et non le mois
+        pr&eacute;c&eacute;dent&nbsp;: un janvier creux rendrait f&eacute;vrier suspect, et r&eacute;ciproquement.
+        Un test &agrave; <strong>sens unique</strong>&nbsp;: un export partiel ne peut que
+        sous-estimer, tandis qu&rsquo;une flamb&eacute;e a d&rsquo;autres causes et m&eacute;rite d&rsquo;&ecirc;tre lue
+        plut&ocirc;t que masqu&eacute;e. Et <strong>deux gravit&eacute;s</strong>&nbsp;: rouge pour des
+        chiffres probablement faux, ambre pour un mois en cours, qui est partiel
+        par construction. Les peindre pareil ferait lire le second comme le
+        premier.
+      </p>
+      <p>
+        <strong>Rep&eacute;rer ne suffit pas&nbsp;: un mois faux pollue aussi les autres.</strong>
+        Il entre dans les m&eacute;dianes, dans les p&eacute;riodes de r&eacute;f&eacute;rence du pont de marge,
+        dans les moyennes de tendance &mdash; un seul septembre &agrave; z&eacute;ro rend illisible
+        la comparaison de tout un trimestre. D&rsquo;o&ugrave;, en t&ecirc;te du volet Compta, une
+        ligne de cases &agrave; cocher&nbsp;: <code>mois_douteux()</code> propose tous les
+        mois que le contr&ocirc;le cite, et <code>ecarte_mois()</code> les retire de
+        <code>DB_COMPTA</code> pour les <em>trois</em> sous-onglets &agrave; la fois.
+      </p>
+      <p>
+        <strong>Le mois en cours y est compris.</strong> Il n&rsquo;est pas faux &mdash; il est
+        partiel par construction &mdash; mais il tire les moyennes vers le bas
+        exactement comme un mois faux, et la seule diff&eacute;rence est qu&rsquo;on sait
+        pourquoi. L&rsquo;&eacute;pargner d&rsquo;office revenait &agrave; d&eacute;cider &agrave; la place du lecteur&nbsp;;
+        sa case porte donc la mention <em>&laquo;&nbsp;(en cours)&nbsp;&raquo;</em>
+        (<code>etiquettes_douteux()</code>), parce que &laquo;&nbsp;oct. 2026 (en cours)&nbsp;&raquo; ne
+        se lit pas comme &laquo;&nbsp;sept. 2026&nbsp;&raquo;. Aucun mois n&rsquo;est coch&eacute; d&rsquo;avance.
+      </p>
+      <p>
+        Un mois &eacute;cart&eacute; cesse d&rsquo;&ecirc;tre <em>d&eacute;crit</em> comme une anomalie&nbsp;: il est
+        nomm&eacute; une seule fois, dans la mention d&rsquo;&eacute;cartement. Sans ce retrait, le
+        bandeau annoncerait encore &laquo;&nbsp;oct. 2026 n&rsquo;est pas termin&eacute;&nbsp;&raquo; juste
+        au-dessus de &laquo;&nbsp;oct. 2026 &eacute;cart&eacute; de l&rsquo;analyse&nbsp;&raquo;.
+      </p>
+      <p>
+        Quatre d&eacute;cisions tiennent ce m&eacute;canisme. L&rsquo;&eacute;cartement est une op&eacute;ration de
+        <strong>lecture</strong>, d&eacute;cid&eacute;e &agrave; la main&nbsp;: le jour o&ugrave; le dashboard
+        choisirait seul les mois &agrave; ignorer, plus personne ne saurait ce qu&rsquo;il
+        regarde. Il est <strong>toujours annonc&eacute;</strong>&nbsp;: le bandeau nomme les
+        mois retir&eacute;s, dans une troisi&egrave;me couleur, neutre, et le dit m&ecirc;me quand il
+        n&rsquo;a plus rien d&rsquo;autre &agrave; signaler &mdash; c&rsquo;est le cas normal apr&egrave;s un
+        &eacute;cartement, et une analyse amput&eacute;e qui se tait est pire qu&rsquo;une analyse
+        pollu&eacute;e. La liste propos&eacute;e se calcule sur la compta <strong>brute</strong>,
+        jamais sur la compta retenue&nbsp;: sinon le mois qu&rsquo;on vient d&rsquo;&eacute;carter
+        dispara&icirc;trait de la liste, donc sa case, donc l&rsquo;&eacute;cartement. Et
+        <strong>cocher &eacute;carte</strong>, plut&ocirc;t que d&eacute;cocher conserve&nbsp;: un
+        <code>checkboxGroupInput</code> sans rien de coch&eacute; rend <code>NULL</code>, qui
+        serait indistinguable de &laquo;&nbsp;pas encore affich&eacute;&nbsp;&raquo;&nbsp;; dans ce sens-ci,
+        <code>NULL</code> veut dire &laquo;&nbsp;rien d&rsquo;&eacute;cart&eacute;&nbsp;&raquo;.
+      </p>
+      <p>
+        Deux diagnostics gardent d&eacute;lib&eacute;r&eacute;ment la compta brute&nbsp;:
+        <code>comptes_non_classes()</code> et <code>vie_des_comptes()</code>. Ils
+        r&eacute;pondent &agrave; &laquo;&nbsp;quels comptes le plan ignore-t-il&nbsp;&raquo; et &laquo;&nbsp;quand ce
+        compte a-t-il v&eacute;cu&nbsp;&raquo;&nbsp;: les amputer masquerait pr&eacute;cis&eacute;ment le compte
+        qu&rsquo;on cherche.
+      </p>
+    </div>
     <div class="note" data-profondeur="detail">
       <span class="l">La grammaire du volet Planning</span>
       <p>
@@ -1439,6 +1542,39 @@ observeEvent({ req(PRET()); base() }, { ... })</code></pre>
       <code>is.null()</code> ne l&rsquo;attrape pas, <code>as.integer("")</code> donne <code>NA</code>, et
       l&rsquo;erreur ressort bien plus loin &mdash; typiquement un <code>charToDate</code> incompr&eacute;hensible.
       Testez la valeur convertie, pas la pr&eacute;sence.
+    </p>
+
+    <h3>Une zone d&rsquo;alerte vide ne s&rsquo;affiche jamais</h3>
+    <p>
+      Le plus silencieux de tous, et il a tu&eacute; <strong>dix bandeaux</strong> d&rsquo;un coup.
+      Le verrou se referme en trois temps&nbsp;:
+    </p>
+    <ol>
+      <li>Un <code>uiOutput</code> vide reste un <code>&lt;div&gt;</code>, et la grille
+        bslib lui accorde quand m&ecirc;me son gap. D&rsquo;o&ugrave;
+        <code>.zone-alerte:empty&nbsp;{ display: none }</code> dans
+        <code>www/style.css</code>, pour qu&rsquo;une alerte absente ne laisse pas une
+        bande blanche.</li>
+      <li>Mais Shiny <strong>suspend les sorties masqu&eacute;es</strong>
+        (<code>suspendWhenHidden</code>, vrai par d&eacute;faut)&nbsp;: il ne calcule pas ce
+        que personne ne regarde.</li>
+      <li>Au d&eacute;marrage, la zone est vide, donc masqu&eacute;e, donc suspendue, donc jamais
+        calcul&eacute;e, donc toujours vide.</li>
+    </ol>
+    <p>
+      Aucune erreur, aucun message&nbsp;: la sortie reste bloqu&eacute;e sur
+      <code>recalculating</code> et n&rsquo;affiche jamais rien. Rien ne le montre non
+      plus c&ocirc;t&eacute; serveur &mdash; <code>testServer()</code> rend le bandeau sans broncher,
+      parce qu&rsquo;y lire une sortie la force &agrave; se calculer. <strong>Seul un vrai
+      navigateur voit la panne.</strong>
+    </p>
+    <p>
+      Le rem&egrave;de&nbsp;: <code>reveille_zones_alerte()</code>
+      (<code>R/helpers.R</code>), appel&eacute;e <em>en dernier</em> dans
+      <code>server.R</code> &mdash; <code>outputOptions()</code> exige que les sorties
+      existent d&eacute;j&agrave;. La liste <code>ZONES_ALERTE</code> est nomm&eacute;e plut&ocirc;t que devin&eacute;e,
+      et un test v&eacute;rifie qu&rsquo;elle couvre exactement les <code>uiOutput</code> marqu&eacute;s
+      <code>zone-alerte</code> dans <code>ui.R</code>.
     </p>
 
     <h3>DT trie sur ce qu&rsquo;il affiche</h3>

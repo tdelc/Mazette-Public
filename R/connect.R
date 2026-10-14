@@ -24,7 +24,11 @@ TABLES_OPTIONNELLES <- c(
   # Une ligne, mais elle doit voyager : sans elle, le volet Sources ne peut pas
   # dire qu'une colonne de secteur a changé de nom dans le fichier de paie —
   # et ce contrôle-là ne se refait pas depuis le .RData, seulement à l'import.
-  "CONTROLE_ONSS"        # contrôle de lecture du fichier de paie
+  "CONTROLE_ONSS",       # contrôle de lecture du fichier de paie
+  # Même raison : les contrôles de l'import Odoo (équilibre débit/crédit,
+  # comptes hors plan, matières non ventilées) ne se refont pas depuis le
+  # .RData, et c'est pourtant là qu'on voudra les relire.
+  "CONTROLE_ODOO"        # contrôle de lecture des écritures Odoo
 )
 
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,

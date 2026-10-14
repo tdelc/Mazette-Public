@@ -1,0 +1,26 @@
+Date	Numéro	Compte	Partenaire	Libellé	Débit	Crédit	Lettrage #	Analytique
+2026-09-05	MZACH/2026/09/0003	623700 Titres-repas	Fournisseur A	frais de commande	25,00			
+2026-09-05	MZACH/2026/09/0003	623700 Titres-repas	Fournisseur A	chèques repas	775,00			
+2026-09-05	MZACH/2026/09/0003	411000 TVA à récupérer	Fournisseur A	21% M	5,25			
+2026-09-05	MZACH/2026/09/0003	440000 Fournisseurs à un an au plus	Fournisseur A	facture		805,25		
+2026-09-05	TRI1/2026/00270	550003 Banque Triodos		salaire		1.000,00		
+2026-09-05	TRI1/2026/00270	455000 Dettes salariales et sociales - Rémunérations		salaire	1.000,00			
+2026-09-05	TRI1/2026/00271	550003 Banque Triodos		salaire		1.500,50		
+2026-09-05	TRI1/2026/00271	455000 Dettes salariales et sociales - Rémunérations		salaire	1.500,50			
+2026-09-04	TRI1/2026/00265	550003 Banque Triodos		paiement fournisseur		200,00		
+2026-09-04	TRI1/2026/00265	440000 Fournisseurs à un an au plus	Fournisseur B	paiement fournisseur	200,00		A52	
+2026-09-04	TRI1/2026/00266	550003 Banque Triodos		versement caisse	2.000,00			
+2026-09-04	TRI1/2026/00266	580002 Transfert LIGHTSPEED		versement caisse		2.000,00		
+2026-09-03	TRI1/2026/00260	550003 Banque Triodos	Fournisseur C	domiciliation		460,56		
+2026-09-03	TRI1/2026/00261	550003 Banque Triodos		frais bancaires	34,76			
+2026-09-03	MZVEN/2026/00001	400000 Créances commerciales à un an au plus - Clients	Client D	facture	3.279,96			
+2026-09-03	MZVEN/2026/00001	700100 Ventes 6% (nourriture à emporter)	Client D	Nourriture à emporter		500,00		
+2026-09-03	MZVEN/2026/00001	700200 Ventes 12% (nourriture sur place)	Client D	Nourriture sur place		1.785,50		
+2026-09-03	MZVEN/2026/00001	700300 Ventes 21% (boisson sur place et alcool)	Client D	Boissons sur place		620,00		
+2026-09-03	MZVEN/2026/00001	451000 TVA à payer	Client D	6%		30,00		
+2026-09-03	MZVEN/2026/00001	451000 TVA à payer	Client D	12%		214,26		
+2026-09-03	MZVEN/2026/00001	451000 TVA à payer	Client D	21%		130,20		
+2026-09-02	MZACH/2026/09/0001	600200 Achats de matières premières - Transformation alimentaire	Fournisseur E	farine et levain	400,00			
+2026-09-02	MZACH/2026/09/0001	604100 Achats de marchandises - Bar	Fournisseur E	softs	150,00			
+2026-09-02	MZACH/2026/09/0001	604000 Achats de marchandises	Fournisseur E	divers	50,00			
+2026-09-02	MZACH/2026/09/0001	440000 Fournisseurs à un an au plus	Fournisseur E	facture		600,00		

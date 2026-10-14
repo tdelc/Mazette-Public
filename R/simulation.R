@@ -3,6 +3,7 @@
 prepa_simulation <- function(db_produits, d1, d2) {
   db_produits %>%
     filter(DATE >= d1, DATE <= d2) %>%
+    filter(PRIX > 0) |> 
     group_by(CATEGORIE, PRODUIT = PRODUIT_FULL) %>%
     summarise(QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA = sum(CA_TVAC, na.rm = TRUE), .groups = "drop") %>%

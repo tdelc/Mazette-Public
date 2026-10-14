@@ -534,6 +534,15 @@ ui_comparaison <- function() {
 }
 
 ui_compta <- function() {
+  tagList(
+    # Au-dessus des trois sous-onglets, parce que l'écartement vaut pour les
+    # trois : un mois retiré de l'analyse ne peut pas réapparaître dans le
+    # compte de résultat d'à côté.
+    #
+    # Pas de classe « zone-alerte » ici : elle masque les blocs vides, et Shiny
+    # suspend alors la sortie pour toujours (cf. reveille_zones_alerte() dans
+    # R/helpers.R). Ce bloc-là se rend vide sans conséquence.
+    uiOutput("compta_exclusion"),
   navset_card_tab(
     id = "compta_tabs",
     nav_panel(
@@ -551,7 +560,7 @@ ui_compta <- function() {
       icon = icon("book"),
       ui_compta_generale()
     )
-  )
+  ))
 }
 
 # Du chiffre d'affaires à la marge d'exploitation, mois par mois.
@@ -590,6 +599,9 @@ ui_exploitation <- function() {
     # grille bslib lui accorde quand même son gap — d'où une bande blanche
     # quand il n'y a rien à signaler (cf. www/style.css).
     uiOutput("expl_controle", class = "zone-alerte"),
+    # Au-dessus de tout le reste : un chiffre invraisemblable rend faux tout ce
+    # qui en dérive, il doit donc se lire AVANT les graphes, pas à côté.
+    uiOutput("expl_vraisemblance", class = "zone-alerte"),
     uiOutput("expl_alerte_periode", class = "zone-alerte"),
     uiOutput("expl_kpi"),
     card(
@@ -663,6 +675,7 @@ ui_compta_analyse <- function() {
           "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
           " chiffre d'affaires seul.")
     ),
+    uiOutput("ana_vraisemblance", class = "zone-alerte"),
     uiOutput("ana_alerte", class = "zone-alerte"),
     uiOutput("ana_kpi"),
     card(
@@ -786,6 +799,7 @@ ui_compta_generale <- function() {
           tags$b("Soldes"), " : calculés en cumulant les postes qui les",
           " précèdent, selon leur définition comptable.")
     ),
+    uiOutput("cg_vraisemblance", class = "zone-alerte"),
     uiOutput("cg_kpi"),
     card(
       full_screen = TRUE,
