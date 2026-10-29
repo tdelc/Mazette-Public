@@ -96,26 +96,45 @@ DB_COMPTA <- readRDS("DB_COMPTA.rds")
 
 #### Compta Odoo ####
 
-# Source optionnelle, sur le modèle de la paie : tant que la clé n'est pas
-# renseignée dans les PATHS, l'import se comporte exactement comme avant.
+# Source optionnelle, sur le modèle de la paie : tant que rien n'est
+# renseigné, l'import se comporte exactement comme avant.
 #
-# À renseigner côté Drive : une ligne `ID_ODOO_ECRITURES` dans l'onglet PATHS,
-# pointant vers l'export « Écritures comptables » d'Odoo — un classeur Google
-# (onglet « ECRITURES ») ou le .xlsx d'Odoo déposé tel quel, les deux marchent.
+# Deux façons de la renseigner, dans cet ordre de priorité :
+#
+# 1. L'API — les quatre variables d'environnement ODOO_URL, ODOO_DB,
+#    ODOO_LOGIN, ODOO_CLE_API (cf. R/odoo_api.R). Rien à déposer nulle part,
+#    et les écritures sont celles de l'instant. Vérifie la connexion avec
+#    `Rscript essai_odoo_api.R` AVANT de lancer un import.
+# 2. Le fichier — une ligne `ID_ODOO_ECRITURES` dans l'onglet PATHS du Drive,
+#    pointant vers l'export « Écritures comptables » d'Odoo : un classeur
+#    Google (onglet « ECRITURES ») ou le .xlsx déposé tel quel.
 #
 # Odoo ne contient rien avant la reprise du 30/06/2026 : il ne remplace donc
 # pas DB_COMPTA, il en prend la suite. Toute la logique vit dans R/odoo.R.
-ID_ODOO <- get_path("ID_ODOO_ECRITURES")
+ID_ODOO  <- get_path("ID_ODOO_ECRITURES")
+IDS_ODOO <- identifiants_odoo()
 
-if (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO)) {
-  cli::cli_h3("Drive Odoo")
+# Deux tuyaux, une seule chaîne. L'API passe devant quand elle est configurée
+# (les quatre variables ODOO_*), le fichier Drive sert sinon. Les deux rendent
+# le MÊME tableau brut, et tout ce qui suit est identique : c'est l'argument
+# central de docs/odoo.md, et c'est ce qui rend les deux sources comparables.
+A_LIRE_ODOO <- !is.null(IDS_ODOO) ||
+  (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO))
+
+if (A_LIRE_ODOO) {
+  cli::cli_h3(if (!is.null(IDS_ODOO)) "API Odoo" else "Drive Odoo")
 
   # Un échec de lecture ne doit pas emporter tout l'import : la compta Odoo
   # s'AJOUTE à une chaîne qui marchait sans elle. On le dit fort, et on laisse
   # DB_COMPTA tel quel plutôt que d'en produire une moitié.
   COMPTA_ODOO <- tryCatch({
-    drive_odoo <- drive_download(drive_get(id = ID_ODOO), overwrite = TRUE)
-    ECRITURES_ODOO <- normalise_ecritures(lit_ecritures_fichier(drive_odoo$local_path))
+    ECRITURES_ODOO <- if (!is.null(IDS_ODOO)) {
+      cli::cli_alert_info("Odoo : lecture par l'API ({IDS_ODOO$url})")
+      normalise_ecritures(lit_ecritures_odoo(IDS_ODOO))
+    } else {
+      drive_odoo <- drive_download(drive_get(id = ID_ODOO), overwrite = TRUE)
+      normalise_ecritures(lit_ecritures_fichier(drive_odoo$local_path))
+    }
     cli::cli_alert_info("Odoo : {nrow(ECRITURES_ODOO)} écritures lues")
 
     cp <- compta_mensuelle(ECRITURES_ODOO)
@@ -155,8 +174,12 @@ if (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO)) {
       "Compta cousue : {n_avant} lignes + {nrow(COMPTA_ODOO)} d'Odoo = {nrow(DB_COMPTA)}")
   }
 } else {
-  cli::cli_alert_warning(
-    "ID_ODOO_ECRITURES absent des PATHS : la compta reste celle de DB_COMPTA.rds")
+  cli::cli_alert_warning(paste(
+    "Ni les variables {.envvar ODOO_*} ni ID_ODOO_ECRITURES dans les PATHS :",
+    "la compta reste celle de DB_COMPTA.rds"))
+  if (length(manque_odoo()) && length(manque_odoo()) < length(ODOO_ENV))
+    cli::cli_alert_warning(
+      "Odoo API : il manque {.envvar {ODOO_ENV[manque_odoo()]}}")
 }
 
 # Import des réservations

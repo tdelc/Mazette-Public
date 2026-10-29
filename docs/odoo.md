@@ -405,54 +405,121 @@ où on les regardera — comme on marque déjà les périodes à cheval dans Dé
 
 ## 3. Phase 2 — avec l'API
 
-### Ce qui change : une fonction. Vraiment.
+### Ce qui change : une fonction. Vraiment. — *fait*
 
-C'est l'argument central de tout ce document : si la phase 1 est découpée comme
-au §2.7, **seule `lit_ecritures_fichier()` est remplacée** par
-`lit_ecritures_odoo()`. La normalisation, l'agrégation, les contrôles, les tests
-et `DB_COMPTA` ne bougent pas. Le travail de la phase 1 n'est pas du jetable :
-c'est 90 % de la phase 2, écrit et éprouvé d'avance.
+C'était l'argument central de ce document, et il tient : **seule
+`lit_ecritures_fichier()` est remplacée**, par `lit_ecritures_odoo()`
+(`R/odoo_api.R`). La normalisation, l'agrégation, les contrôles, la couture,
+`DB_COMPTA` et leurs tests n'ont pas bougé d'une ligne.
 
-### Comment appeler Odoo depuis R
+La bascule tient en ceci : `lit_ecritures_odoo()` rend un tableau dont les
+colonnes portent **les libellés de l'export fichier** — `Date`, `Numéro`,
+`Compte`, `Partenaire`, `Libellé`, `Débit`, `Crédit`. `normalise_ecritures()`
+ne sait pas lequel des deux tuyaux elle lit, et c'est précisément ce qui rend
+les deux sources comparables : s'il y a un écart, ce n'est pas parce que deux
+chaînes de calcul ont divergé — il n'y en a qu'une.
 
-Pas de client Odoo en R, mais il n'en faut pas : **JSON-RPC avec `httr` et
-`jsonlite`**, tous deux déjà dans `manifest.json` (1.4.7 et 2.0.0). Aucune
-dépendance nouvelle, donc aucun risque sur le déploiement.
+Un test le vérifie explicitement (`tests/test_odoo_api.R`) : le tableau de
+l'API porte exactement `ODOO_COLONNES`. Si cette assertion tombe un jour, tout
+ce paragraphe tombe avec elle.
+
+### Les quatre variables d'environnement
+
+Les secrets voyagent par l'environnement, comme `LINK_JSON` et `PATH_DRIVE`.
+Jamais dans le dépôt : **Mazette-Public est public.**
+
+```
+ODOO_URL=https://mazette.odoo.com
+ODOO_DB=le-nom-de-la-base
+ODOO_LOGIN=ton.adresse@mazette.be
+ODOO_CLE_API=la-cle-generee-dans-Odoo
+```
+
+Dans `~/.Renviron` (puis redémarrer R), et dans les variables d'environnement
+du serveur pour le déploiement.
+
+- **La clé API, jamais le mot de passe.** Dans Odoo : *Préférences → Sécurité
+  du compte → Clés API → Nouvelle clé*. Elle s'utilise exactement à la place du
+  mot de passe, et se révoque sans changer le compte.
+- **Le nom de la base** n'est pas le sous-domaine. Il est visible sur
+  `/web/database/selector`, ou en bas de l'écran de connexion.
+- **Tout ou rien** : trois variables sur quatre ne donnent pas « presque une
+  connexion », elles donnent une erreur d'authentification dont la cause est la
+  variable manquante — et qu'on cherchera ailleurs. `identifiants_odoo()` rend
+  donc `NULL` tant que les quatre ne sont pas là, et `manque_odoo()` nomme
+  celles qui manquent.
+
+### Vérifier avant d'importer : `essai_odoo_api.R`
+
+```
+Rscript essai_odoo_api.R
+```
+
+Ce script ne modifie rien et **s'arrête au premier point qui tombe, en disant
+lequel**. L'ordre des étapes sépare les causes, ce qu'un seul appel « qui ne
+marche pas » ne ferait jamais :
+
+| # | Étape | Ce qu'un échec ici désigne |
+|---|---|---|
+| 1 | Les variables sont là | celle qui manque, nommée |
+| 2 | `common.version` — **sans authentification** | l'URL ou le réseau, **pas** la clé |
+| 3 | `common.authenticate` | la clé ou le nom de la base |
+| 4 | `fields_get` : les champs demandés existent | un nom de champ faux, **nommé** |
+| 5 | `search_count` | le domaine (le filtre « comptabilisé ») |
+| 6 | Une ligne, affichée en détail | « Compte » n'arrive pas en `600100 Libellé` |
+| 7 | La lecture complète | une page perdue : le total ≠ `search_count` |
+| 8 | La chaîne du dashboard, inchangée | les contrôles de `R/odoo.R` |
+| 9 | Les postes d'exploitation, 12 derniers mois | — |
+
+L'étape 2 est anonyme à dessein : elle sépare « je n'atteins pas le serveur »
+de « il ne veut pas de moi », ce qui vaut une heure de débogage. L'étape 7 est
+le seul contrôle qui attrape une page perdue au milieu d'une pagination : le
+nombre lu doit tomber **exactement** sur ce que `search_count` avait annoncé.
+
+Options : `--depuis=2026-07-01`, `--max=500` (essai rapide), `--csv=sortie.csv`,
+et `--fichier=export.xlsx` qui **compare poste à poste** avec un export manuel
+du même périmètre — l'étape 4 du plan ci-dessous.
+
+### Comment ça marche, en bref
+
+**JSON-RPC avec `httr` et `jsonlite`**, tous deux déjà dans `manifest.json`.
+Aucune dépendance nouvelle, donc aucun risque sur le déploiement. XML-RPC
+n'aurait apporté qu'un client R non maintenu.
 
 ```r
-# Esquisse — non testée contre ton instance.
-odoo_appel <- function(url, base, uid, cle, modele, methode,
-                       args = list(), kwargs = list()) {
-  corps <- list(
-    jsonrpc = "2.0", method = "call",
-    params = list(service = "object", method = "execute_kw",
-                  args = c(list(base, uid, cle, modele, methode),
-                           list(args), list(kwargs))))
-  rep <- httr::POST(paste0(url, "/jsonrpc"),
-                    body = jsonlite::toJSON(corps, auto_unbox = TRUE),
-                    httr::content_type_json())
-  res <- jsonlite::fromJSON(httr::content(rep, "text", encoding = "UTF-8"))
-  if (!is.null(res$error)) stop("Odoo : ", res$error$data$message)
-  res$result
-}
-
-# L'authentification passe par le service "common" / "login" et rend un uid.
+POST <url>/jsonrpc
+{"jsonrpc": "2.0", "method": "call",
+ "params": {"service": "object", "method": "execute_kw",
+            "args": [base, uid, cle, "account.move.line", "search_read",
+                     [domaine], {"fields": [...], "limit": 2000,
+                                 "offset": 0, "order": "id"}]}}
 ```
 
-**Authentification : une clé API, jamais le mot de passe.** Dans Odoo :
-Préférences → Sécurité du compte → Clés API. Elle se range comme les autres
-secrets (variable d'environnement, à côté de `LINK_JSON` et `PATH_DRIVE`), pas
-dans le dépôt.
+Quatre détails qui coûtent cher quand on les rate, et que les tests figent :
 
-L'appel utile :
+- **`order = "id"` sur chaque page.** Sans ordre explicite, deux pages
+  successives peuvent se recouvrir ou s'omettre, et rien ne le montrerait : le
+  total aurait l'air plausible.
+- **Les kwargs doivent partir en `{}`, pas en `[]`.** `jsonlite` sérialise une
+  liste vide en tableau, et `execute_kw` le refuse. D'où `OBJET_VIDE`.
+- **Un champ relationnel arrive en `[id, "libellé"]`, un champ vide en
+  `false`.** Laisser `jsonlite` « simplifier » ça donne des colonnes de types
+  mélangés, silencieusement. On lit donc la structure telle quelle. Et `false`
+  sur un montant veut dire *vide*, c'est-à-dire **zéro** — pas `NA`, qui
+  remonterait jusqu'à une `VALEUR` manquante.
+- **Une mauvaise paire identifiant/clé rend `false`, pas une erreur.** Le
+  laisser passer donnerait un `uid` valant `FALSE`, puis un `execute_kw` refusé
+  avec un message parlant de droits d'accès. `odoo_connexion()` tranche tout de
+  suite.
 
-```
-modele  : "account.move.line"
-methode : "search_read"
-domaine : [["parent_state","=","posted"], ["date",">=","2022-01-01"]]
-champs  : date, move_name, journal_id, account_id, name, debit, credit, balance
-pagination : limit = 5000, offset croissant jusqu'à retour vide
-```
+> **Honnêteté sur l'origine de ce code.** Il a été écrit sans pouvoir consulter
+> la documentation d'Odoo — le réseau de l'environnement de développement la
+> refuse. Le protocole décrit ici est donc une hypothèse, éprouvée contre un
+> faux serveur mais **pas contre une instance réelle**. C'est exactement la
+> raison d'être de `essai_odoo_api.R` : il vérifie chaque hypothèse une par une
+> et nomme celle qui est fausse. Les deux corrections les plus probables sont
+> déjà écrites dans ses messages d'erreur (`move_name` → `move_id`,
+> `parent_state` → `move_id.state`).
 
 ### Trois décisions à prendre maintenant, pas plus tard
 
@@ -482,7 +549,7 @@ pagination : limit = 5000, offset croissant jusqu'à retour vide
 | 4 | Coudre Odoo à l'ancien `.rds` au 30/06/2026, et **comparer poste à poste sur un mois commun reconstruit** | oui |
 | 5 | Migrer `DB_COUTS_MATIERE` et `DB_HEURES_COMPTA` du couple `CATEGORIE`/`SECTION` vers `classe_comptes()` | non |
 | 6 | Saisir la table compte 60 → secteur (§2.4) dans une feuille, et son contrôle          | non               |
-| 7 | Remplacer la lecture fichier par l'API                                               | non               |
+| 7 | Remplacer la lecture fichier par l'API — **écrit** (`R/odoo_api.R`), reste à le faire tourner contre l'instance | non |
 
 L'étape 4 est la seule qui ne se saute pas : **tant que les deux sources ne
 donnent pas le même compte de résultat au centime près, on garde l'ancien.** Un
