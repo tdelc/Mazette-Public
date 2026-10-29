@@ -13,6 +13,26 @@ ok("un nombre rond ne part pas en notation scientifique",
 ok("ni un million", format_CA(1000000, -1) == "1.000.000€")
 ok("zero ne s'affiche pas : c'est la convention des tableaux", format_CA(0) == "")
 # « NA€ » se lit comme un montant. Le detail d'un ticket en etait plein.
+# La compta ne s'arrondit pas : format_CA(x, -1) arrondit a la DIZAINE
+# d'euros, ce qui fait douter de tout l'ecran des qu'un total ne retombe pas
+# sur ses pieds.
+ok("euro_compta garde les centimes", euro_compta(1234.56) == "1.234,56€")
+ok("et ne part pas en notation scientifique", euro_compta(100000) == "100.000,00€")
+ok("un negatif garde son signe", euro_compta(-42.5) == "-42,50€")
+# Le test du zero porte sur le NOMBRE arrondi, pas sur la chaine « 0€ » :
+# avec des decimales la chaine vaut « 0,00€ » et la comparaison textuelle
+# ratait tous les zeros.
+ok("zero ne s'affiche pas, meme avec des decimales", euro_compta(0) == "")
+ok("ni un centieme de centime", euro_compta(0.004) == "")
+ok("mais un centime, si", euro_compta(0.01) == "0,01€")
+ok("et la regle d'avant n'a pas bouge",
+   format_CA(3, -1) == "" && format_CA(0, 0) == "" && format_CA(12, 0) == "12€")
+# Sur un TOTAL, zero est une information : un blanc ressemble a un calcul qui
+# n'a pas abouti.
+ok("un total nul s'ecrit, il ne se blanchit pas", euro_compta_total(0) == "0,00€")
+ok("un total inconnu reste un tiret", euro_compta_total(NA) == "—")
+ok("et un total non nul s'ecrit comme les autres",
+   euro_compta_total(1234.56) == "1.234,56€")
 ok("une valeur inconnue donne un tiret, pas NA€", format_CA(NA_real_) == "—")
 ok("et dans un vecteur aussi", identical(format_CA(c(10, NA, 0)), c("10€", "—", "")))
 ok("un montant negatif garde son signe", format_CA(-1234) == "-1.234€")
@@ -45,6 +65,14 @@ ok("les indices sont en base 0, comme DataTables les attend",
 ok("une table sans jumelle n'a aucune instruction", is.null(defs_tri(tbl[, 1:3])))
 # Une jumelle orpheline doit etre cachee sans viser un indice absent.
 o <- defs_tri(tibble(Jour = "01/10", `.tri:Disparue` = 1))
+# La pastille : la couleur porte le sens, et le texte le dit quand meme.
+ok("une pastille porte son texte", grepl("Rémunérations", pastille("Rémunérations", "#8d5b8c")))
+ok("et sa couleur", grepl("#8d5b8c", pastille("Rémunérations", "#8d5b8c")))
+ok("un texte vide ne rend pas une pastille vide",
+   pastille("", "#000") == "" && pastille(NA, "#000") == "")
+ok("elle est vectorisee",
+   length(pastille(c("a", "b"), c("#111", "#222"))) == 2)
+
 ok("une jumelle orpheline est cachee sans instruction d'ordre",
    length(o) == 1 && identical(o[[1]]$targets, list(1L)))
 ok("le nom de jumelle se fabrique par col_tri", col_tri("CA HTVA") == ".tri:CA HTVA")

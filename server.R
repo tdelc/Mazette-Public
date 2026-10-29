@@ -1310,7 +1310,7 @@ server <- function(input, output, session) {
     px <- sort(unique(na.omit(e$GESTION)))
     tagList(
       radioButtons("ecr_bloc", "Périmètre", BLOCS_ECRITURES,
-                   selected = "Résultat"),
+                   selected = "Tout"),
       dateRangeInput("ecr_dates", "Période",
                      start = min(e$DATE), end = max(e$DATE),
                      min = min(e$DATE), max = max(e$DATE),
@@ -1347,20 +1347,51 @@ server <- function(input, output, session) {
   })
 
   output$ecr_kpi <- renderUI({ kpi_ecritures(ecr_filtre(), ecr_filtre_actif()) })
-  output$ecr_top  <- renderPlotly({ graph_top_comptes(top_comptes(ecr_filtre())) })
-  output$ecr_mois <- renderPlotly({ graph_solde_mensuel(solde_mensuel(ecr_filtre())) })
+
+  output$ecr_recap <- renderUI({
+    chips_postes(recap_postes(ecr_filtre()), input$ecr_poste)
+  })
+
+  # Huit observateurs, créés UNE FOIS au démarrage sur la liste fermée des
+  # postes de gestion. Les pastilles se redessinent à chaque filtre ; leurs
+  # identifiants, eux, ne bougent pas — sans quoi il faudrait créer des
+  # observateurs à la volée, qui s'empilent silencieusement à chaque redessin.
+  for (i in seq_along(postes_gestion())) local({
+    k <- i
+    observeEvent(input[[id_chip_poste(k)]], {
+      ps <- postes_gestion()[k]
+      cur <- input$ecr_poste
+      nouv <- if (ps %in% cur) setdiff(cur, ps) else c(cur, ps)
+      # "" et non character(0) : updateSelectizeInput() ignore un vecteur vide
+      # et laisserait la pastille cochée après le clic qui la décoche.
+      updateSelectizeInput(session, "ecr_poste",
+                           selected = if (length(nouv)) nouv else "")
+    }, ignoreInit = TRUE)
+  })
+
+  # Tous les journaux, pas seulement ceux de la sélection : sans ça, la
+  # couleur d'un journal changerait dès qu'un filtre en retire un autre, et
+  # une couleur qui bouge n'apprend plus rien.
+  ecr_journaux <- reactive({
+    e <- ecritures()
+    if (is.null(e)) character(0) else sort(unique(e$JOURNAL))
+  })
 
   output$ecr_table <- renderDT({
-    tbl <- table_ecritures(ecr_filtre())
+    tbl <- table_ecritures(ecr_filtre(), journaux = ecr_journaux())
     chiffres <- match(COLONNES_CHIFFREES_ECR, names(tbl)) - 1L
     datatable(
-      tbl, rownames = FALSE, selection = "none",
+      tbl, rownames = FALSE, selection = "none", escape = FALSE,
+      # Hauteur calée sur la fenêtre : le volet sert à TOUT voir d'un coup,
+      # pas à feuilleter par vingt-cinq.
       options = list(
         # Pas de « f » : la recherche de DataTables est désactivée au profit
-        # du champ de la barre latérale, qui pilote AUSSI les graphes.
-        dom = "lrtip", pageLength = 25, lengthMenu = c(10, 25, 50, 100),
+        # du champ de la barre latérale, qui pilote AUSSI les totaux.
+        dom = "lrtip", pageLength = 100,
+        lengthMenu = list(c(50, 100, 250, 1000), c("50", "100", "250", "1000")),
         language = LANGUE_DT,
-        scrollX = TRUE, order = list(list(0, "desc")),
+        scrollX = TRUE, scrollY = "calc(100vh - 330px)", scrollCollapse = TRUE,
+        order = list(list(0, "desc")),
         columnDefs = c(defs_tri(tbl),
                        list(list(targets = as.list(chiffres[!is.na(chiffres)]),
                                  className = "dt-right")))))

@@ -22,8 +22,14 @@ format_CA <- function(montant,nb_apres=0) {
                              decimal.mark = ",", nsmall = max(nb_apres,0),
                              scientific = FALSE)
   montant_formatte <- paste0(montant_formatte, "€")
-  
-  montant_formatte[str_trim(montant_formatte) == "0€"] <- ""
+
+  # Zéro ne s'affiche pas : c'est la convention des tableaux du dashboard.
+  # Le test porte sur le nombre ARRONDI et non sur la chaîne « 0€ » : avec des
+  # décimales, la chaîne vaut « 0,00€ » et la comparaison textuelle ratait
+  # tous les zéros. Sur le nombre, la règle est la même quelle que soit la
+  # précision demandée — et reste celle d'avant pour tous les appels existants.
+  nul <- !is.na(montant) & round(montant, nb_apres) == 0
+  montant_formatte[nul] <- ""
   montant_formatte[montant_formatte == "€"] <- ""
   # Une valeur inconnue s'affichait « NA€ », ce qui se lit comme un montant.
   # Le tiret est la convention du reste du tableau de bord (cf. format_pct) et
@@ -67,6 +73,38 @@ datatable_simple <- function(table){
 # rembourrée d'espaces ne se compare plus à ce qu'on attend. Un poste dont le
 # poids n'a pas bougé DOIT montrer 0 €, c'est même le résultat le plus parlant
 # du pont.
+# La précision de la comptabilité : deux décimales, jamais d'arrondi.
+#
+# Le reste du dashboard affiche ses montants à la DIZAINE d'euros près
+# (format_CA(x, -1)) — à l'échelle d'un CA mensuel, le centime est du bruit.
+# Mais sur un compte de résultat et sur un grand livre, c'est l'inverse : on
+# vient y vérifier qu'un total retombe sur ses pieds, et « 2.450€ » qui vaut
+# en réalité 2.453,27 € fait douter de tout l'écran. Deux écrans, deux
+# précisions, et la raison tient en une phrase : on ne lit pas un ordre de
+# grandeur et une pièce comptable de la même façon.
+DECIMALES_COMPTA <- 2
+
+euro_compta <- function(x) format_CA(x, DECIMALES_COMPTA)
+
+# La même chose, mais pour un TOTAL. format_CA() blanchit les zéros, ce qui
+# est la bonne règle dans une colonne de tableau — une case vide s'y lit « il
+# ne s'est rien passé ». Sur un total, c'est l'inverse : « 0,00 € au débit »
+# est une information, un blanc ressemble à un calcul qui n'a pas abouti.
+euro_compta_total <- function(x)
+  ifelse(is.na(x), "—",
+         ifelse(round(x, DECIMALES_COMPTA) == 0, "0,00€", euro_compta(x)))
+
+# Une petite étiquette colorée, à poser dans une cellule de tableau.
+#
+# La couleur porte le sens, et le texte le dit quand même : un tableau se lit
+# aussi en noir et blanc, et se photocopie.
+pastille <- function(texte, couleur, classe = "badge-etat") {
+  ifelse(is.na(texte) | !nzchar(texte), "",
+         sprintf(paste0("<span class=\"%s\" style=\"background:%s1f;",
+                        "color:%s;border-color:%s66\">%s</span>"),
+                 classe, couleur, couleur, couleur, texte))
+}
+
 euro_exact <- function(x) {
   ifelse(is.na(x), "—",
   ifelse(abs(x) < 0.5, "0 €", trimws(format_CA(x, -1))))

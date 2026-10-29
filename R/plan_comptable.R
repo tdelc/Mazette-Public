@@ -221,7 +221,10 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
     lignes <- lignes %>% left_join(base_ca, by = "PERIODE") %>%
       mutate(VALEUR = if_else(!is.na(CA) & CA > 0, 100 * VALEUR / CA, NA_real_))
 
-  fmt <- if (en_pct) function(x) format_pct(x) else function(x) format_CA(x, -1)
+  # euro_compta() et non format_CA(x, -1) : un compte de résultat se lit au
+  # centime, c'est le seul moyen d'y vérifier qu'un total retombe sur ses
+  # pieds (cf. DECIMALES_COMPTA dans R/theme.R).
+  fmt <- if (en_pct) function(x) format_pct(x) else euro_compta
 
   lignes %>%
     mutate(P = etiquette_periode(PERIODE, unite)) %>%
@@ -248,7 +251,7 @@ graph_soldes <- function(db, periodes, unite = "mois") {
 
   plot_ly(d, x = ~LAB, y = ~VALEUR, color = ~POSTE, type = "bar",
           colors = c(COUL_BRUN, COUL_AMBRE, COUL_VERT, COUL_NEUTRE),
-          hovertemplate = ~paste0(POSTE, "<br>", format_CA(VALEUR, -1),
+          hovertemplate = ~paste0(POSTE, "<br>", euro_compta(VALEUR),
                                   "<extra></extra>")) %>%
     layout(barmode = "group", xaxis = list(title = ""),
            yaxis = list(title = "€", zeroline = TRUE, zerolinecolor = "#8d7b68"),
@@ -267,14 +270,14 @@ kpi_compta_generale <- function(db, periodes, unite = "mois") {
   }
   ca <- val("Chiffre d'affaires")
   tuile <- function(v, lib, icone) {
-    kpi_tile(format_CA(v, -1), lib,
+    kpi_tile(euro_compta(v), lib,
              if (is.na(v)) COUL_NEUTRE else if (v >= 0) COUL_VERT else COUL_ROUGE,
              icone,
              sous_titre = if (!is.na(ca) && ca > 0)
                paste0(format_pct(ratio_pct(v, ca)), " du CA") else NULL)
   }
   div(class = "kpi-grid",
-      kpi_tile(format_CA(ca, -1), paste("CA —", etiquette_periode(derniere, unite)),
+      kpi_tile(euro_compta(ca), paste("CA —", etiquette_periode(derniere, unite)),
                COUL_BRUN, "euro-sign"),
       tuile(val("Marge brute d'exploitation"), "Marge brute", "layer-group"),
       tuile(val("Résultat d'exploitation"), "Résultat d'exploitation", "chart-line"),

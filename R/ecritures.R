@@ -53,12 +53,13 @@ enrichit_ecritures <- function(ecr) {
 
 #### Filtres ####
 
-# Les trois périmètres proposés. « Résultat » par défaut, et ce n'est pas
-# neutre : un compte bancaire voit passer dix fois le chiffre d'affaires, et
-# dans un classement par montant il écrase tout le reste sans rien apprendre.
-BLOCS_ECRITURES <- c("Résultat (classes 6 et 7)" = "Résultat",
-                     "Bilan (classes 1 à 5)"     = "Bilan",
-                     "Tout"                      = "Tout")
+# Les trois périmètres proposés, « Tout » par défaut : un grand livre montre
+# le grand livre, et le périmètre est un filtre qu'on applique ensuite. C'est
+# aussi le seul réglage où le contrôle débit = crédit a un sens, puisque lui
+# seul ne coupe aucune pièce en deux.
+BLOCS_ECRITURES <- c("Tout"                      = "Tout",
+                     "Résultat (classes 6 et 7)" = "Résultat",
+                     "Bilan (classes 1 à 5)"     = "Bilan")
 
 #' Cherche sans se soucier de la casse ni des expressions régulières.
 #'
@@ -77,7 +78,7 @@ contient_texte <- function(cols, texte) {
 #' Un seul filtre, une seule vérité : si le tableau avait sa propre recherche
 #' en plus, un total afficherait la somme d'autre chose que ce qu'on lit en
 #' dessous, et personne ne saurait lequel des deux croire.
-filtre_ecritures <- function(e, du = NULL, au = NULL, bloc = "Résultat",
+filtre_ecritures <- function(e, du = NULL, au = NULL, bloc = "Tout",
                              journaux = NULL, postes = NULL, comptes = NULL,
                              texte = NULL) {
   if (is.null(e) || !nrow(e)) return(e)
@@ -118,32 +119,67 @@ kpi_ecritures <- function(g, filtre_actif = FALSE) {
     tags$span("·"),
     bloc(length(unique(g$PIECE)), "pièces", COUL_NEUTRE),
     tags$span("·"),
-    bloc(euro_exact(sum(g$DEBIT)), "au débit", COUL_NEUTRE),
+    bloc(euro_compta_total(sum(g$DEBIT)), "au débit", COUL_NEUTRE),
     tags$span("·"),
-    bloc(euro_exact(sum(g$CREDIT)), "au crédit", COUL_NEUTRE),
+    bloc(euro_compta_total(sum(g$CREDIT)), "au crédit", COUL_NEUTRE),
     tags$span("·"),
     if (equilibre) bloc("équilibré", "", COUL_VERT)
     else tagList(
-      bloc(euro_exact(ecart), "d'écart", COUL_AMBRE),
+      bloc(euro_compta_total(ecart), "d'écart", COUL_AMBRE),
       tags$span(class = "text-muted",
                 if (filtre_actif) "— normal : le filtre coupe des pièces en deux."
                 else "— sur une sélection entière, c'est anormal.")))
 }
 
-#' Les comptes qui pèsent le plus dans la sélection.
+#' Le récapitulatif par poste de la sélection.
 #'
-#' Classement sur la valeur ABSOLUE du solde : un compte très créditeur est
-#' aussi intéressant qu'un compte très débiteur, et trier sur le solde signé
-#' mettrait toutes les ventes en bas du graphe.
-top_comptes <- function(g, n = 15) {
+#' Il remplace deux graphiques qui faisaient joli sans rien apprendre. Une
+#' ligne de pastilles est plus dense qu'un diagramme en barres, tient sur un
+#' quart de la hauteur, et chacune est un FILTRE : un clic et le tableau ne
+#' montre plus que ce poste. Un graphe, lui, se regarde et c'est tout.
+recap_postes <- function(g) {
   if (is.null(g) || !nrow(g)) return(NULL)
   g %>%
-    group_by(COMPTE, LIBELLE, GESTION) %>%
+    group_by(GESTION) %>%
     summarise(SOLDE = sum(DEBIT) - sum(CREDIT), N = n(), .groups = "drop") %>%
-    mutate(POIDS = abs(SOLDE)) %>%
-    arrange(desc(POIDS)) %>%
-    head(n) %>%
-    arrange(POIDS)
+    arrange(desc(abs(SOLDE)))
+}
+
+# La liste FERMÉE des postes de gestion. Fermée à dessein : les pastilles sont
+# des boutons, et un bouton a besoin d'un identifiant stable. Les fabriquer à
+# la volée obligerait à créer des observateurs dynamiques, qui s'empilent à
+# chaque redessin ; ici, les huit existent depuis le démarrage et ne bougent
+# plus, quoi que contienne la sélection.
+postes_gestion <- function()
+  c(unname(unique(LIBELLES_BLOCS)), HORS_GESTION)
+
+id_chip_poste <- function(i) paste0("ecr_chip_", i)
+
+#' La ligne de pastilles cliquables.
+chips_postes <- function(recap, actifs = NULL) {
+  if (is.null(recap) || !nrow(recap)) return(NULL)
+  ref <- postes_gestion()
+  div(
+    class = "d-flex gap-2 flex-wrap align-items-center mb-2",
+    tags$span(class = "small text-muted", "Par poste :"),
+    lapply(seq_len(nrow(recap)), function(k) {
+      ps <- recap$GESTION[k]
+      i <- match(ps, ref)
+      if (is.na(i)) return(NULL)
+      coul <- unname(couleur_poste(ps))
+      actif <- ps %in% actifs
+      actionLink(
+        id_chip_poste(i),
+        label = tagList(
+          tags$b(ps), " ", euro_compta_total(recap$SOLDE[k]),
+          tags$span(class = "text-muted", paste0(" · ", recap$N[k])),
+          if (actif) icon("xmark")),
+        class = "chip-poste",
+        style = paste0("border-color:", coul, if (actif) "" else "55", ";",
+                       "color:", coul, ";",
+                       "background:", coul, if (actif) "2e" else "12", ";",
+                       if (actif) "font-weight:600;" else ""))
+    }))
 }
 
 # Un poste hors du plan de gestion (tout le bilan) n'a pas de couleur de
@@ -153,96 +189,60 @@ couleur_poste <- function(poste) {
   ifelse(is.na(c), COUL_NEUTRE, c)
 }
 
-graph_top_comptes <- function(t) {
-  if (is.null(t) || !nrow(t))
-    return(plotly_empty(type = "scatter", mode = "markers") %>%
-             layout(title = list(text = "Aucune écriture", font = list(size = 13))))
-  t <- t %>% mutate(
-    ETIQ = paste0(COMPTE, " · ", tronque_nom(LIBELLE, 34)),
-    SURVOL = paste0("<b>", COMPTE, " ", LIBELLE, "</b><br>",
-                    GESTION, "<br>solde : ", euro_exact(SOLDE),
-                    "<br>", N, " écriture", ifelse(N > 1, "s", "")))
-  # hovertext et non text : sur une trace « bar », `text` s'IMPRIME sur la
-  # barre. Une phrase de survol de trois lignes posée sur chaque barre rend le
-  # graphe illisible — et c'est exactement ce qui s'est produit.
-  plot_ly(t, x = ~SOLDE, y = ~factor(ETIQ, levels = ETIQ), type = "bar",
-          orientation = "h", marker = list(color = couleur_poste(t$GESTION)),
-          hoverinfo = "text", hovertext = ~SURVOL) %>%
-    layout(xaxis = list(title = "", zeroline = TRUE, ticksuffix = " €"),
-           yaxis = list(title = "", automargin = TRUE),
-           margin = list(l = 10, r = 10, t = 10, b = 10),
-           showlegend = FALSE) %>%
-    change_cursor_plotly()
-}
+# Les journaux n'ont pas de couleur dans le plan comptable : il n'y en a pas à
+# connaître, ils sont propres à chaque installation d'Odoo. On en attribue
+# donc une, STABLE pour un même jeu de journaux : l'ordre alphabétique décide,
+# et le même journal garde sa couleur d'une session à l'autre. Une attribution
+# au fil de l'arrivée des lignes en changerait à chaque filtre, et la couleur
+# n'apprendrait plus rien.
+PALETTE_JOURNAUX <- c("#5b7b9b", "#8d5b8c", "#6b8f7a", "#a8763f",
+                      "#7a6b8f", "#8f6b6b", "#5f8f8f", "#8d7b68")
 
-#' Le mouvement mois par mois, empilé par poste.
-#'
-#' Sert à répondre à « quand » après « combien ». Le solde comptable et non la
-#' valeur de gestion : c'est le même nombre que dans le tableau du dessous, et
-#' deux chiffres censés être le même doivent l'être.
-solde_mensuel <- function(g) {
-  if (is.null(g) || !nrow(g)) return(NULL)
-  g %>%
-    mutate(PERIODE = floor_date(DATE, "month")) %>%
-    group_by(PERIODE, GESTION) %>%
-    summarise(SOLDE = sum(DEBIT) - sum(CREDIT), .groups = "drop") %>%
-    arrange(PERIODE)
-}
-
-graph_solde_mensuel <- function(m) {
-  if (is.null(m) || !nrow(m))
-    return(plotly_empty(type = "scatter", mode = "markers") %>%
-             layout(title = list(text = "Aucune écriture", font = list(size = 13))))
-  postes <- unique(m$GESTION)
-  p <- plot_ly()
-  for (ps in postes) {
-    d <- m[m$GESTION == ps, , drop = FALSE]
-    # hovertext, même raison que ci-dessus.
-    p <- add_bars(p, x = d$PERIODE, y = d$SOLDE, name = ps,
-                  marker = list(color = unname(couleur_poste(ps))),
-                  hoverinfo = "text",
-                  hovertext = paste0("<b>", ps, "</b><br>",
-                                     etiquette_periode(d$PERIODE, "mois"), "<br>",
-                                     euro_exact(d$SOLDE)))
-  }
-  p %>%
-    layout(barmode = "relative",
-           xaxis = list(title = "", type = "date"),
-           yaxis = list(title = "", zeroline = TRUE, ticksuffix = " €"),
-           margin = list(l = 10, r = 10, t = 10, b = 10),
-           legend = list(orientation = "h", y = -0.18, font = list(size = 10))) %>%
-    change_cursor_plotly()
+couleur_journal <- function(journal, tous = sort(unique(journal))) {
+  i <- match(journal, tous)
+  PALETTE_JOURNAUX[((i - 1L) %% length(PALETTE_JOURNAUX)) + 1L]
 }
 
 #### Le tableau ####
 
 #' Une ligne par écriture, telle qu'Odoo la montre.
 #'
-#' Débit et crédit séparés, pas un solde signé : c'est la forme du grand
+#' Débit et crédit SÉPARÉS, pas un solde signé : c'est la forme du grand
 #' livre, et c'est elle qui permet de retrouver la ligne dans Odoo sans avoir
-#' à refaire une soustraction de tête.
-table_ecritures <- function(g, n_max = 5000) {
+#' à refaire une soustraction de tête. Au centime, pour la même raison.
+#'
+#' Le compte et son intitulé tiennent dans une seule cellule — « 600100 ·
+#' Achats de boissons » — parce que c'est ainsi qu'Odoo les affiche et qu'on
+#' ne cherche jamais l'un sans l'autre. Journal et poste deviennent des
+#' pastilles colorées : sur deux cents lignes, une couleur se repère d'un coup
+#' d'œil là où un mot doit se lire.
+#'
+#' @param journaux tous les journaux connus, pour que la couleur d'un journal
+#'   ne change pas quand un filtre en retire d'autres.
+table_ecritures <- function(g, n_max = 20000, journaux = NULL) {
   if (is.null(g)) return(tibble(Date = character()))
   # Zéro ligne traverse le chemin NORMAL, et ne rend donc pas un tableau à une
   # seule colonne : les en-têtes restent les mêmes quand une recherche ne
   # trouve rien, et l'écran ne donne pas l'impression de s'être cassé.
   g <- g %>% arrange(desc(DATE), PIECE, COMPTE)
   if (nrow(g) > n_max) g <- head(g, n_max)
-  eur <- function(x) format_CA(x, -1)
+  if (is.null(journaux)) journaux <- sort(unique(g$JOURNAL))
   tibble(
     Date         = format(g$DATE, "%d/%m/%Y"),
+    Journal      = pastille(g$JOURNAL, couleur_journal(g$JOURNAL, journaux)),
     `Pièce`      = g$PIECE,
-    Journal      = g$JOURNAL,
-    Compte       = as.character(g$COMPTE),
-    `Intitulé`   = tronque_nom(g$LIBELLE, 38),
+    Compte       = paste0(g$COMPTE, " · ", tronque_nom(g$LIBELLE, 34)),
     `Libellé`    = tronque_nom(replace_na(g$TEXTE, ""), 48),
     Partenaire   = tronque_nom(replace_na(g$PARTENAIRE, ""), 26),
-    Poste        = g$GESTION,
-    `Débit`      = eur(g$DEBIT),
-    `Crédit`     = eur(g$CREDIT),
-    # Les jumelles : DT trie sur ce qu'il AFFICHE, et « 31/01/2026 » se
-    # classerait par son jour (cf. defs_tri dans R/theme.R).
+    Poste        = pastille(g$GESTION, unname(couleur_poste(g$GESTION))),
+    `Débit`      = euro_compta(g$DEBIT),
+    `Crédit`     = euro_compta(g$CREDIT),
+    # Les jumelles : DT trie sur ce qu'il AFFICHE. « 31/01/2026 » se classerait
+    # par son jour, et une pastille par son code HTML (cf. defs_tri dans
+    # R/theme.R).
     !!col_tri("Date")    := as.numeric(g$DATE),
+    !!col_tri("Journal") := g$JOURNAL,
+    !!col_tri("Poste")   := g$GESTION,
     !!col_tri("Débit")   := g$DEBIT,
     !!col_tri("Crédit")  := g$CREDIT)
 }

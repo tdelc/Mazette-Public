@@ -547,3 +547,53 @@ span.value-box-title { display: block; }
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Les pastilles de poste du volet Écritures : des étiquettes qui sont aussi
+   des boutons. Un actionLink est un <a> : sans ces règles il hériterait du
+   soulignement et du bleu des liens, et ne se lirait pas comme une étiquette. */
+.chip-poste {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  padding: 0.12em 0.6em;
+  border: 1px solid transparent;
+  border-radius: 0.8em;
+  font-size: 0.78rem;
+  text-decoration: none !important;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.chip-poste:hover { filter: brightness(0.94); }
+
+/* ------------------------------------------------------------------------
+   Le grand livre : c'est LE TABLEAU qui décide de sa hauteur.
+   ------------------------------------------------------------------------
+   Deux mécanismes se contredisaient ici. DataTables donne au corps du tableau
+   la hauteur demandée par `scrollY` (ici ~100vh moins l'en-tête), avec son
+   propre ascenseur et un en-tête figé. Mais htmlwidgets marque le conteneur
+   du widget comme « fill item » dans la carte bslib : il reçoit alors
+   `flex: 1 1 400px`, et la règle `.datatables { overflow:auto }` quelques
+   lignes plus haut — celle qui empêche un tableau de recouvrir la note sous
+   lui — le découpe à cette hauteur-là.
+
+   Résultat mesuré au navigateur : un corps de tableau de 770 px enfermé dans
+   un conteneur de 400, donc deux ascenseurs imbriqués et une vingtaine de
+   lignes visibles sur les cent demandées. Rien dans le code R ne le laissait
+   voir ; seule une inspection de la chaîne des hauteurs le montre.
+
+   On rend donc ce conteneur-ci — et lui seul — à sa hauteur naturelle. La
+   règle générale continue de protéger tous les autres tableaux. */
+#ecr_table {
+  flex: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* Une ligne = une ligne. Sans ça, « Services et biens divers » passe sur deux
+   lignes et la moitié du tableau disparaît sous la ligne de flottaison : on
+   voyait vingt écritures là où la place en permet quarante. scrollX est
+   activé, le débordement horizontal est donc géré. */
+#ecr_table table.dataTable td,
+#ecr_table table.dataTable th { white-space: nowrap; }
+#ecr_table table.dataTable td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
