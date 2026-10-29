@@ -534,17 +534,18 @@ ui_comparaison <- function() {
 }
 
 ui_compta <- function() {
-  tagList(
-    # Au-dessus des trois sous-onglets, parce que l'écartement vaut pour les
-    # trois : un mois retiré de l'analyse ne peut pas réapparaître dans le
-    # compte de résultat d'à côté.
-    #
-    # Pas de classe « zone-alerte » ici : elle masque les blocs vides, et Shiny
-    # suspend alors la sortie pour toujours (cf. reveille_zones_alerte() dans
-    # R/helpers.R). Ce bloc-là se rend vide sans conséquence.
-    uiOutput("compta_exclusion"),
   navset_card_tab(
     id = "compta_tabs",
+    # EN PREMIER, et ce n'est pas un détail d'ordre : on ne lit pas un compte
+    # de résultat avant de savoir à quels mois on se fie. C'est aussi d'ici
+    # que part l'écartement, qui vaut pour les trois onglets suivants — un
+    # mois retiré de l'analyse ne peut pas réapparaître dans le compte de
+    # résultat d'à côté.
+    nav_panel(
+      title = "Vue d'ensemble",
+      icon = icon("list-check"),
+      ui_compta_topo()
+    ),
     nav_panel(
       title = "Exploitation",
       icon = icon("chart-simple"),
@@ -560,7 +561,54 @@ ui_compta <- function() {
       icon = icon("book"),
       ui_compta_generale()
     )
-  ))
+  )
+}
+
+# Le topo : une ligne par mois, et la décision de l'écarter ou non.
+#
+# Le tableau EST le contrôle. Une ligne sélectionnée est une ligne écartée —
+# pas une case à cocher posée à côté, qui obligerait à faire la correspondance
+# entre un nom de mois et une ligne de chiffres. On clique le mois dont on se
+# méfie, là où on lit pourquoi s'en méfier.
+ui_compta_topo <- function() {
+  tagList(
+    uiOutput("topo_resume"),
+    card(
+      full_screen = TRUE,
+      card_header("Tous les mois, et ceux dont il faut se méfier"),
+      div(
+        class = "d-flex gap-2 mb-2 flex-wrap align-items-center",
+        actionButton("topo_ecarter_risque", "Écarter les mois à risque",
+                     icon = icon("filter"),
+                     class = "btn btn-sm btn-outline-danger"),
+        actionButton("topo_tout_garder", "Tout réintégrer",
+                     icon = icon("rotate-left"),
+                     class = "btn btn-sm btn-outline-secondary"),
+        span(class = "small text-muted",
+             "Clique une ligne pour l'écarter de l'analyse, ou la réintégrer.")
+      ),
+      DTOutput("topo_table"),
+      div(
+        class = "small text-muted mt-2",
+        tags$b("À risque"), " : un mois des ", FENETRE_RISQUE,
+        " derniers dont les chiffres ne sont pas croyables — presque toujours",
+        " un export comptable encore incomplet.", tags$br(),
+        tags$b("Ancien, à vérifier"), " : le même constat sur un mois plus",
+        " vieux. Passé ", FENETRE_RISQUE, " mois la comptabilité est close,",
+        " et un chiffre étrange est plus probablement un fait de gestion",
+        " qu'un défaut d'import. À lire, donc, pas à écarter d'office.",
+        tags$br(),
+        tags$b("Comptes"), " : combien de comptes ont bougé ce mois-là. La",
+        " cellule rougit sous la moitié de l'habitude. Ce signal-là ne regarde",
+        " aucun montant : un mois peut porter des euros plausibles et n'avoir",
+        " reçu que le tiers de ses écritures.", tags$br(), tags$br(),
+        "Les mois écartés disparaissent des trois onglets suivants, et chacun",
+        " le rappelle en tête de page. Rien n'est écarté automatiquement : le",
+        " jour où le dashboard choisirait seul, plus personne ne saurait ce",
+        " qu'il regarde."
+      )
+    )
+  )
 }
 
 # Du chiffre d'affaires à la marge d'exploitation, mois par mois.

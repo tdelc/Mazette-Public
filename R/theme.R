@@ -88,8 +88,17 @@ defs_tri <- function(table) {
 
   # as.list() : une cible unique doit tout de même être sérialisée en tableau
   # JSON, sinon DataTables reçoit un scalaire là où il attend une liste.
+  #
+  # PAS de `orderable = FALSE` sur les jumelles, et c'est contre-intuitif :
+  # une colonne cachée n'a pas d'en-tête à cliquer, l'interdire semblait donc
+  # gratuit — et c'était le défaut. Quand DataTables aplatit une consigne de
+  # tri (_fnSortFlatten), il écarte les colonnes source non triables ; une
+  # jumelle marquée non triable fait donc tomber la consigne entière, et le
+  # tableau ne se trie PLUS DU TOUT. Le clic enregistre bien l'ordre, l'en-tête
+  # affiche bien sa flèche, et rien ne bouge : le défaut le plus silencieux de
+  # tout ce fichier. Repéré au navigateur, jamais par un test serveur.
   defs <- list(list(targets = as.list(cachees - 1L), visible = FALSE,
-                    searchable = FALSE, orderable = FALSE))
+                    searchable = FALSE))
   # Une jumelle dont la colonne visible a disparu (renommée ailleurs) est
   # simplement cachée : viser un indice absent ferait tomber le tableau entier.
   appariees <- which(!is.na(visibles))

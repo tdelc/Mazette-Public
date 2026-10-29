@@ -26,8 +26,16 @@ d <- defs_tri(tbl)
 ok("trois instructions : une de masquage, deux d'ordre", length(d) == 3)
 ok("les jumelles sont cachees",
    identical(d[[1]]$targets, list(3L, 4L)) && isFALSE(d[[1]]$visible))
-ok("les jumelles ne sont ni cherchables ni triables",
-   isFALSE(d[[1]]$searchable) && isFALSE(d[[1]]$orderable))
+ok("les jumelles ne sont pas cherchables", isFALSE(d[[1]]$searchable))
+# LA regression a ne pas refaire. Interdire le tri sur une jumelle semblait
+# gratuit — une colonne cachee n'a pas d'en-tete a cliquer. Mais quand
+# DataTables aplatit une consigne de tri (_fnSortFlatten), il ECARTE les
+# colonnes source non triables : la consigne entiere tombe, et le tableau ne
+# se trie plus du tout. L'en-tete affiche sa fleche, l'ordre est enregistre,
+# et rien ne bouge. Verifie au navigateur ; aucun test serveur ne pouvait le
+# voir, puisque le defaut est dans DataTables, pas dans ce qu'on lui envoie.
+ok("mais elles restent TRIABLES, sinon le tri qu'elles pilotent ne part pas",
+   is.null(d[[1]]$orderable))
 ok("Jour (colonne 0) s'ordonne sur sa jumelle (colonne 3)",
    d[[2]]$targets == 0 && d[[2]]$orderData == 3)
 ok("CA (colonne 2) s'ordonne sur sa jumelle (colonne 4)",
