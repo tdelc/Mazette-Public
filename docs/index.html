@@ -395,11 +395,11 @@ R -e 'shiny::runApp()'</code></pre>
       <div class="tableau"><table>
         <thead><tr><th>Onglet</th><th>La question</th><th>Ce qu&rsquo;il contient</th></tr></thead>
         <tbody>
-          <tr><td><strong>Contr&ocirc;le</strong></td><td>Puis-je me fier &agrave; ces chiffres&nbsp;?</td><td>le diagnostic, le tableau mois par mois et l&rsquo;&eacute;cartement, les comptes hors plan, la vie des comptes, les contr&ocirc;les d&rsquo;import</td></tr>
+          <tr><td><strong>Contr&ocirc;le</strong></td><td>Puis-je me fier &agrave; ces chiffres&nbsp;?</td><td>les alertes d&rsquo;int&eacute;grit&eacute;, le tableau mois par mois et l&rsquo;&eacute;cartement, les comptes hors plan, les contr&ocirc;les d&rsquo;import</td></tr>
           <tr><td><strong>Exploitation</strong></td><td>Combien, sur cette p&eacute;riode&nbsp;?</td><td>KPI, cascade du CA &agrave; la marge, structure des charges, tableau par p&eacute;riode</td></tr>
           <tr><td><strong>&Eacute;carts</strong></td><td>Pourquoi &ccedil;a a boug&eacute;&nbsp;?</td><td>pont de marge, comptes qui l&rsquo;expliquent, d&eacute;composition, p&eacute;riode contre r&eacute;f&eacute;rence</td></tr>
           <tr><td><strong>&Eacute;volution</strong></td><td>O&ugrave; &ccedil;a va&nbsp;?</td><td>tendance et saisonnalit&eacute;, sur l&rsquo;indicateur choisi</td></tr>
-          <tr><td><strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong></td><td>Que dit le compte de r&eacute;sultat&nbsp;?</td><td>le compte de r&eacute;sultat et les soldes interm&eacute;diaires</td></tr>
+          <tr><td><strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong></td><td>Que dit le compte de r&eacute;sultat&nbsp;?</td><td>le compte de r&eacute;sultat, les soldes interm&eacute;diaires, la vie des comptes</td></tr>
           <tr><td><strong>&Eacute;critures</strong></td><td>D&rsquo;o&ugrave; &ccedil;a sort&nbsp;?</td><td>le grand livre, ligne par ligne</td></tr>
         </tbody>
       </table></div>
@@ -417,6 +417,32 @@ R -e 'shiny::runApp()'</code></pre>
         deux autres &mdash; <code>CONTROLE_ODOO</code> et
         <code>CONTROLE_COUTURE</code> &mdash; &eacute;taient calcul&eacute;s, journalis&eacute;s, sauv&eacute;s
         dans le <code>.RData</code>&hellip; et affich&eacute;s nulle part.
+      </p>
+      <p>
+        <strong>Int&eacute;grit&eacute; n&rsquo;est pas gestion.</strong> Le premier onglet Contr&ocirc;le
+        m&eacute;langeait les deux&nbsp;: &agrave; c&ocirc;t&eacute; des comptes hors plan, il signalait un co&ucirc;t
+        mati&egrave;res &agrave; 38&nbsp;% du CA et une marge n&eacute;gative. Ce sont deux m&eacute;tiers &mdash;
+        &laquo;&nbsp;ces chiffres sont-ils justes&nbsp;&raquo; et &laquo;&nbsp;ces chiffres sont-ils bons&nbsp;&raquo; &mdash;
+        et le second se lisait <em>d&eacute;j&agrave;</em>, en vert, ambre ou rouge, sur la tuile
+        m&ecirc;me du chiffre dans l&rsquo;onglet Exploitation. Il n&rsquo;y avait donc rien &agrave;
+        d&eacute;placer, seulement un doublon &agrave; supprimer &mdash; et des seuils &eacute;crits en deux
+        endroits &agrave; r&eacute;unir en un (<code>SEUILS_RATIOS</code>, d&eacute;sormais &agrave; c&ocirc;t&eacute; des
+        tuiles qui l&rsquo;affichent).
+      </p>
+      <p>
+        <strong>Et les alertes portent sur tout l&rsquo;historique</strong>
+        (<code>alertes_integrite()</code>), pas sur le dernier mois. Un onglet
+        qui demande &laquo;&nbsp;puis-je me fier &agrave; ces chiffres&nbsp;&raquo; doit r&eacute;pondre pour toute
+        la s&eacute;rie&nbsp;: une &eacute;criture mal class&eacute;e en mars 2025 fausse encore la
+        comparaison d&rsquo;aujourd&rsquo;hui, et personne n&rsquo;ira la chercher en remontant mois
+        par mois. Chaque alerte nomme les mois en cause &mdash; six au plus, puis
+        &laquo;&nbsp;et N autres&nbsp;&raquo;, parce qu&rsquo;une alerte qui liste quarante mois ne se lit pas
+        et qu&rsquo;une qui n&rsquo;en liste aucun ne sert &agrave; rien.
+      </p>
+      <p>
+        Rien n&rsquo;y est derri&egrave;re un sous-onglet, enfin&nbsp;: les quatre cartes
+        s&rsquo;encha&icirc;nent. Un contr&ocirc;le qu&rsquo;il faut penser &agrave; aller ouvrir est un contr&ocirc;le
+        qu&rsquo;on rate.
       </p>
       <p>
         C&ocirc;t&eacute; <code>server.R</code>, le volet commence par un <strong>socle

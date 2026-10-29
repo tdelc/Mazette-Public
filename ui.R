@@ -602,7 +602,7 @@ ui_compta_controle <- function() {
     card(
       full_screen = TRUE,
       card_header(
-        span(textOutput("ctrl_titre_diag", inline = TRUE)),
+        span("Ce qu'il faut regarder"),
         span(class = "small text-muted ms-2",
              textOutput("ctrl_diag_resume", inline = TRUE))),
       uiOutput("ctrl_diagnostic")
@@ -633,31 +633,22 @@ ui_compta_controle <- function() {
         "Les mois écartés disparaissent des autres onglets."
       )
     ),
-    navset_card_tab(
-      nav_panel(
-        title = "Comptes hors plan",
-        icon = icon("scale-balanced"),
-        div(class = "small text-muted mb-2",
-            "Ils n'entrent dans aucun total : la liste doit rester vide."),
-        DTOutput("ctrl_comptes")
-      ),
-      nav_panel(
-        title = "Vie des comptes",
-        icon = icon("clock-rotate-left"),
-        div(class = "small text-muted mb-2",
-            "Première et dernière période où chaque compte porte un montant.",
-            " Pour ne pas lire une baisse là où il n'y a qu'un changement de",
-            " plan comptable."),
-        DTOutput("ctrl_vie")
-      ),
-      nav_panel(
-        title = "Lecture des écritures",
-        icon = icon("file-import"),
-        div(class = "small text-muted mb-2",
-            "Contrôles passés au moment de l'import : équilibre débit/crédit,",
-            " pièces, comptes hors plan, jonction avec l'ancienne source."),
-        uiOutput("ctrl_import")
-      )
+    # À LA SUITE, et non derrière un sous-onglet : un contrôle qu'il faut
+    # penser à aller ouvrir est un contrôle qu'on rate.
+    card(
+      full_screen = TRUE,
+      card_header("Comptes hors plan"),
+      div(class = "small text-muted mb-2",
+          "Ils n'entrent dans aucun total : la liste doit rester vide."),
+      DTOutput("ctrl_comptes")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Lecture des écritures"),
+      div(class = "small text-muted mb-2",
+          "Contrôles passés au moment de l'import : équilibre débit/crédit,",
+          " pièces, comptes hors plan, jonction avec l'ancienne source."),
+      uiOutput("ctrl_import")
     )
   )
 }
@@ -913,6 +904,15 @@ ui_compta_generale <- function() {
       full_screen = TRUE,
       card_header("Soldes intermédiaires"),
       plotlyOutput("cg_soldes", height = "330px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Vie des comptes"),
+      div(class = "small text-muted mb-2",
+          "Première et dernière période où chaque compte porte un montant.",
+          " Pour ne pas lire une baisse là où il n'y a qu'un changement de",
+          " plan comptable."),
+      DTOutput("cg_vie")
     )
   )
 }

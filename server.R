@@ -871,45 +871,29 @@ server <- function(input, output, session) {
   output$topo_resume <- renderUI({
     resume_topo(compta_topo(), compta_exclus())
   })
+  # La compta RETENUE : celle que lisent les six onglets.
+  compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
+
   expl_postes <- reactive({ postes_exploitation(compta()) })
 
   #### Volet "Compta / Gestion" — Contrôle ####
 
-  # Le diagnostic porte sur la DERNIÈRE période retenue, au grain mensuel, et
-  # sans sélecteur. Un bulletin de santé répond à « est-ce que ça va », pas à
-  # « est-ce que ça allait en mars » — et la période choisie se lit dans le
-  # titre de la carte pour que personne n'ait à le deviner.
-  ctrl_serie <- reactive({
-    p <- agrege_exploitation(expl_postes(), "mois")
-    req(nrow(p) > 0)
-    tail(p, 18)
-  })
-
-  ctrl_actuel <- reactive({
-    p <- ctrl_serie()
-    filter(p, PERIODE == max(PERIODE))
-  })
-
-  ctrl_diagnostic <- reactive({
+  # Les alertes portent sur TOUT l'historique, pas sur le dernier mois. Un
+  # onglet qui demande « puis-je me fier à ces chiffres » doit répondre pour
+  # toute la série : une écriture mal classée l'an dernier fausse encore les
+  # comparaisons d'aujourd'hui, et personne n'ira la chercher mois par mois.
+  ctrl_alertes <- reactive({
     req(exists("DB_COMPTA"))
-    diagnostic_compta(compta(), ctrl_serie(), ctrl_actuel(), "mois")
+    alertes_integrite(compta(), postes_exploitation(compta()),
+                      compta_improbable())
   })
 
-  output$ctrl_titre_diag <- renderText({
-    paste("Ce qu'il faut regarder —",
-          etiquette_periode(ctrl_actuel()$PERIODE[1], "mois"))
-  })
-  output$ctrl_diagnostic  <- renderUI({ rendu_diagnostic(ctrl_diagnostic()) })
-  output$ctrl_diag_resume <- renderText({ resume_diagnostic(ctrl_diagnostic()) })
+  output$ctrl_diagnostic  <- renderUI({ rendu_diagnostic(ctrl_alertes()) })
+  output$ctrl_diag_resume <- renderText({ resume_diagnostic(ctrl_alertes()) })
+  output$ctrl_badge       <- renderUI({ badge_alertes(ctrl_alertes()) })
 
-  # Le compteur sur l'onglet. Sans lui, un écran d'audit traversé chaque matin
-  # devient un écran qu'on ne traverse plus : tout vert on passe, trois
-  # alertes on ne peut pas les manquer.
-  output$ctrl_badge <- renderUI({ badge_alertes(ctrl_diagnostic()) })
-
-  # Ces deux-là lisent la compta BRUTE, à dessein : ils répondent à « quels
-  # comptes le plan ignore-t-il » et « quand ce compte a-t-il vécu ». Les
-  # amputer des mois écartés masquerait précisément le compte qu'on cherche.
+  # Compta BRUTE, à dessein : ce tableau répond à « quels comptes le plan
+  # ignore-t-il ». L'amputer des mois écartés masquerait le compte cherché.
   output$ctrl_comptes <- renderDT({
     nc <- comptes_non_classes(compta_brute())
     if (!nrow(nc))
@@ -918,17 +902,6 @@ server <- function(input, output, session) {
     datatable_simple(
       nc %>% transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
                        Total = euro_compta(TOTAL)))
-  })
-
-  output$ctrl_vie <- renderDT({
-    datatable_simple(
-      vie_des_comptes(compta_brute()) %>%
-        transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
-                  Poste = POSTE,
-                  `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),
-                  `Dernière` = format(DERNIERE, "%m/%Y"),
-                  `Nb périodes` = PERIODES, Total = euro_compta(TOTAL))
-    )
   })
 
   # Les contrôles de lecture des écritures. Ils étaient calculés à l'import,
@@ -942,14 +915,10 @@ server <- function(input, output, session) {
       return(div(class = "text-muted small p-2",
                  "Aucun contrôle d'import : la comptabilité ne vient pas",
                  " d'un export Odoo."))
-    # Même rendu que le diagnostic : une liste à lire, alertes en tête.
+    # Même rendu que les alertes : une liste à lire, alertes en tête.
     rendu_diagnostic(d %>% transmute(TITRE = CONTROLE, STATUT = VERDICT,
                                      MESSAGE = DETAIL))
   })
-
-  # La compta RETENUE : celle que lisent les trois sous-onglets.
-  compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
-
 
   #### Volet "Compta / Gestion" — Exploitation ####
 
@@ -1325,6 +1294,19 @@ server <- function(input, output, session) {
 
   output$cg_soldes <- renderPlotly({
     graph_soldes(compta(), cg_periodes(), cg_unite()) })
+
+  # Compta BRUTE : « quand ce compte a-t-il vécu » perdrait son sens sur une
+  # série amputée des mois écartés.
+  output$cg_vie <- renderDT({
+    datatable_simple(
+      vie_des_comptes(compta_brute()) %>%
+        transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
+                  Poste = POSTE,
+                  `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),
+                  `Dernière` = format(DERNIERE, "%m/%Y"),
+                  `Nb périodes` = PERIODES, Total = euro_compta(TOTAL))
+    )
+  })
 
   #### Volet "Compta / Gestion" — Écritures ####
 

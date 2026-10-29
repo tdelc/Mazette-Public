@@ -136,3 +136,88 @@ ok("offset_mois rend un entier", is.integer(offset_mois(as.Date("2026-03-01"), "
 rab <- serie_rabotee(mensuel, "annee", 0:2)
 ok("la serie rabotee ne garde que les mois demandes", rab$CA == 1000 + 2000 + 3000)
 ok("l'etiquette dit ce qui a ete garde", nchar(etiquette_rabotage(0:2, "annee")) > 0)
+
+# ---------- les alertes d'integrite ----------
+# L'onglet Controle repond a « puis-je me fier a ces chiffres », pour TOUTE la
+# serie. Il jugeait le dernier mois et lui seul : une ecriture mal classee en
+# mars 2025 fausse encore les comparaisons d'aujourd'hui, et personne n'irait
+# la chercher en remontant mois par mois.
+cpt <- function(compte, valeur, mois, annee = 2026L, type = "compte")
+  tibble(ANNEE = annee, MOIS = mois, COMPTE = compte, LIBELLE = "x",
+         VALEUR = valeur, TYPE = type, AGREGE = TRUE)
+
+db_int <- bind_rows(lapply(1:12, function(m)
+  bind_rows(cpt("700000", 10000, m), cpt("620000", 4000, m),
+            cpt("610000", 1000, m))))
+p_int <- postes_exploitation(db_int)
+a <- alertes_integrite(db_int, p_int, mois_en_cours = as.Date("2027-06-01"))
+
+ok("une ligne par controle", nrow(a) >= 3)
+ok("les trois colonnes attendues",
+   all(c("TITRE", "STATUT", "MESSAGE") %in% names(a)))
+ok("sur une serie saine, tout est au vert", all(a$STATUT == "ok"))
+
+# LE point : plus aucun controle de GESTION. Un cout matieres a 38 % du CA est
+# un probleme de gestion, et il se lit deja en rouge sur sa tuile dans
+# l'onglet Exploitation. Le redire ici noyait les alertes de donnees.
+ok("aucun controle de ratio",
+   !any(grepl("Coût matières|Coût du travail|Frais généraux", a$TITRE)))
+ok("aucun controle de marge", !any(grepl("^Marge", a$TITRE)))
+ok("aucune borne de confort dans les messages",
+   !any(grepl("borne de confort", a$MESSAGE)))
+
+# Un compte hors plan, n'importe ou dans l'historique.
+hp <- alertes_integrite(bind_rows(db_int, cpt("123456", 900, 3L)),
+                        p_int, mois_en_cours = as.Date("2027-06-01"))
+ok("un compte hors plan est signale",
+   hp$STATUT[hp$TITRE == "Comptes hors plan"] == "alerte")
+ok("et il est nomme", grepl("123456", hp$MESSAGE[hp$TITRE == "Comptes hors plan"]))
+
+# Les mois invraisemblables : une ligne de synthese, le tableau fait le detail.
+im_int <- periodes_improbables(p_int, mois_en_cours = as.Date("2027-06-01"))
+db_faux <- bind_rows(
+  lapply(1:6, function(m) bind_rows(cpt("700000", 10000, m),
+                                    cpt("620000", 4000, m))),
+  cpt("610000", 720, 7L))
+p_faux <- postes_exploitation(db_faux)
+af <- alertes_integrite(db_faux, p_faux,
+                        periodes_improbables(p_faux,
+                                             mois_en_cours = as.Date("2027-06-01")),
+                        mois_en_cours = as.Date("2027-06-01"))
+ok("un mois invraisemblable remonte en alerte",
+   af$STATUT[af$TITRE == "Mois invraisemblables"] == "alerte")
+ok("et le mois est nomme",
+   grepl("juil\\. 2026", af$MESSAGE[af$TITRE == "Mois invraisemblables"]))
+
+# Le dernier mois : clos ou en cours, c'est une information, pas une alerte.
+ac <- alertes_integrite(db_int, p_int, mois_en_cours = as.Date("2026-12-01"))
+ok("un dernier mois non termine est signale",
+   ac$STATUT[ac$TITRE == "Dernier mois"] == "attention")
+ok("et clos, il ne l'est pas",
+   a$STATUT[a$TITRE == "Dernier mois"] == "ok")
+
+# Une source sans solde publie ne PEUT pas etre confrontee : le dire comme un
+# echec de controle laisserait croire a un probleme.
+ok("sans solde publie, le classement n'est pas une alerte",
+   a$STATUT[a$TITRE == "Classement en postes"] == "ok")
+ok("et le message dit pourquoi",
+   grepl("ne publie pas de solde", a$MESSAGE[a$TITRE == "Classement en postes"]))
+
+# Une alerte qui liste quarante mois ne se lit pas.
+d12 <- as.Date(paste0("2026-", sprintf("%02d", 1:12), "-01"))
+ok("au plus six mois nommes", 
+   length(gregexpr("2026", liste_mois(d12))[[1]]) == 6)
+ok("et le reste est compte", grepl("et 6 autres", liste_mois(d12)))
+ok("six mois tiennent sans « autres »", !grepl("autre", liste_mois(d12[1:6])))
+ok("du plus recent au plus ancien",
+   startsWith(liste_mois(d12), "déc. 2026"))
+ok("aucun mois rend une chaine vide", liste_mois(as.Date(character(0))) == "")
+
+# Les seuils de gestion ne vivent plus qu'a UN endroit : les tuiles.
+ok("les seuils sont dans R/exploitation.R, pres des tuiles qui les affichent",
+   exists("SEUILS_RATIOS") && nrow(SEUILS_RATIOS) == 3)
+ok("vert sous la borne de confort",
+   seuil_ratio(25, "PCT_MATIERES") == COUL_VERT)
+ok("ambre entre les deux", seuil_ratio(32, "PCT_MATIERES") == COUL_AMBRE)
+ok("rouge au-dela", seuil_ratio(40, "PCT_MATIERES") == COUL_ROUGE)
+ok("neutre quand on ne sait pas", seuil_ratio(NA, "PCT_MATIERES") == COUL_NEUTRE)

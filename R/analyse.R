@@ -1033,114 +1033,135 @@ tuile_indisponible <- function(cle, lib, icone) {
 # déjà employées par kpi_exploitation, et le repérage statistique est celui de
 # flag_ecart. Un diagnostic qui contredirait les autres écrans serait pire
 # qu'aucun diagnostic.
-SEUILS_RATIOS <- tibble::tribble(
-  ~CHAMP,          ~LIBELLE,            ~BON, ~MOYEN,
-  "PCT_MATIERES",  "Coût matières",       30,     35,
-  "PCT_TRAVAIL",   "Coût du travail",     35,     42,
-  "PCT_GENERAUX",  "Frais généraux",      20,     28
-)
+# ---------------------------------------------------------------------------
+# Les alertes d'intégrité
+# ---------------------------------------------------------------------------
+# Ce que l'onglet Contrôle surveille : la QUALITÉ DES DONNÉES, sur TOUT
+# l'historique. Deux corrections à ce qu'il faisait avant.
+#
+# 1. Il jugeait le DERNIER MOIS, et lui seul. Un onglet qui demande « puis-je
+#    me fier à ces chiffres » doit répondre pour toute la série : une écriture
+#    mal classée en mars 2025 fausse encore la comparaison d'aujourd'hui, et
+#    personne n'ira la chercher en remontant mois par mois.
+#
+# 2. Il mélangeait l'intégrité et la GESTION — le coût matières à 38 % du CA,
+#    la marge négative. Ce sont deux métiers : « ces chiffres sont-ils
+#    justes » et « ces chiffres sont-ils bons ». Le second se lit déjà, en
+#    vert, ambre ou rouge, sur la tuile même du chiffre dans l'onglet
+#    Exploitation (cf. kpi_exploitation et SEUILS_RATIOS). Le redire ici
+#    noyait les vraies alertes de données sous des constats de gestion.
 
-diagnostic_compta <- function(db, serie, actuel, unite = "mois",
-                              aujourd_hui = Sys.Date()) {
+# Combien de mois on NOMME avant de compter le reste. Une alerte qui liste
+# quarante mois ne se lit pas ; une qui n'en liste aucun ne sert à rien.
+MAX_MOIS_NOMMES <- 6
+
+liste_mois <- function(d, max = MAX_MOIS_NOMMES) {
+  d <- sort(unique(as.Date(d)), decreasing = TRUE)
+  if (!length(d)) return("")
+  noms <- etiquette_periode(head(d, max), "mois")
+  if (length(d) <= max) return(paste(noms, collapse = ", "))
+  paste0(paste(noms, collapse = ", "), ", et ", length(d) - max,
+         " autre", if (length(d) - max > 1) "s" else "")
+}
+
+#' Toutes les alertes d'intégrité, sur tout l'historique.
+#'
+#' Une ligne par contrôle, pas une par mois : « 4 mois s'écartent du solde
+#' comptable » suivi des mois en cause se lit, quarante lignes non. Le détail
+#' complet vit dans les tableaux du même onglet.
+#'
+#' @param db la comptabilité retenue, au grain ANNEE x MOIS.
+#' @param postes sortie de postes_exploitation(db), au grain MENSUEL.
+#' @param improb sortie de periodes_improbables() sur cette même série.
+alertes_integrite <- function(db, postes, improb = NULL,
+                              mois_en_cours = floor_date(today(), "month")) {
   res <- list()
-  ajoute <- function(titre, statut, message) {
+  ajoute <- function(titre, statut, message)
     res[[length(res) + 1]] <<- tibble(TITRE = titre, STATUT = statut,
                                       MESSAGE = message)
-  }
 
-  # 1. Le découpage en postes retombe-t-il sur le solde publié ?
-  ctrl <- try(controle_exploitation(db, postes_exploitation(db)), silent = TRUE)
+  ##### 1. Le découpage en postes retombe-t-il sur le solde publié ? #####
+  ctrl <- try(controle_exploitation(db, postes), silent = TRUE)
   if (inherits(ctrl, "try-error") || is.null(ctrl) || !nrow(ctrl)) {
-    ajoute("Contrôle du classement", "attention",
-           "Impossible de confronter la marge reconstruite au solde comptable.")
+    # Pas une alerte : une source sans ligne de solde (un export Odoo, par
+    # exemple) ne PEUT pas être confrontée. Le dire autrement laisserait
+    # croire à un contrôle en échec.
+    ajoute("Classement en postes", "ok",
+           paste0("La source ne publie pas de solde d'exploitation : rien à ",
+                  "confronter. Le contrôle vaut pour l'ancien export du ",
+                  "comptable."))
   } else {
-    n <- sum(abs(ctrl$ECART) > 1, na.rm = TRUE)
-    ajoute("Contrôle du classement",
-           if (n == 0) "ok" else "alerte",
-           if (n == 0)
+    faux <- ctrl$PERIODE[abs(ctrl$ECART) > 1]
+    ajoute("Classement en postes", if (!length(faux)) "ok" else "alerte",
+           if (!length(faux))
              paste0("Sur ", nrow(ctrl), " mois, la marge reconstruite retombe ",
                     "exactement sur le résultat d'exploitation publié.")
-           else paste0(n, " mois sur ", nrow(ctrl), " où la marge reconstruite ",
-                       "diffère du solde comptable de plus d'un euro. Un compte ",
-                       "échappe au classement en postes."))
+           else paste0(length(faux), " mois sur ", nrow(ctrl),
+                       " où la marge reconstruite diffère du solde comptable ",
+                       "de plus d'un euro — un compte échappe au classement : ",
+                       liste_mois(faux), ". Écart maximum ",
+                       euro_compta(max(abs(ctrl$ECART), na.rm = TRUE)), "."))
   }
 
-  # 2. Des comptes que le plan ne sait pas ranger ?
+  ##### 2. Des comptes que le plan ne sait pas ranger ? #####
   nc <- try(comptes_non_classes(db), silent = TRUE)
   if (!inherits(nc, "try-error")) {
-    ajoute("Comptes non classés",
-           if (!nrow(nc)) "ok" else "alerte",
+    ajoute("Comptes hors plan", if (!nrow(nc)) "ok" else "alerte",
            if (!nrow(nc))
              "Tous les comptes sont rattachés à un poste par leur numéro."
-           else paste0(nrow(nc), " compte(s) hors plan, pour ",
-                       format_CA(sum(abs(nc$TOTAL)), -1), " au total. Ils ",
-                       "n'entrent dans aucun poste : le premier est ",
-                       nc$COMPTE[1], " ", tronque_nom(nc$LIBELLE[1], 40), "."))
+           else paste0(nrow(nc), " compte(s) n'entrent dans aucun poste, pour ",
+                       euro_compta(sum(abs(nc$TOTAL))), " au total. Le premier ",
+                       "est ", nc$COMPTE[1], " ", tronque_nom(nc$LIBELLE[1], 40),
+                       " — le tableau ci-dessous les liste tous."))
   }
 
-  # 3. La période analysée est-elle close et complète ?
-  et <- etat_periode(actuel, unite, aujourd_hui)
-  if (!is.null(et)) {
-    ajoute("Complétude de la période",
-           if (!et$partielle) "ok" else if (et$en_cours) "attention" else "alerte",
-           if (!et$partielle)
-             paste0(et$libelle, " est close et complète.")
-           else if (et$en_cours)
-             paste0(et$libelle, " n'est pas terminé (", et$n_mois, " mois sur ",
-                    et$attendu, ") : les totaux ne sont pas comparables à une ",
-                    "période close.")
-           else paste0(et$libelle, " est terminé mais la comptabilité n'en ",
-                       "couvre que ", et$n_mois, " mois sur ", et$attendu, "."))
+  ##### 3. Les mois dont les chiffres ne sont pas croyables #####
+  if (!is.null(improb) && nrow(improb)) {
+    faux <- unique(improb$PERIODE[improb$MOTIF != "en_cours"])
+    if (length(faux))
+      ajoute("Mois invraisemblables", "alerte",
+             paste0(length(faux), " mois portent des chiffres improbables : ",
+                    liste_mois(faux), ". Le tableau ci-dessous dit pourquoi, ",
+                    "mois par mois, et permet de les écarter."))
+    else
+      ajoute("Mois invraisemblables", "ok",
+             "Aucun mois clos ne porte de chiffres improbables.")
   }
 
-  # 4. Les ratios de gestion tiennent-ils leurs bornes ?
-  if (!is.null(actuel) && nrow(actuel)) {
-    for (i in seq_len(nrow(SEUILS_RATIOS))) {
-      champ <- SEUILS_RATIOS$CHAMP[i]
-      v <- actuel[[champ]][1]
-      if (is.na(v)) next
-      statut <- if (v <= SEUILS_RATIOS$BON[i]) "ok"
-                else if (v <= SEUILS_RATIOS$MOYEN[i]) "attention" else "alerte"
-      ajoute(SEUILS_RATIOS$LIBELLE[i], statut,
-             paste0(format_pct(v), " du CA — la borne de confort est ",
-                    SEUILS_RATIOS$BON[i], " %, le seuil d'alerte ",
-                    SEUILS_RATIOS$MOYEN[i], " %."))
-    }
-  }
-
-  # 5. La période s'écarte-t-elle de sa propre série ?
-  # On ne signale QUE la période analysée : lister tous les écarts de
-  # l'historique ferait un diagnostic permanent, donc ignoré.
-  if (!is.null(serie) && nrow(serie) >= 5 && !is.null(actuel) && nrow(actuel)) {
-    suspects <- character(0)
+  ##### 4. Les mois qui s'écartent de leur propre série #####
+  # Sur TOUTE la série, et non sur la seule période regardée : un mois aberrant
+  # de l'an dernier pèse encore sur toutes les médianes d'aujourd'hui.
+  if (!is.null(postes) && nrow(postes) >= 5) {
+    suspects <- list()
     for (i in seq_len(nrow(INDICATEURS_ANALYSE))) {
       ind <- as.list(INDICATEURS_ANALYSE[i, ])
-      if (ind$UNITE != "eur") next
-      if (!ind$COLONNE %in% names(serie)) next
-      f <- flag_ecart(serie[[ind$COLONNE]], sens = ind$SENS)
-      j <- which(serie$PERIODE == actuel$PERIODE[1])
-      if (length(j) == 1 && f[j] == -1L)
-        suspects <- c(suspects, ind$LIBELLE)
+      if (ind$UNITE != "eur" || !ind$COLONNE %in% names(postes)) next
+      f <- flag_ecart(postes[[ind$COLONNE]], sens = ind$SENS)
+      k <- which(f == -1L)
+      if (length(k)) suspects[[ind$LIBELLE]] <- postes$PERIODE[k]
     }
-    ajoute("Écarts statistiques",
-           if (!length(suspects)) "ok" else "attention",
-           if (!length(suspects))
-             paste0("Aucun poste de la période ne s'écarte de plus de deux MAD ",
-                    "de sa propre série (", nrow(serie), " périodes).")
-           else paste0("Écart défavorable de plus de deux MAD sur : ",
-                       paste(suspects, collapse = ", "),
+    mois <- unique(unlist(lapply(suspects, as.character)))
+    ajoute("Écarts statistiques", if (!length(mois)) "ok" else "attention",
+           if (!length(mois))
+             paste0("Aucun mois ne s'écarte de plus de deux MAD de sa propre ",
+                    "série (", nrow(postes), " mois).")
+           else paste0(length(mois), " mois portent un écart défavorable de ",
+                       "plus de deux MAD : ", liste_mois(mois),
                        ". À vérifier en comptabilité avant d'y lire un fait ",
-                       "de gestion."))
+                       "de gestion (", paste(names(suspects), collapse = ", "),
+                       ")."))
   }
 
-  # 6. La marge est-elle positive ?
-  if (!is.null(actuel) && nrow(actuel) && !is.na(actuel$MARGE_AA[1])) {
-    m <- actuel$MARGE_AA[1]
-    ajoute("Marge avant amortissements",
-           if (m >= 0) "ok" else "alerte",
-           paste0(format_CA(m, -1), " sur la période, soit ",
-                  format_pct(actuel$PCT_MARGE_AA[1]), " du chiffre d'affaires.",
-                  if (m < 0) " La période ne couvre pas ses charges." else ""))
+  ##### 5. Le dernier mois est-il clos ? #####
+  if (!is.null(postes) && nrow(postes)) {
+    derniere <- max(postes$PERIODE)
+    en_cours <- derniere >= as.Date(mois_en_cours)
+    ajoute("Dernier mois", if (en_cours) "attention" else "ok",
+           if (en_cours)
+             paste0(etiquette_periode(derniere, "mois"), " n'est pas terminé : ",
+                    "ses totaux ne sont comparables à aucun mois clos.")
+           else paste0("Le dernier mois de la comptabilité, ",
+                       etiquette_periode(derniere, "mois"), ", est clos."))
   }
 
   bind_rows(res)
