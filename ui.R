@@ -607,12 +607,7 @@ ui_compta_ecritures <- function() {
       card_header("Le détail"),
       DTOutput("ecr_table"),
       div(class = "small text-muted mt-2",
-          "Débit et crédit séparés et au centime, comme dans le grand livre :",
-          " c'est la forme qui permet de retrouver la ligne dans Odoo sans",
-          " refaire une soustraction de tête. Les couleurs de journal sont",
-          " attribuées par ordre alphabétique — elles n'ont pas de sens en",
-          " elles-mêmes, elles servent à repérer d'un coup d'œil qu'une ligne",
-          " vient d'ailleurs que ses voisines.")
+          "")
     )
   )
 }
@@ -655,10 +650,7 @@ ui_compta_topo <- function() {
         " cellule rougit sous la moitié de l'habitude. Ce signal-là ne regarde",
         " aucun montant : un mois peut porter des euros plausibles et n'avoir",
         " reçu que le tiers de ses écritures.", tags$br(), tags$br(),
-        "Les mois écartés disparaissent des trois onglets suivants, et chacun",
-        " le rappelle en tête de page. Rien n'est écarté automatiquement : le",
-        " jour où le dashboard choisirait seul, plus personne ne saurait ce",
-        " qu'il regarde."
+        "Les mois écartés disparaissent des trois onglets suivants."
       )
     )
   )

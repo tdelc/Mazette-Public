@@ -125,10 +125,11 @@ kpi_ecritures <- function(g, filtre_actif = FALSE) {
     tags$span("·"),
     if (equilibre) bloc("équilibré", "", COUL_VERT)
     else tagList(
-      bloc(euro_compta_total(ecart), "d'écart", COUL_AMBRE),
-      tags$span(class = "text-muted",
-                if (filtre_actif) "— normal : le filtre coupe des pièces en deux."
-                else "— sur une sélection entière, c'est anormal.")))
+      bloc(euro_compta_total(ecart), "d'écart", COUL_AMBRE)
+      # tags$span(class = "text-muted",
+      #           if (filtre_actif) "— normal : le filtre coupe des pièces en deux."
+      #           else "— sur une sélection entière, c'est anormal.")
+    ))
 }
 
 #' Le récapitulatif par poste de la sélection.
