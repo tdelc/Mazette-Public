@@ -28,7 +28,12 @@ TABLES_OPTIONNELLES <- c(
   # Même raison : les contrôles de l'import Odoo (équilibre débit/crédit,
   # comptes hors plan, matières non ventilées) ne se refont pas depuis le
   # .RData, et c'est pourtant là qu'on voudra les relire.
-  "CONTROLE_ODOO"        # contrôle de lecture des écritures Odoo
+  "CONTROLE_ODOO",       # contrôle de lecture des écritures Odoo
+  # Les écritures au grain LIGNE, telles que lues. DB_COMPTA n'en garde que
+  # l'agrégat mensuel par compte : ce qui suffit à tous les calculs, et à rien
+  # d'autre. Ni la pièce, ni le partenaire, ni la date exacte n'y survivent —
+  # or c'est exactement ce qu'on cherche quand un poste surprend.
+  "DB_ECRITURES"         # grand livre, une ligne par écriture
 )
 
 connexion_ou_creation <- function(drive_env_name, prefix, force_dl = FALSE,

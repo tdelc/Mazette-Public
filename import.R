@@ -118,6 +118,12 @@ if (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO)) {
     ECRITURES_ODOO <- normalise_ecritures(lit_ecritures_fichier(drive_odoo$local_path))
     cli::cli_alert_info("Odoo : {nrow(ECRITURES_ODOO)} écritures lues")
 
+    # Les écritures voyagent telles quelles jusqu'au dashboard, en plus de
+    # leur agrégat. Flèche simple, même raison que CONTROLE_ODOO juste en
+    # dessous : tryCatch() évalue dans l'environnement appelant, et un `<<-`
+    # sauterait par-dessus celui de l'import.
+    DB_ECRITURES <- ECRITURES_ODOO
+
     cp <- compta_mensuelle(ECRITURES_ODOO)
 
     # Les contrôles sont journalisés ICI, pas seulement disponibles : c'est au

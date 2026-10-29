@@ -560,6 +560,68 @@ ui_compta <- function() {
       title = "Comptabilité générale",
       icon = icon("book"),
       ui_compta_generale()
+    ),
+    # EN DERNIER, parce que c'est l'onglet de la question d'après : on y vient
+    # quand un poste a surpris ailleurs, pas pour commencer.
+    nav_panel(
+      title = "Écritures",
+      icon = icon("receipt"),
+      ui_compta_ecritures()
+    )
+  )
+}
+
+# Le grand livre. Un seul jeu de filtres pilote les KPI, les deux graphes et
+# le tableau — la recherche propre de DataTables est désactivée exprès : deux
+# filtres indépendants afficheraient un total et une liste qui ne parlent pas
+# de la même chose, et personne ne saurait lequel croire.
+ui_compta_ecritures <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Chercher", width = 310,
+      uiOutput("ecr_filtres"),
+      hr(),
+      downloadButton("ecr_export", "Exporter la sélection",
+                     class = "btn btn-sm btn-outline-secondary"),
+      div(class = "small text-muted mt-2",
+          "Le fichier reprend la sélection telle qu'elle est affichée,",
+          " colonnes brutes comprises.")
+    ),
+    # class = "zone-alerte" : ce bandeau est vide dès que les écritures sont
+    # là, et un uiOutput vide garde quand même son gap dans la grille bslib.
+    # La classe le masque — et impose de l'inscrire dans ZONES_ALERTE, sans
+    # quoi Shiny le suspendrait pour toujours (cf. R/helpers.R).
+    uiOutput("ecr_absent", class = "zone-alerte"),
+    uiOutput("ecr_kpi"),
+    layout_columns(
+      col_widths = c(5, 7),
+      card(
+        full_screen = TRUE,
+        card_header("Les comptes qui pèsent le plus"),
+        plotlyOutput("ecr_top", height = "420px"),
+        div(class = "small text-muted mt-1",
+            "Solde de la sélection, compte par compte, les quinze plus gros en",
+            " valeur absolue. Un solde négatif est un compte créditeur — une",
+            " vente, un fournisseur à payer.")
+      ),
+      card(
+        full_screen = TRUE,
+        card_header("Quand ça s'est passé"),
+        plotlyOutput("ecr_mois", height = "420px"),
+        div(class = "small text-muted mt-1",
+            "Le même solde, mois par mois et par poste. C'est la réponse à",
+            " « quand » une fois qu'on a celle à « combien ».")
+      )
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Le détail"),
+      DTOutput("ecr_table"),
+      div(class = "small text-muted mt-2",
+          "Débit et crédit séparés, comme dans le grand livre : c'est la forme",
+          " qui permet de retrouver la ligne dans Odoo sans refaire une",
+          " soustraction de tête. Le tableau s'arrête à 5 000 lignes affichées",
+          " — resserre les filtres, ou exporte la sélection.")
     )
   )
 }

@@ -490,20 +490,24 @@ R -e 'shiny::runApp()'</code></pre>
         <strong>lecture</strong>, d&eacute;cid&eacute;e &agrave; la main&nbsp;: rien n&rsquo;est s&eacute;lectionn&eacute;
         d&rsquo;avance, et le jour o&ugrave; le dashboard choisirait seul les mois &agrave; ignorer,
         plus personne ne saurait ce qu&rsquo;il regarde. Il est <strong>toujours
-        annonc&eacute;</strong>&nbsp;: le r&eacute;sum&eacute; compte les mois retir&eacute;s, et le bandeau les nomme
-        dans les trois onglets suivants, en neutre, m&ecirc;me quand il n&rsquo;a plus rien
-        d&rsquo;autre &agrave; signaler &mdash; c&rsquo;est le cas normal apr&egrave;s un &eacute;cartement, et une
-        analyse amput&eacute;e qui se tait est pire qu&rsquo;une analyse pollu&eacute;e. Enfin le topo
+        annonc&eacute;</strong>&nbsp;: le r&eacute;sum&eacute; compte les mois retir&eacute;s, et
+        <code>bandeau_mois_ecartes()</code> les nomme en gris dans les onglets
+        suivants. Enfin le topo
         se calcule sur la compta <strong>brute</strong>, jamais sur la compta
         retenue, et ne porte <strong>pas</strong> de colonne &laquo;&nbsp;&eacute;cart&eacute;&nbsp;&raquo;&nbsp;:
         sinon le tableau d&eacute;pendrait de la s&eacute;lection, donc se redessinerait &agrave;
         chaque clic en perdant le clic qui vient de le provoquer.
       </p>
       <p>
-        Un mois &eacute;cart&eacute; cesse d&rsquo;&ecirc;tre <em>d&eacute;crit</em> comme une anomalie&nbsp;: il est
-        nomm&eacute; une seule fois, dans la mention d&rsquo;&eacute;cartement. Sans ce retrait, le
-        bandeau annoncerait encore &laquo;&nbsp;oct. 2026 n&rsquo;est pas termin&eacute;&nbsp;&raquo; juste
-        au-dessus de &laquo;&nbsp;oct. 2026 &eacute;cart&eacute; de l&rsquo;analyse&nbsp;&raquo;.
+        <strong>Et ce bandeau ne dit plus qu&rsquo;une chose.</strong> Il a port&eacute; un temps
+        le verdict complet &mdash; quels mois, quels postes, de combien &mdash; en
+        rouge, au-dessus de chaque graphe des trois onglets. C&rsquo;&eacute;tait crier trois
+        fois ce qui est d&eacute;sormais &eacute;crit &agrave; c&ocirc;t&eacute;, une ligne par mois, avec les
+        chiffres sous les yeux&nbsp;; et un avertissement qu&rsquo;on lit trois fois est un
+        avertissement qu&rsquo;on n&rsquo;arrive plus &agrave; lire. Reste le seul message que ces
+        onglets sont <em>seuls</em> &agrave; pouvoir donner&nbsp;: cet &eacute;cran ne montre pas tous
+        les mois. En gris, parce que ce n&rsquo;est pas une alerte &mdash; rien n&rsquo;est faux
+        dans ce qui s&rsquo;affiche, c&rsquo;est une pr&eacute;cision sur le p&eacute;rim&egrave;tre.
       </p>
       <p>
         Deux diagnostics gardent d&eacute;lib&eacute;r&eacute;ment la compta brute&nbsp;:
@@ -511,6 +515,65 @@ R -e 'shiny::runApp()'</code></pre>
         r&eacute;pondent &agrave; &laquo;&nbsp;quels comptes le plan ignore-t-il&nbsp;&raquo; et &laquo;&nbsp;quand ce
         compte a-t-il v&eacute;cu&nbsp;&raquo;&nbsp;: les amputer masquerait pr&eacute;cis&eacute;ment le compte
         qu&rsquo;on cherche.
+      </p>
+    </div>
+    <div class="note">
+      <span class="l">Le grand livre, et la question d&rsquo;apr&egrave;s</span>
+      <p>
+        <code>DB_COMPTA</code> est un agr&eacute;gat&nbsp;: un montant par mois et par compte.
+        Il suffit &agrave; tous les calculs du dashboard, et &agrave; rien d&rsquo;autre. D&egrave;s qu&rsquo;un
+        poste surprend &mdash; &laquo;&nbsp;pourquoi 4 000 &euro; de frais g&eacute;n&eacute;raux en mars&nbsp;?&nbsp;&raquo; &mdash;
+        il ne sait plus r&eacute;pondre&nbsp;: ni la date exacte, ni la pi&egrave;ce, ni le
+        fournisseur n&rsquo;y ont surv&eacute;cu. D&rsquo;o&ugrave; l&rsquo;onglet <strong>&Eacute;critures</strong>, en
+        dernier parce que c&rsquo;est celui de la question d&rsquo;apr&egrave;s&nbsp;: on y vient quand un
+        chiffre a surpris ailleurs, pas pour commencer.
+      </p>
+      <p>
+        Les &eacute;critures au grain ligne sont une table <strong>optionnelle</strong>
+        (<code>DB_ECRITURES</code>, cf. <code>R/connect.R</code>)&nbsp;: elles n&rsquo;arrivent
+        qu&rsquo;avec un import Odoo, et le volet le dit et se tait en leur absence
+        plut&ocirc;t que d&rsquo;afficher des graphes vides qu&rsquo;on prendrait pour une panne.
+      </p>
+      <p>
+        <strong>Deux lectures d&rsquo;un m&ecirc;me montant, et il faut les deux.</strong>
+        <code>SOLDE = D&Eacute;BIT &minus; CR&Eacute;DIT</code> est la lecture <em>comptable</em>,
+        celle du grand livre&nbsp;: un achat est positif, une vente est n&eacute;gative.
+        C&rsquo;est elle qu&rsquo;on affiche, parce qu&rsquo;un chiffre doit pouvoir se retrouver &agrave;
+        l&rsquo;identique dans sa source. <code>VALEUR = SENS_G &times; (CR&Eacute;DIT &minus;
+        D&Eacute;BIT)</code> est la lecture de <em>gestion</em>, celle de
+        <code>DB_COMPTA</code>&nbsp;: positive quand le poste grossit. Un compte de
+        bilan n&rsquo;en a pas, et sa <code>VALEUR</code> vaut <code>NA</code> et non
+        z&eacute;ro &mdash; z&eacute;ro voudrait dire &laquo;&nbsp;ce compte n&rsquo;a rien fait&nbsp;&raquo;, ce qui est faux.
+      </p>
+      <p>
+        <strong>Un seul filtre pilote tout</strong>&nbsp;: les quatre nombres du haut,
+        les deux graphes et le tableau. La recherche propre de DataTables est
+        d&eacute;sactiv&eacute;e expr&egrave;s (<code>dom = "lrtip"</code>, sans le <code>f</code>)&nbsp;: deux
+        filtres ind&eacute;pendants afficheraient un total et une liste qui ne parlent
+        pas de la m&ecirc;me chose, et personne ne saurait lequel croire.
+      </p>
+      <p>
+        Trois d&eacute;tails qui ont chacun leur raison. Le p&eacute;rim&egrave;tre par d&eacute;faut est
+        <strong>le r&eacute;sultat, pas le bilan</strong>&nbsp;: un compte bancaire voit passer
+        dix fois le chiffre d&rsquo;affaires et &eacute;craserait tout classement par montant
+        sans rien apprendre. La recherche est <strong>litt&eacute;rale</strong>
+        (<code>fixed = TRUE</code>)&nbsp;: elle vient d&rsquo;un champ libre, et
+        &laquo;&nbsp;Achat (2026)&nbsp;&raquo; doit chercher ce texte, pas faire tomber le volet sur
+        une parenth&egrave;se non ferm&eacute;e. Et l&rsquo;<strong>&eacute;cart d&eacute;bit/cr&eacute;dit</strong> est le
+        seul des quatre nombres qui soit un contr&ocirc;le&nbsp;: sur une s&eacute;lection enti&egrave;re
+        il doit valoir z&eacute;ro, sur une s&eacute;lection filtr&eacute;e il est normal puisque le
+        filtre coupe des pi&egrave;ces en deux &mdash; le volet dit donc lequel des deux cas
+        il affiche, au lieu de laisser deviner.
+      </p>
+      <p>
+        Enfin, <code>bloc_gestion()</code> a &eacute;t&eacute; <strong>extrait</strong> de
+        <code>postes_exploitation()</code> pour que les deux volets parlent le
+        m&ecirc;me vocabulaire&nbsp;: le plan comptable dit &laquo;&nbsp;Achats&nbsp;&raquo;, la gestion dit
+        &laquo;&nbsp;Mati&egrave;res premi&egrave;res&nbsp;&raquo;, et faire cohabiter les deux dans un m&ecirc;me &eacute;cran
+        obligerait &agrave; traduire de t&ecirc;te. Une seconde copie de ce
+        <code>case_when()</code> aurait fini par diverger&nbsp;: le jour o&ugrave; un compte
+        change de bloc, le compte de r&eacute;sultat et le grand livre ne raconteraient
+        plus la m&ecirc;me histoire, sans que rien ne le signale.
       </p>
     </div>
     <div class="note" data-profondeur="detail">
