@@ -593,35 +593,26 @@ ui_compta_ecritures <- function() {
     # quoi Shiny le suspendrait pour toujours (cf. R/helpers.R).
     uiOutput("ecr_absent", class = "zone-alerte"),
     uiOutput("ecr_kpi"),
-    layout_columns(
-      col_widths = c(5, 7),
-      card(
-        full_screen = TRUE,
-        card_header("Les comptes qui pèsent le plus"),
-        plotlyOutput("ecr_top", height = "420px"),
-        div(class = "small text-muted mt-1",
-            "Solde de la sélection, compte par compte, les quinze plus gros en",
-            " valeur absolue. Un solde négatif est un compte créditeur — une",
-            " vente, un fournisseur à payer.")
-      ),
-      card(
-        full_screen = TRUE,
-        card_header("Quand ça s'est passé"),
-        plotlyOutput("ecr_mois", height = "420px"),
-        div(class = "small text-muted mt-1",
-            "Le même solde, mois par mois et par poste. C'est la réponse à",
-            " « quand » une fois qu'on a celle à « combien ».")
-      )
-    ),
+    uiOutput("ecr_recap"),
+    # Cette carte est LE volet : les deux graphiques qui occupaient le haut
+    # sont partis — ils faisaient joli sans rien apprendre, et le
+    # récapitulatif par poste ci-dessus dit la même chose en une ligne, en
+    # plus d'être un filtre.
+    #
+    # C'est le TABLEAU qui décide de sa hauteur, pas la carte : cf. la règle
+    # `#ecr_table` dans www/style.css, qui explique pourquoi il a fallu le
+    # dire en CSS et pas ici.
     card(
       full_screen = TRUE,
       card_header("Le détail"),
       DTOutput("ecr_table"),
       div(class = "small text-muted mt-2",
-          "Débit et crédit séparés, comme dans le grand livre : c'est la forme",
-          " qui permet de retrouver la ligne dans Odoo sans refaire une",
-          " soustraction de tête. Le tableau s'arrête à 5 000 lignes affichées",
-          " — resserre les filtres, ou exporte la sélection.")
+          "Débit et crédit séparés et au centime, comme dans le grand livre :",
+          " c'est la forme qui permet de retrouver la ligne dans Odoo sans",
+          " refaire une soustraction de tête. Les couleurs de journal sont",
+          " attribuées par ordre alphabétique — elles n'ont pas de sens en",
+          " elles-mêmes, elles servent à repérer d'un coup d'œil qu'une ligne",
+          " vient d'ailleurs que ses voisines.")
     )
   )
 }

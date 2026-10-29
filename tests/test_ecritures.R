@@ -88,13 +88,12 @@ ok("aucune ecriture rend NULL, pas une erreur",
    is.null(enrichit_ecritures(brut[0, ])) && is.null(enrichit_ecritures(NULL)))
 
 # ---------- les filtres ----------
-ok("sans filtre, tout le resultat", nrow(filtre_ecritures(e)) == 4)
+# Le defaut est « Tout » : un grand livre montre le grand livre, et le
+# perimetre est un filtre qu'on applique ensuite.
+ok("sans filtre, tout", nrow(filtre_ecritures(e)) == 8)
+ok("le resultat a sa vue", nrow(filtre_ecritures(e, bloc = "Résultat")) == 4)
 ok("le bilan a sa vue", nrow(filtre_ecritures(e, bloc = "Bilan")) == 4)
 ok("et « Tout » ne retire rien", nrow(filtre_ecritures(e, bloc = "Tout")) == 8)
-# « Resultat » par defaut n'est pas neutre : un compte bancaire voit passer
-# dix fois le CA et ecraserait tout classement par montant.
-ok("le defaut est le resultat, pas le bilan",
-   all(filtre_ecritures(e)$BLOC == "Résultat"))
 ok("les dates bornent des deux cotes",
    nrow(filtre_ecritures(e, du = "2026-08-01", bloc = "Tout")) == 4 &&
    nrow(filtre_ecritures(e, au = "2026-07-31", bloc = "Tout")) == 4)
@@ -104,38 +103,38 @@ ok("plusieurs journaux a la fois",
    nrow(filtre_ecritures(e, bloc = "Tout",
                          journaux = c("MZVEN", "SAL"))) == 4)
 ok("le poste filtre",
-   nrow(filtre_ecritures(e, postes = "Matières premières")) == 2)
+   nrow(filtre_ecritures(e, bloc = "Résultat", postes = "Matières premières")) == 2)
 ok("le compte filtre",
    nrow(filtre_ecritures(e, bloc = "Tout", comptes = "411000")) == 1)
 ok("les filtres se combinent",
-   nrow(filtre_ecritures(e, du = "2026-07-10", postes = "Matières premières")) == 1)
+   nrow(filtre_ecritures(e, bloc = "Résultat", du = "2026-07-10", postes = "Matières premières")) == 1)
 
 # ---------- la recherche texte ----------
 ok("elle cherche dans le libelle de la ligne",
-   nrow(filtre_ecritures(e, texte = "fûts")) == 1)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "fûts")) == 1)
 ok("dans le partenaire",
    nrow(filtre_ecritures(e, bloc = "Tout", texte = "ONSS")) == 2)
 ok("dans la piece",
    nrow(filtre_ecritures(e, bloc = "Tout", texte = "MZVEN")) == 2)
 ok("dans le numero de compte",
-   nrow(filtre_ecritures(e, texte = "600100")) == 2)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "600100")) == 2)
 ok("sans se soucier de la casse",
-   nrow(filtre_ecritures(e, texte = "BRASSERIE DU COIN")) == 1)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "BRASSERIE DU COIN")) == 1)
 # fixed = TRUE : le texte vient d'un champ libre. Une parenthese non fermee
 # ferait tomber tout le volet si on l'interpretait comme une regex.
 ok("une parenthese ne fait pas tomber le volet",
-   { r <- try(filtre_ecritures(e, texte = "Achat ("), silent = TRUE)
+   { r <- try(filtre_ecritures(e, bloc = "Résultat", texte = "Achat ("), silent = TRUE)
      !inherits(r, "try-error") && nrow(r) == 0 })
 ok("un point n'est pas un joker",
    nrow(filtre_ecritures(e, bloc = "Tout", texte = "6001.0")) == 0)
 ok("une recherche vide ne retire rien",
-   nrow(filtre_ecritures(e, texte = "   ")) == 4)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "   ")) == 4)
 # Le partenaire est NA sur la plupart des lignes : il ne doit pas emporter
 # avec lui les autres colonnes cherchees.
 ok("un partenaire absent ne fait pas disparaitre la ligne de la recherche",
-   nrow(filtre_ecritures(e, texte = "Achats de boissons")) == 2)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "Achats de boissons")) == 2)
 ok("et la recherche traverse bien plusieurs colonnes",
-   nrow(filtre_ecritures(e, texte = "boissons")) == 3)
+   nrow(filtre_ecritures(e, bloc = "Résultat", texte = "boissons")) == 3)
 
 # ---------- les KPI ----------
 k <- net(kpi_ecritures(filtre_ecritures(e, bloc = "Tout")))
@@ -147,66 +146,103 @@ ok("une selection entiere est equilibree", grepl("équilibré", k))
 ok("et le vert le dit", grepl("#5B7B5A", k))
 # Filtrer coupe des pieces en deux : le desequilibre devient normal, et le
 # KPI doit le dire plutot que d'alarmer.
-kf <- net(kpi_ecritures(filtre_ecritures(e), filtre_actif = TRUE))
+kf <- net(kpi_ecritures(filtre_ecritures(e, bloc = "Résultat"), filtre_actif = TRUE))
 ok("une selection filtree se desequilibre", grepl("d'écart", kf))
 ok("mais le message l'explique", grepl("le filtre coupe des pièces", kf))
 ok("et sans filtre actif, le meme ecart inquiete",
-   grepl("c'est anormal", net(kpi_ecritures(filtre_ecritures(e)))))
+   grepl("c'est anormal", net(kpi_ecritures(filtre_ecritures(e, bloc = "Résultat")))))
 ok("aucune ecriture se dit", grepl("Aucune écriture",
                                    net(kpi_ecritures(e[0, ]))))
 
-# ---------- le classement des comptes ----------
-t <- top_comptes(filtre_ecritures(e, bloc = "Tout"))
-ok("un compte par ligne", nrow(t) == 6)
-ok("le solde est comptable", t$SOLDE[t$COMPTE == "600100"] == 800)
-ok("les ecritures sont comptees", t$N[t$COMPTE == "600100"] == 2)
-# Trier sur le solde signe mettrait toutes les ventes en bas du graphe.
+# ---------- le recapitulatif par poste ----------
+# Il remplace deux graphiques qui faisaient joli sans rien apprendre : une
+# ligne de pastilles est plus dense, et chacune est un filtre.
+r <- recap_postes(filtre_ecritures(e, bloc = "Tout"))
+ok("un poste par ligne", nrow(r) == 4)
+ok("le solde est comptable, comme le tableau",
+   r$SOLDE[r$GESTION == "Matières premières"] == 800)
+ok("les ecritures sont comptees", r$N[r$GESTION == "Matières premières"] == 2)
+# Trier sur le solde signe mettrait toutes les ventes en queue.
 ok("le classement se fait sur la valeur absolue",
-   { d <- top_comptes(filtre_ecritures(e, bloc = "Tout"), n = 2)
-     setequal(d$COMPTE, c("620000", "455000")) })
-ok("et le graphe rend les barres de bas en haut",
-   all(diff(top_comptes(filtre_ecritures(e, bloc = "Tout"))$POIDS) >= 0))
-ok("n limite le nombre de comptes",
-   nrow(top_comptes(filtre_ecritures(e, bloc = "Tout"), n = 3)) == 3)
-ok("aucune ecriture rend NULL", is.null(top_comptes(e[0, ])))
+   abs(r$SOLDE[1]) == max(abs(r$SOLDE)))
+ok("aucune ecriture rend NULL", is.null(recap_postes(e[0, ])))
+
+# Les pastilles sont des BOUTONS : leurs identifiants viennent d'une liste
+# fermee, pour qu'ils ne bougent pas quand la selection change.
+ok("la liste des postes est fermee et complete",
+   all(unique(e$GESTION) %in% postes_gestion()))
+ok("et elle contient le hors gestion", HORS_GESTION %in% postes_gestion())
+ok("l'identifiant d'une pastille ne depend que de son rang",
+   id_chip_poste(3) == "ecr_chip_3")
+ok("le meme poste garde le meme identifiant d'une selection a l'autre",
+   match("Rémunérations", postes_gestion()) ==
+     match("Rémunérations", postes_gestion()))
 
 ok("un poste connu prend sa couleur",
    unname(couleur_poste("Matières premières")) == COUL_POSTES[["Matières premières"]])
 ok("un poste hors plan prend le neutre",
-   unname(couleur_poste("Non classé")) == COUL_NEUTRE)
-ok("et le graphe ne tombe pas sur une selection vide",
-   !is.null(graph_top_comptes(NULL)) && !is.null(graph_top_comptes(t)))
+   unname(couleur_poste("Hors gestion")) == COUL_NEUTRE)
 
-# ---------- le temps ----------
-m <- solde_mensuel(filtre_ecritures(e, bloc = "Tout"))
-ok("un mois x poste par ligne", nrow(m) == 5)
-ok("les mois sont au premier du mois",
-   all(m$PERIODE %in% as.Date(c("2026-07-01", "2026-08-01"))))
-ok("juillet cumule les deux achats",
-   m$SOLDE[m$PERIODE == as.Date("2026-07-01") &
-           m$GESTION == "Matières premières"] == 800)
-ok("une trace par poste dans le graphe",
-   graph_solde_mensuel(m)$n == length(unique(m$GESTION)))
-ok("et rien a tracer ne tombe pas", !is.null(graph_solde_mensuel(NULL)))
+# ---------- les couleurs de journal ----------
+# Elles n'ont pas de sens en elles-memes : elles servent a reperer qu'une
+# ligne vient d'ailleurs que ses voisines. Il faut donc qu'elles soient
+# STABLES — une couleur qui change a chaque filtre n'apprend plus rien.
+tous_j <- sort(unique(e$JOURNAL))
+ok("un journal a une couleur", nzchar(couleur_journal("MZACH", tous_j)))
+ok("deux journaux differents en ont deux",
+   couleur_journal("MZACH", tous_j) != couleur_journal("MZVEN", tous_j))
+ok("la couleur ne depend QUE de la liste de reference",
+   couleur_journal("SAL", tous_j) ==
+     couleur_journal("SAL", tous_j))
+ok("retirer un autre journal de la selection ne la change pas",
+   { t2 <- table_ecritures(filtre_ecritures(e, journaux = "SAL"),
+                           journaux = tous_j)
+     t1 <- table_ecritures(filtre_ecritures(e, bloc = "Tout"), journaux = tous_j)
+     cj <- function(t, j) unique(t$Journal[grepl(j, t$Journal)])
+     identical(cj(t2, "SAL"), cj(t1, "SAL")) })
+ok("plus de journaux que de couleurs : la palette boucle, elle ne casse pas",
+   { j <- paste0("J", sprintf("%02d", 1:20))
+     length(unique(couleur_journal(j, j))) == length(PALETTE_JOURNAUX) })
 
 # ---------- le tableau ----------
-tb <- table_ecritures(filtre_ecritures(e, bloc = "Tout"))
+tb <- table_ecritures(filtre_ecritures(e, bloc = "Tout"), journaux = tous_j)
 ok("une colonne par chose a lire",
-   all(c("Date","Pièce","Journal","Compte","Intitulé","Libellé","Partenaire",
+   all(c("Date","Journal","Pièce","Compte","Libellé","Partenaire",
          "Poste","Débit","Crédit") %in% names(tb)))
-# Debit et credit SEPARES, pas un solde signe : c'est la forme du grand livre,
-# celle qui permet de retrouver la ligne dans Odoo sans refaire une
+# Le compte et son intitule ne se cherchent jamais l'un sans l'autre : une
+# seule cellule, comme Odoo les affiche.
+ok("le compte porte son intitule",
+   any(grepl("^600100 · Achats de boissons", tb$Compte)))
+# Debit et credit SEPARES, pas un solde signe : c'est la forme du grand
+# livre, celle qui permet de retrouver la ligne dans Odoo sans refaire une
 # soustraction de tete.
 ok("le debit et le credit restent separes",
    all(xor(nzchar(tb$`Débit`), nzchar(tb$`Crédit`))))
+# AU CENTIME. Arrondir a la dizaine d'euros — ce que faisait format_CA(x,-1) —
+# fait douter de tout l'ecran des qu'un total ne retombe pas sur ses pieds.
+ok("les montants sont au centime",
+   grepl("^[0-9.]+,[0-9]{2}€$", tb$`Débit`[nzchar(tb$`Débit`)][1]))
+ok("et rien n'est arrondi a la dizaine",
+   { g <- filtre_ecritures(e, bloc = "Tout")
+     g$DEBIT[1] <- 1234.56
+     grepl("1\\.234,56€", table_ecritures(g)$`Débit`[1]) ||
+       "1.234,56€" %in% table_ecritures(g)$`Débit` })
 ok("du plus recent au plus ancien", tb$Date[1] == "25/08/2026")
-ok("la colonne Poste parle gestion, pas PCMN",
-   "Matières premières" %in% tb$Poste && !"Achats" %in% tb$Poste)
 ok("la date est lisible, pas une date ISO", grepl("^\\d{2}/\\d{2}/\\d{4}$", tb$Date[1]))
-# DT trie sur ce qu'il AFFICHE : « 31/01/2026 » se classerait par son jour.
+# Journal et poste sont des PASTILLES : sur deux cents lignes, une couleur se
+# repere d'un coup d'oeil la ou un mot doit se lire.
+ok("le journal est une pastille coloree",
+   grepl("badge-etat", tb$Journal[1]) && grepl("#", tb$Journal[1]))
+ok("le poste aussi",
+   grepl("badge-etat", tb$Poste[1]) && grepl("Rémunérations|Hors gestion", tb$Poste[1]))
+ok("et le texte y est, pas seulement la couleur",
+   any(grepl("Matières premières", tb$Poste)))
+# DT trie sur ce qu'il AFFICHE : une pastille se trierait par son code HTML.
 ok("les jumelles de tri sont la",
-   all(col_tri(c("Date", "Débit", "Crédit")) %in% names(tb)))
-ok("et celle de la date est numerique", is.numeric(tb[[col_tri("Date")]]))
+   all(col_tri(c("Date", "Journal", "Poste", "Débit", "Crédit")) %in% names(tb)))
+ok("celle de la date est numerique", is.numeric(tb[[col_tri("Date")]]))
+ok("celle du poste porte le texte, pas le HTML",
+   !any(grepl("<span", tb[[col_tri("Poste")]])))
 ok("un partenaire absent s'affiche vide, pas « NA »",
    all(tb$Partenaire != "NA"))
 ok("le tableau se plafonne",

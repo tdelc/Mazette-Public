@@ -546,17 +546,57 @@ R -e 'shiny::runApp()'</code></pre>
         z&eacute;ro &mdash; z&eacute;ro voudrait dire &laquo;&nbsp;ce compte n&rsquo;a rien fait&nbsp;&raquo;, ce qui est faux.
       </p>
       <p>
+        <strong>Deux pr&eacute;cisions, deux &eacute;crans.</strong> Le reste du dashboard affiche
+        ses montants &agrave; la <em>dizaine d&rsquo;euros</em> pr&egrave;s
+        (<code>format_CA(x, -1)</code>)&nbsp;: &agrave; l&rsquo;&eacute;chelle d&rsquo;un CA mensuel, le centime
+        est du bruit. Sur un compte de r&eacute;sultat et sur un grand livre, c&rsquo;est
+        l&rsquo;inverse&nbsp;: on vient y v&eacute;rifier qu&rsquo;un total retombe sur ses pieds, et
+        &laquo;&nbsp;2.450&nbsp;&euro;&nbsp;&raquo; qui vaut en r&eacute;alit&eacute; 2.453,27&nbsp;&euro; fait douter de tout
+        l&rsquo;&eacute;cran. D&rsquo;o&ugrave; <code>euro_compta()</code> et ses deux d&eacute;cimales, dans la
+        Comptabilit&eacute; g&eacute;n&eacute;rale comme dans les &Eacute;critures. On ne lit pas un ordre de
+        grandeur et une pi&egrave;ce comptable de la m&ecirc;me fa&ccedil;on.
+      </p>
+      <p>
+        Au passage, <code>format_CA()</code> blanchissait ses z&eacute;ros en comparant la
+        <em>cha&icirc;ne</em> &agrave; <code>"0&euro;"</code>&nbsp;: avec des d&eacute;cimales elle vaut
+        <code>"0,00&euro;"</code>, et plus aucun z&eacute;ro n&rsquo;&eacute;tait reconnu. Le test porte
+        d&eacute;sormais sur le <em>nombre arrondi</em>, ce qui donne la m&ecirc;me r&egrave;gle quelle
+        que soit la pr&eacute;cision. Et sur un <em>total</em>, z&eacute;ro s&rsquo;&eacute;crit
+        (<code>euro_compta_total()</code>)&nbsp;: dans une colonne, une case vide se lit
+        &laquo;&nbsp;il ne s&rsquo;est rien pass&eacute;&nbsp;&raquo;, mais sous un total elle ressemble &agrave; un calcul
+        qui n&rsquo;a pas abouti.
+      </p>
+      <p>
+        <strong>Le tableau est le volet.</strong> Il a port&eacute; un temps deux
+        graphiques &mdash; les comptes les plus lourds, le solde mois par mois.
+        Ils faisaient joli sans rien apprendre qu&rsquo;on ne lise mieux dans les
+        lignes elles-m&ecirc;mes. &Agrave; leur place, une ligne de pastilles&nbsp;: un poste,
+        son solde, son nombre d&rsquo;&eacute;critures &mdash; plus dense qu&rsquo;un diagramme, sur un
+        quart de la hauteur, et chacune est un <em>filtre</em> d&rsquo;un clic. Un
+        graphe se regarde&nbsp;; une pastille se regarde et se clique.
+      </p>
+      <p>
+        Le reste de la place va aux lignes&nbsp;: cent par page, une hauteur cal&eacute;e
+        sur la fen&ecirc;tre, un en-t&ecirc;te fig&eacute;, et une ligne par ligne (pas de retour &agrave; la
+        ligne dans les cellules &mdash; on passait de quarante &eacute;critures visibles &agrave;
+        vingt). Journal et poste sont des <strong>pastilles color&eacute;es</strong>&nbsp;: sur
+        deux cents lignes, une couleur se rep&egrave;re d&rsquo;un coup d&rsquo;&oelig;il l&agrave; o&ugrave; un mot doit
+        se lire. Les couleurs de journal n&rsquo;ont pas de sens en elles-m&ecirc;mes&nbsp;; elles
+        sont attribu&eacute;es par ordre alphab&eacute;tique, donc <em>stables</em> &mdash; une
+        couleur qui changerait &agrave; chaque filtre n&rsquo;apprendrait plus rien.
+      </p>
+      <p>
         <strong>Un seul filtre pilote tout</strong>&nbsp;: les quatre nombres du haut,
-        les deux graphes et le tableau. La recherche propre de DataTables est
+        les pastilles et le tableau. La recherche propre de DataTables est
         d&eacute;sactiv&eacute;e expr&egrave;s (<code>dom = "lrtip"</code>, sans le <code>f</code>)&nbsp;: deux
         filtres ind&eacute;pendants afficheraient un total et une liste qui ne parlent
         pas de la m&ecirc;me chose, et personne ne saurait lequel croire.
       </p>
       <p>
         Trois d&eacute;tails qui ont chacun leur raison. Le p&eacute;rim&egrave;tre par d&eacute;faut est
-        <strong>le r&eacute;sultat, pas le bilan</strong>&nbsp;: un compte bancaire voit passer
-        dix fois le chiffre d&rsquo;affaires et &eacute;craserait tout classement par montant
-        sans rien apprendre. La recherche est <strong>litt&eacute;rale</strong>
+        <strong>&laquo;&nbsp;Tout&nbsp;&raquo;</strong>&nbsp;: un grand livre montre le grand livre, et
+        c&rsquo;est le seul r&eacute;glage o&ugrave; le contr&ocirc;le d&eacute;bit = cr&eacute;dit a un sens, puisque lui
+        seul ne coupe aucune pi&egrave;ce en deux. La recherche est <strong>litt&eacute;rale</strong>
         (<code>fixed = TRUE</code>)&nbsp;: elle vient d&rsquo;un champ libre, et
         &laquo;&nbsp;Achat (2026)&nbsp;&raquo; doit chercher ce texte, pas faire tomber le volet sur
         une parenth&egrave;se non ferm&eacute;e. Et l&rsquo;<strong>&eacute;cart d&eacute;bit/cr&eacute;dit</strong> est le
@@ -1701,6 +1741,27 @@ observeEvent({ req(PRET()); base() }, { ... })</code></pre>
       puisque ce qu&rsquo;on envoie &agrave; DataTables est exactement ce qu&rsquo;on voulait envoyer.
       Seul un navigateur, qui clique une colonne et relit l&rsquo;ordre obtenu, le
       montre.
+    </p>
+
+    <h3>Quand deux m&eacute;canismes de hauteur se contredisent</h3>
+    <p>
+      Troisi&egrave;me d&eacute;faut de la m&ecirc;me famille, apr&egrave;s les zones d&rsquo;alerte suspendues et
+      les jumelles de tri non triables&nbsp;: <strong>rien dans le code R ne le laisse
+      voir</strong>. DataTables donne au corps du grand livre la hauteur demand&eacute;e par
+      <code>scrollY</code>, avec son ascenseur et son en-t&ecirc;te fig&eacute;. Mais htmlwidgets
+      marque le conteneur du widget comme &laquo;&nbsp;fill item&nbsp;&raquo; dans la carte bslib&nbsp;: il
+      re&ccedil;oit <code>flex: 1 1 400px</code>, et la r&egrave;gle
+      <code>.datatables&nbsp;{ overflow:auto }</code> &mdash; celle qui emp&ecirc;che un tableau
+      de recouvrir la note sous lui &mdash; le d&eacute;coupe &agrave; cette hauteur-l&agrave;.
+    </p>
+    <p>
+      Mesur&eacute; au navigateur&nbsp;: un corps de tableau de 770&nbsp;px enferm&eacute; dans un
+      conteneur de 400, donc deux ascenseurs imbriqu&eacute;s et une vingtaine de lignes
+      visibles sur les cent demand&eacute;es. Ni <code>fill = FALSE</code> sur la carte ni
+      <code>fillable = FALSE</code> sur la mise en page n&rsquo;y changeaient quoi que ce
+      soit&nbsp;; seule une inspection de la cha&icirc;ne des hauteurs d&eacute;signe le coupable.
+      La r&egrave;gle <code>#ecr_table</code> de <code>www/style.css</code> rend ce
+      conteneur-l&agrave; &mdash; et lui seul &mdash; &agrave; sa hauteur naturelle.
     </p>
 
     <h3>Un produit peut porter plusieurs libell&eacute;s</h3>
