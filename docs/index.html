@@ -438,41 +438,72 @@ R -e 'shiny::runApp()'</code></pre>
         <strong>Rep&eacute;rer ne suffit pas&nbsp;: un mois faux pollue aussi les autres.</strong>
         Il entre dans les m&eacute;dianes, dans les p&eacute;riodes de r&eacute;f&eacute;rence du pont de marge,
         dans les moyennes de tendance &mdash; un seul septembre &agrave; z&eacute;ro rend illisible
-        la comparaison de tout un trimestre. D&rsquo;o&ugrave;, en t&ecirc;te du volet Compta, une
-        ligne de cases &agrave; cocher&nbsp;: <code>mois_douteux()</code> propose tous les
-        mois que le contr&ocirc;le cite, et <code>ecarte_mois()</code> les retire de
-        <code>DB_COMPTA</code> pour les <em>trois</em> sous-onglets &agrave; la fois.
+        la comparaison de tout un trimestre. D&rsquo;o&ugrave; un <strong>premier sous-onglet,
+        &laquo;&nbsp;Vue d&rsquo;ensemble&nbsp;&raquo;</strong>, avant Exploitation&nbsp;: une ligne par mois,
+        les chiffres, un &eacute;tat, et pourquoi. On ne lit pas un compte de r&eacute;sultat
+        avant de savoir &agrave; quels mois on se fie.
       </p>
       <p>
-        <strong>Le mois en cours y est compris.</strong> Il n&rsquo;est pas faux &mdash; il est
-        partiel par construction &mdash; mais il tire les moyennes vers le bas
-        exactement comme un mois faux, et la seule diff&eacute;rence est qu&rsquo;on sait
-        pourquoi. L&rsquo;&eacute;pargner d&rsquo;office revenait &agrave; d&eacute;cider &agrave; la place du lecteur&nbsp;;
-        sa case porte donc la mention <em>&laquo;&nbsp;(en cours)&nbsp;&raquo;</em>
-        (<code>etiquettes_douteux()</code>), parce que &laquo;&nbsp;oct. 2026 (en cours)&nbsp;&raquo; ne
-        se lit pas comme &laquo;&nbsp;sept. 2026&nbsp;&raquo;. Aucun mois n&rsquo;est coch&eacute; d&rsquo;avance.
+        <strong>Le tableau EST le contr&ocirc;le.</strong> Une ligne s&eacute;lectionn&eacute;e est une
+        ligne &eacute;cart&eacute;e&nbsp;: <code>ecarte_mois()</code> la retire de
+        <code>DB_COMPTA</code> pour les <em>trois</em> sous-onglets suivants.
+        Pas de case &agrave; cocher pos&eacute;e &agrave; c&ocirc;t&eacute;, qui obligerait &agrave; faire la
+        correspondance entre un nom de mois et une ligne de chiffres&nbsp;: on
+        clique le mois dont on se m&eacute;fie, l&agrave; o&ugrave; on lit pourquoi s&rsquo;en m&eacute;fier. Le CSS
+        fait le reste du travail de langage &mdash; la ligne retenue par
+        DataTables ne se peint pas en bleu &laquo;&nbsp;voici ce que tu regardes&nbsp;&raquo;, mais
+        en gris barr&eacute;, qui se lit sans couleur et se photocopie.
+      </p>
+      <p>
+        <strong>L&rsquo;&acirc;ge d&eacute;cide de la gravit&eacute;</strong>
+        (<code>FENETRE_RISQUE</code>, quatre mois). Le constat d&rsquo;usage est net&nbsp;: un
+        mois r&eacute;cent qui d&eacute;visse est presque toujours un export incomplet &mdash; les
+        &eacute;critures d&rsquo;octobre ne sont pas toutes pass&eacute;es le 3 novembre. Un mois de
+        l&rsquo;an dernier qui d&eacute;visse, lui, a toutes les chances d&rsquo;&ecirc;tre vrai&nbsp;: un mois
+        creux, une fermeture, un d&eacute;calage de paie. Le contr&ocirc;le de vraisemblance ne
+        sait pas distinguer les deux, parce qu&rsquo;il ne regarde que les chiffres&nbsp;;
+        l&rsquo;&acirc;ge, lui, le dit. Les traiter pareil ferait proposer d&rsquo;&eacute;carter la moiti&eacute;
+        de l&rsquo;historique, et l&rsquo;&eacute;cartement perdrait son sens&nbsp;: <em>on n&rsquo;&eacute;carte pas un
+        mois parce qu&rsquo;il fut mauvais, seulement parce qu&rsquo;on doute de sa
+        saisie.</em> Au-del&agrave; de quatre mois, un mois invraisemblable passe donc en
+        &laquo;&nbsp;Ancien, &agrave; v&eacute;rifier&nbsp;&raquo;&nbsp;: toujours list&eacute;, toujours motiv&eacute;, mais plus
+        propos&eacute; d&rsquo;office.
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>&Eacute;tat</th><th>Quand</th><th>Propos&eacute; par le bouton&nbsp;?</th></tr></thead>
+        <tbody>
+          <tr><td><strong>&Agrave; risque</strong></td><td>invraisemblable, et dans les 4 derniers mois</td><td>oui</td></tr>
+          <tr><td><strong>En cours</strong></td><td>le mois courant &mdash; partiel par construction</td><td>oui</td></tr>
+          <tr><td><strong>Ancien, &agrave; v&eacute;rifier</strong></td><td>invraisemblable, mais plus vieux que &ccedil;a</td><td>non &mdash; &agrave; la main si on veut</td></tr>
+          <tr><td><strong>Plausible</strong></td><td>rien &agrave; signaler</td><td>non</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Une colonne ne regarde <strong>aucun montant</strong>&nbsp;:
+        <em>Comptes</em>, le nombre de comptes mouvement&eacute;s dans le mois. Elle
+        rougit sous la moiti&eacute; de l&rsquo;habitude. Un mois peut porter des euros tout &agrave;
+        fait plausibles et n&rsquo;avoir re&ccedil;u que le tiers de ses &eacute;critures&nbsp;: les deux
+        signaux peuvent donc se contredire, et c&rsquo;est pr&eacute;cis&eacute;ment leur int&eacute;r&ecirc;t.
+      </p>
+      <p>
+        Trois d&eacute;cisions tiennent le m&eacute;canisme. L&rsquo;&eacute;cartement est une op&eacute;ration de
+        <strong>lecture</strong>, d&eacute;cid&eacute;e &agrave; la main&nbsp;: rien n&rsquo;est s&eacute;lectionn&eacute;
+        d&rsquo;avance, et le jour o&ugrave; le dashboard choisirait seul les mois &agrave; ignorer,
+        plus personne ne saurait ce qu&rsquo;il regarde. Il est <strong>toujours
+        annonc&eacute;</strong>&nbsp;: le r&eacute;sum&eacute; compte les mois retir&eacute;s, et le bandeau les nomme
+        dans les trois onglets suivants, en neutre, m&ecirc;me quand il n&rsquo;a plus rien
+        d&rsquo;autre &agrave; signaler &mdash; c&rsquo;est le cas normal apr&egrave;s un &eacute;cartement, et une
+        analyse amput&eacute;e qui se tait est pire qu&rsquo;une analyse pollu&eacute;e. Enfin le topo
+        se calcule sur la compta <strong>brute</strong>, jamais sur la compta
+        retenue, et ne porte <strong>pas</strong> de colonne &laquo;&nbsp;&eacute;cart&eacute;&nbsp;&raquo;&nbsp;:
+        sinon le tableau d&eacute;pendrait de la s&eacute;lection, donc se redessinerait &agrave;
+        chaque clic en perdant le clic qui vient de le provoquer.
       </p>
       <p>
         Un mois &eacute;cart&eacute; cesse d&rsquo;&ecirc;tre <em>d&eacute;crit</em> comme une anomalie&nbsp;: il est
         nomm&eacute; une seule fois, dans la mention d&rsquo;&eacute;cartement. Sans ce retrait, le
         bandeau annoncerait encore &laquo;&nbsp;oct. 2026 n&rsquo;est pas termin&eacute;&nbsp;&raquo; juste
         au-dessus de &laquo;&nbsp;oct. 2026 &eacute;cart&eacute; de l&rsquo;analyse&nbsp;&raquo;.
-      </p>
-      <p>
-        Quatre d&eacute;cisions tiennent ce m&eacute;canisme. L&rsquo;&eacute;cartement est une op&eacute;ration de
-        <strong>lecture</strong>, d&eacute;cid&eacute;e &agrave; la main&nbsp;: le jour o&ugrave; le dashboard
-        choisirait seul les mois &agrave; ignorer, plus personne ne saurait ce qu&rsquo;il
-        regarde. Il est <strong>toujours annonc&eacute;</strong>&nbsp;: le bandeau nomme les
-        mois retir&eacute;s, dans une troisi&egrave;me couleur, neutre, et le dit m&ecirc;me quand il
-        n&rsquo;a plus rien d&rsquo;autre &agrave; signaler &mdash; c&rsquo;est le cas normal apr&egrave;s un
-        &eacute;cartement, et une analyse amput&eacute;e qui se tait est pire qu&rsquo;une analyse
-        pollu&eacute;e. La liste propos&eacute;e se calcule sur la compta <strong>brute</strong>,
-        jamais sur la compta retenue&nbsp;: sinon le mois qu&rsquo;on vient d&rsquo;&eacute;carter
-        dispara&icirc;trait de la liste, donc sa case, donc l&rsquo;&eacute;cartement. Et
-        <strong>cocher &eacute;carte</strong>, plut&ocirc;t que d&eacute;cocher conserve&nbsp;: un
-        <code>checkboxGroupInput</code> sans rien de coch&eacute; rend <code>NULL</code>, qui
-        serait indistinguable de &laquo;&nbsp;pas encore affich&eacute;&nbsp;&raquo;&nbsp;; dans ce sens-ci,
-        <code>NULL</code> veut dire &laquo;&nbsp;rien d&rsquo;&eacute;cart&eacute;&nbsp;&raquo;.
       </p>
       <p>
         Deux diagnostics gardent d&eacute;lib&eacute;r&eacute;ment la compta brute&nbsp;:
@@ -1593,6 +1624,20 @@ observeEvent({ req(PRET()); base() }, { ... })</code></pre>
       masquent et ordonnent chaque colonne visible sur la sienne. Toute colonne format&eacute;e
       d&rsquo;un tableau <em>triable</em> doit avoir sa jumelle&nbsp;; les tableaux rendus par
       <code>datatable_simple()</code>, o&ugrave; le tri est d&eacute;sactiv&eacute;, n&rsquo;en ont pas besoin.
+    </p>
+    <p>
+      Et le pi&egrave;ge dans le pi&egrave;ge, qui a dormi plusieurs semaines&nbsp;: <strong>une
+      jumelle ne doit surtout pas &ecirc;tre marqu&eacute;e <code>orderable: false</code></strong>.
+      L&rsquo;interdire semblait gratuit &mdash; une colonne cach&eacute;e n&rsquo;a pas d&rsquo;en-t&ecirc;te &agrave;
+      cliquer &mdash; mais quand DataTables aplatit une consigne de tri
+      (<code>_fnSortFlatten</code>), il <em>&eacute;carte les colonnes source non
+      triables</em>&nbsp;: la consigne enti&egrave;re tombe, et le tableau ne se trie
+      <em>plus du tout</em>. Le clic enregistre bien l&rsquo;ordre, l&rsquo;en-t&ecirc;te affiche bien
+      sa fl&egrave;che, et rien ne bouge. C&rsquo;est la m&ecirc;me famille de d&eacute;faut que les zones
+      d&rsquo;alerte suspendues&nbsp;: <strong>aucun test serveur ne pouvait le voir</strong>,
+      puisque ce qu&rsquo;on envoie &agrave; DataTables est exactement ce qu&rsquo;on voulait envoyer.
+      Seul un navigateur, qui clique une colonne et relit l&rsquo;ordre obtenu, le
+      montre.
     </p>
 
     <h3>Un produit peut porter plusieurs libell&eacute;s</h3>

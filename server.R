@@ -809,32 +809,63 @@ server <- function(input, output, session) {
     periodes_improbables(postes_exploitation(compta_brute()))
   })
 
-  # Les mois proposés à l'écartement, et ceux que l'utilisateur a cochés.
-  compta_douteux <- reactive({ mois_douteux(compta_improbable()) })
+  # Le topo, calculé sur la compta BRUTE. Il ne dépend PAS de l'écartement, et
+  # c'est volontaire : s'il en dépendait, le mois qu'on vient d'écarter
+  # sortirait du tableau, donc de la sélection, donc de l'écartement — et la
+  # table se redessinerait à chaque clic en perdant le clic.
+  compta_topo <- reactive({ topo_mois(compta_brute(), compta_improbable()) })
 
-  output$compta_exclusion <- renderUI({
-    d <- compta_douteux()
-    if (!length(d)) return(NULL)
-    div(
-      class = "mb-2 small",
-      checkboxGroupInput(
-        "compta_exclus",
-        label = tagList(
-          tags$b("Écarter de l'analyse"),
-          " — ces mois paraissent incomplets et faussent les comparaisons :"),
-        choices = setNames(as.character(d),
-                           etiquettes_douteux(compta_improbable(), d)),
-        selected = isolate(input$compta_exclus), inline = TRUE))
+  output$topo_table <- renderDT({
+    tbl <- table_topo(compta_topo())
+    # escape = FALSE pour la pastille d'état. Tout le contenu de ce tableau est
+    # fabriqué ici — aucun libellé de compte, donc aucun texte venu d'un
+    # export ne traverse sans échappement.
+    # Deux familles de colonnes masquées, et il faut penser aux deux : les
+    # jumelles « .tri: », que defs_tri() connaît, et le drapeau « .f_ », qui
+    # ne sert qu'à colorer la cellule voisine. L'oublier le laisse s'afficher
+    # en bout de ligne — un « -1 » que personne ne sait lire.
+    drapeaux <- which(startsWith(names(tbl), ".f_")) - 1L
+    chiffres <- match(COLONNES_CHIFFREES_TOPO, names(tbl)) - 1L
+    defs <- c(defs_tri(tbl),
+              list(list(targets = as.list(drapeaux), visible = FALSE,
+                        searchable = FALSE, orderable = FALSE),
+                   list(targets = as.list(chiffres[!is.na(chiffres)]),
+                        className = "dt-right")))
+    dt <- datatable(
+      tbl, rownames = FALSE, escape = FALSE,
+      selection = list(mode = "multiple", target = "row"),
+      options = list(dom = "t", paging = FALSE, searching = FALSE,
+                     scrollX = TRUE, scrollY = "58vh", scrollCollapse = TRUE,
+                     order = list(list(0, "desc")),
+                     columnDefs = defs))
+    # Le nombre de comptes mouvementés : signal d'incomplétude indépendant des
+    # montants (cf. topo_mois).
+    formatStyle(dt, "Comptes", valueColumns = ".f_Comptes",
+                backgroundColor = styleEqual(-1L, "rgba(192,57,43,0.18)"),
+                fontWeight = styleEqual(-1L, "600"))
   })
 
-  # Cocher ÉCARTE, plutôt que décocher conserve. La nuance n'est pas
-  # cosmétique : un checkboxGroupInput sans rien de coché rend NULL, et NULL
-  # serait alors indistinguable de « pas encore affiché ». Dans ce sens-ci,
-  # NULL veut dire « rien d'écarté », ce qui est à la fois le bon défaut et le
-  # bon résultat quand on décoche tout.
+  # SÉLECTIONNER ÉCARTE. Le sens compte : une ligne non sélectionnée est une
+  # ligne retenue, donc l'état de départ — aucune sélection — veut dire « rien
+  # d'écarté », qui est le bon défaut. Dans l'autre sens, l'écran s'ouvrirait
+  # sur une analyse déjà amputée.
   compta_exclus <- reactive({
-    v <- input$compta_exclus
-    if (is.null(v) || !length(v)) as.Date(character(0)) else as.Date(v)
+    s <- input$topo_table_rows_selected
+    if (!length(s)) as.Date(character(0)) else compta_topo()$PERIODE[s]
+  })
+
+  # Les deux raccourcis. Ils ne décident rien que le clic ne puisse faire : ils
+  # évitent douze clics, et c'est tout ce qu'on leur demande.
+  observeEvent(input$topo_ecarter_risque, {
+    DT::selectRows(DT::dataTableProxy("topo_table"),
+                   which(compta_topo()$A_ECARTER))
+  })
+  observeEvent(input$topo_tout_garder, {
+    DT::selectRows(DT::dataTableProxy("topo_table"), integer(0))
+  })
+
+  output$topo_resume <- renderUI({
+    resume_topo(compta_topo(), compta_exclus())
   })
 
   # La compta RETENUE : celle que lisent les trois sous-onglets.

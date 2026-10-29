@@ -504,3 +504,46 @@ span.value-box-title { display: block; }
 .bslib-card .card-body .datatables {
   overflow: auto;
 }
+
+/* ------------------------------------------------------------------------
+   Vue d'ensemble des mois : une ligne SÉLECTIONNÉE est une ligne ÉCARTÉE.
+   ------------------------------------------------------------------------
+   Le tableau porte à lui seul la décision — pas de case à cocher posée à
+   côté, qui obligerait à faire la correspondance entre un nom de mois et une
+   ligne de chiffres. Encore faut-il que « sélectionné » se lise comme
+   « retiré » : le bleu de sélection par défaut de DataTables dit « voici ce
+   que tu regardes », exactement l'inverse de ce qu'on veut dire ici.
+
+   On le remplace donc par le vocabulaire du retrait : grisé, barré, estompé.
+   Le texte barré fait le travail même sans couleur — sur un écran mal calibré,
+   et sur une capture en noir et blanc.
+
+   !important : DataTables pose ses propres règles de sélection en ligne, avec
+   une spécificité que ce sélecteur n'atteint pas autrement. */
+#topo_table table.dataTable tbody tr.selected,
+#topo_table table.dataTable tbody tr.selected td,
+#topo_table table.dataTable tbody > tr.selected > * {
+  background-color: rgba(141, 123, 104, 0.14) !important;
+  color: #8d7b68 !important;
+  text-decoration: line-through;
+  box-shadow: none !important;
+}
+/* La pastille d'état garde sa couleur propre : barrée comme le reste, mais
+   toujours lisible — c'est elle qui dit POURQUOI le mois a été écarté. */
+#topo_table table.dataTable tbody tr.selected .badge-etat {
+  opacity: 0.55;
+}
+#topo_table table.dataTable tbody tr { cursor: pointer; }
+
+/* La pastille d'état, même grammaire que .badge-tva : la couleur porte la
+   gravité, et le texte la dit quand même. Un tableau se lit aussi en noir et
+   blanc, et se photocopie. */
+.badge-etat {
+  display: inline-block;
+  padding: 0.1em 0.55em;
+  border: 1px solid transparent;
+  border-radius: 0.7em;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
