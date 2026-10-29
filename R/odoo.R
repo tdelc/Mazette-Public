@@ -100,6 +100,10 @@ normalise_ecritures <- function(brut, colonnes = ODOO_COLONNES) {
     PIECE   = as.character(col("PIECE")),
     BRUT    = trimws(as.character(col("COMPTE"))),
     TEXTE   = as.character(col("TEXTE")),
+    # Le partenaire était exigé à l'entrée et jeté à la sortie. Il ne sert à
+    # aucun calcul — mais c'est lui qui répond à « on a payé ça à qui ? »,
+    # c'est-à-dire à la moitié des questions qu'on pose à un grand livre.
+    PARTENAIRE = as.character(col("PARTENAIRE")),
     DEBIT   = montant_odoo(col("DEBIT")),
     CREDIT  = montant_odoo(col("CREDIT"))) %>%
     mutate(

@@ -32,6 +32,21 @@ format_CA <- function(montant,nb_apres=0) {
   montant_formatte
 }
 
+# Les libellés de DataTables, en français et SANS requête réseau.
+#
+# L'usage est de charger un fichier de langue depuis un CDN. Le dashboard
+# tourne derrière un login et doit s'afficher même quand ce CDN est
+# injoignable : on écrit donc les six chaînes dont on se sert, et on s'arrête
+# là. « Show 25 entries » au milieu d'un écran en français est le genre de
+# détail qui fait douter du reste.
+LANGUE_DT <- list(
+  lengthMenu  = "Afficher _MENU_ lignes",
+  info        = "_START_ à _END_ sur _TOTAL_",
+  infoEmpty   = "aucune ligne",
+  infoFiltered = "(filtré sur _MAX_)",
+  zeroRecords = "Aucune ligne ne correspond",
+  paginate    = list(previous = "Précédent", `next` = "Suivant"))
+
 datatable_simple <- function(table){
   datatable(
     table,

@@ -943,10 +943,7 @@ server <- function(input, output, session) {
     }
     dt
   })
-  output$expl_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), expl_serie()$PERIODE, expl_unite(),
-                          compta_exclus())
-  })
+  output$expl_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
   output$expl_controle <- renderUI({
     ctrl <- controle_exploitation(compta(), expl_postes())
@@ -1065,10 +1062,7 @@ server <- function(input, output, session) {
     r$ligne$PERIODE
   })
 
-  output$ana_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), ana_periode(), ana_unite(),
-                          compta_exclus())
-  })
+  output$ana_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
   output$ana_alerte <- renderUI({
     rab <- ana_rabotage()
@@ -1230,10 +1224,7 @@ server <- function(input, output, session) {
            if (n > 1) " comparés" else "")
   })
 
-  output$cg_vraisemblance <- renderUI({
-    bandeau_vraisemblance(compta_improbable(), cg_periodes(), cg_unite(),
-                          compta_exclus())
-  })
+  output$cg_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
   output$cg_kpi <- renderUI({
     kpi_compta_generale(compta(), cg_periodes(), cg_unite()) })
@@ -1285,6 +1276,103 @@ server <- function(input, output, session) {
                   `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1))
     )
   })
+
+  #### Volet "Compta / Gestion" — Écritures ####
+
+  # DB_ECRITURES est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
+  # R/connect.R) : elle n'arrive qu'avec un import Odoo, et tout part donc de
+  # ce reactive, qui vaut NULL en son absence. Le volet le dit alors et se
+  # tait, au lieu de rendre des graphes vides qu'on prendrait pour une panne.
+  ecritures <- reactive({
+    if (!exists("DB_ECRITURES")) return(NULL)
+    enrichit_ecritures(DB_ECRITURES)
+  })
+
+  output$ecr_absent <- renderUI({
+    if (!is.null(ecritures())) return(NULL)
+    bandeau_alerte(
+      TRUE,
+      tagList("Les écritures au grain ligne n'arrivent qu'avec l'import Odoo.",
+              " Relance un import une fois l'export déposé : le volet se",
+              " remplira tout seul, et les trois onglets précédents",
+              " continuent de fonctionner sans lui."),
+      titre = "Pas encore d'écritures", couleur = COUL_NEUTRE,
+      icone = "circle-info")
+  })
+
+  # Les filtres sont fabriqués APRÈS les données : leurs choix sont ceux qui
+  # existent vraiment. Une liste de journaux écrite en dur se périmerait au
+  # premier journal créé dans Odoo, et sans rien dire.
+  output$ecr_filtres <- renderUI({
+    e <- ecritures()
+    if (is.null(e)) return(NULL)
+    jx <- sort(unique(na.omit(e$JOURNAL)))
+    px <- sort(unique(na.omit(e$GESTION)))
+    tagList(
+      radioButtons("ecr_bloc", "Périmètre", BLOCS_ECRITURES,
+                   selected = "Résultat"),
+      dateRangeInput("ecr_dates", "Période",
+                     start = min(e$DATE), end = max(e$DATE),
+                     min = min(e$DATE), max = max(e$DATE),
+                     format = "dd/mm/yyyy", language = "fr", separator = " au "),
+      selectizeInput("ecr_poste", "Poste", choices = px, multiple = TRUE,
+                     options = list(placeholder = "tous")),
+      selectizeInput("ecr_journal", "Journal", choices = jx, multiple = TRUE,
+                     options = list(placeholder = "tous")),
+      textInput("ecr_texte", "Recherche",
+                placeholder = "libellé, partenaire, pièce, compte"))
+  })
+
+  # Un seul filtre pour tout le volet : KPI, graphes et tableau. Deux filtres
+  # indépendants donneraient un total et une liste qui ne parlent pas de la
+  # même chose.
+  ecr_filtre <- reactive({
+    e <- ecritures()
+    req(!is.null(e))
+    d <- input$ecr_dates
+    filtre_ecritures(
+      e,
+      du = if (length(d) == 2) d[1] else NULL,
+      au = if (length(d) == 2) d[2] else NULL,
+      bloc = input$ecr_bloc %||% "Résultat",
+      journaux = input$ecr_journal, postes = input$ecr_poste,
+      texte = input$ecr_texte)
+  })
+
+  # Un filtre actif coupe des pièces en deux : le déséquilibre débit/crédit
+  # devient alors normal, et le KPI doit le dire plutôt que d'alarmer.
+  ecr_filtre_actif <- reactive({
+    e <- ecritures()
+    !is.null(e) && nrow(ecr_filtre()) < nrow(e)
+  })
+
+  output$ecr_kpi <- renderUI({ kpi_ecritures(ecr_filtre(), ecr_filtre_actif()) })
+  output$ecr_top  <- renderPlotly({ graph_top_comptes(top_comptes(ecr_filtre())) })
+  output$ecr_mois <- renderPlotly({ graph_solde_mensuel(solde_mensuel(ecr_filtre())) })
+
+  output$ecr_table <- renderDT({
+    tbl <- table_ecritures(ecr_filtre())
+    chiffres <- match(COLONNES_CHIFFREES_ECR, names(tbl)) - 1L
+    datatable(
+      tbl, rownames = FALSE, selection = "none",
+      options = list(
+        # Pas de « f » : la recherche de DataTables est désactivée au profit
+        # du champ de la barre latérale, qui pilote AUSSI les graphes.
+        dom = "lrtip", pageLength = 25, lengthMenu = c(10, 25, 50, 100),
+        language = LANGUE_DT,
+        scrollX = TRUE, order = list(list(0, "desc")),
+        columnDefs = c(defs_tri(tbl),
+                       list(list(targets = as.list(chiffres[!is.na(chiffres)]),
+                                 className = "dt-right")))))
+  })
+
+  output$ecr_export <- downloadHandler(
+    filename = function() nom_export_ecritures(),
+    content = function(file) {
+      # write.csv2 : séparateur « ; » et virgule décimale, pour qu'un double
+      # clic sous un Excel belge ouvre des colonnes et non une seule.
+      write.csv2(ecr_filtre(), file, row.names = FALSE, fileEncoding = "UTF-8")
+    })
 
   #### Volet "Travail" — Sources ####
   # DB_ONSS est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
