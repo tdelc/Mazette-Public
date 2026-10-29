@@ -533,40 +533,131 @@ ui_comparaison <- function() {
   )
 }
 
+# Le volet Compta, dans l'ordre des questions qu'on se pose.
+#
+#   Contrôle     — puis-je me fier à ces chiffres ?
+#   Exploitation — combien, sur cette période ?
+#   Écarts       — pourquoi ça a bougé ?
+#   Évolution    — où ça va ?
+#   Comptabilité — le compte de résultat
+#   Écritures    — d'où ça sort
+#
+# Une progression, pas un empilement : chaque onglet répond à UNE question, et
+# celui d'avant conditionne celui d'après. L'ancien onglet « Analyse » en
+# portait deux — comparer deux périodes, et suivre une série — ce qui faisait
+# huit cartes dans un même écran.
 ui_compta <- function() {
   navset_card_tab(
     id = "compta_tabs",
-    # EN PREMIER, et ce n'est pas un détail d'ordre : on ne lit pas un compte
-    # de résultat avant de savoir à quels mois on se fie. C'est aussi d'ici
-    # que part l'écartement, qui vaut pour les trois onglets suivants — un
-    # mois retiré de l'analyse ne peut pas réapparaître dans le compte de
-    # résultat d'à côté.
     nav_panel(
-      title = "Vue d'ensemble",
-      icon = icon("list-check"),
-      ui_compta_topo()
+      # Le compteur d'alertes dans le titre : sans lui, un écran d'audit
+      # traversé chaque matin devient un écran qu'on ne traverse plus. Tout
+      # vert, on passe ; trois alertes, on ne peut pas les manquer.
+      title = tagList("Contrôle", uiOutput("ctrl_badge", inline = TRUE)),
+      icon = icon("clipboard-check"),
+      value = "controle",
+      ui_compta_controle()
     ),
     nav_panel(
       title = "Exploitation",
       icon = icon("chart-simple"),
+      value = "exploitation",
       ui_exploitation()
     ),
     nav_panel(
-      title = "Analyse",
-      icon = icon("magnifying-glass-chart"),
-      ui_compta_analyse()
+      title = "Écarts",
+      icon = icon("bridge"),
+      value = "ecarts",
+      ui_compta_ecarts()
+    ),
+    nav_panel(
+      title = "Évolution",
+      icon = icon("chart-line"),
+      value = "evolution",
+      ui_compta_evolution()
     ),
     nav_panel(
       title = "Comptabilité générale",
       icon = icon("book"),
+      value = "generale",
       ui_compta_generale()
     ),
-    # EN DERNIER, parce que c'est l'onglet de la question d'après : on y vient
-    # quand un poste a surpris ailleurs, pas pour commencer.
     nav_panel(
       title = "Écritures",
       icon = icon("receipt"),
+      value = "ecritures",
       ui_compta_ecritures()
+    )
+  )
+}
+
+# L'onglet de l'analyste : tout ce qui met en doute les chiffres, au même
+# endroit. Il y en avait CINQ auparavant — la vue d'ensemble, le bandeau de
+# contrôle de l'Exploitation, deux sous-onglets de la Comptabilité générale,
+# et une carte perdue en bas de l'Analyse — plus deux contrôles d'import qui
+# n'étaient affichés nulle part.
+ui_compta_controle <- function() {
+  tagList(
+    uiOutput("topo_resume"),
+    card(
+      full_screen = TRUE,
+      card_header(
+        span(textOutput("ctrl_titre_diag", inline = TRUE)),
+        span(class = "small text-muted ms-2",
+             textOutput("ctrl_diag_resume", inline = TRUE))),
+      uiOutput("ctrl_diagnostic")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Tous les mois, et ceux dont il faut se méfier"),
+      div(
+        class = "d-flex gap-2 mb-2 flex-wrap align-items-center",
+        actionButton("topo_ecarter_risque", "Écarter les mois à risque",
+                     icon = icon("filter"),
+                     class = "btn btn-sm btn-outline-danger"),
+        actionButton("topo_tout_garder", "Tout réintégrer",
+                     icon = icon("rotate-left"),
+                     class = "btn btn-sm btn-outline-secondary"),
+        span(class = "small text-muted",
+             "Clique une ligne pour l'écarter de l'analyse, ou la réintégrer.")
+      ),
+      DTOutput("topo_table"),
+      div(
+        class = "small text-muted mt-2",
+        tags$b("À risque"), " : un mois des ", FENETRE_RISQUE,
+        " derniers dont les chiffres ne sont pas croyables. ",
+        tags$b("Ancien, à vérifier"), " : le même constat sur un mois plus",
+        " vieux, à lire plutôt qu'à écarter. ",
+        tags$b("Comptes"), " : combien de comptes ont bougé ce mois-là, la",
+        " cellule rougit sous la moitié de l'habitude.", tags$br(),
+        "Les mois écartés disparaissent des autres onglets."
+      )
+    ),
+    navset_card_tab(
+      nav_panel(
+        title = "Comptes hors plan",
+        icon = icon("scale-balanced"),
+        div(class = "small text-muted mb-2",
+            "Ils n'entrent dans aucun total : la liste doit rester vide."),
+        DTOutput("ctrl_comptes")
+      ),
+      nav_panel(
+        title = "Vie des comptes",
+        icon = icon("clock-rotate-left"),
+        div(class = "small text-muted mb-2",
+            "Première et dernière période où chaque compte porte un montant.",
+            " Pour ne pas lire une baisse là où il n'y a qu'un changement de",
+            " plan comptable."),
+        DTOutput("ctrl_vie")
+      ),
+      nav_panel(
+        title = "Lecture des écritures",
+        icon = icon("file-import"),
+        div(class = "small text-muted mb-2",
+            "Contrôles passés au moment de l'import : équilibre débit/crédit,",
+            " pièces, comptes hors plan, jonction avec l'ancienne source."),
+        uiOutput("ctrl_import")
+      )
     )
   )
 }
@@ -605,56 +696,11 @@ ui_compta_ecritures <- function() {
     card(
       full_screen = TRUE,
       card_header("Le détail"),
-      DTOutput("ecr_table"),
-      div(class = "small text-muted mt-2",
-          "")
+      DTOutput("ecr_table")
     )
   )
 }
 
-# Le topo : une ligne par mois, et la décision de l'écarter ou non.
-#
-# Le tableau EST le contrôle. Une ligne sélectionnée est une ligne écartée —
-# pas une case à cocher posée à côté, qui obligerait à faire la correspondance
-# entre un nom de mois et une ligne de chiffres. On clique le mois dont on se
-# méfie, là où on lit pourquoi s'en méfier.
-ui_compta_topo <- function() {
-  tagList(
-    uiOutput("topo_resume"),
-    card(
-      full_screen = TRUE,
-      card_header("Tous les mois, et ceux dont il faut se méfier"),
-      div(
-        class = "d-flex gap-2 mb-2 flex-wrap align-items-center",
-        actionButton("topo_ecarter_risque", "Écarter les mois à risque",
-                     icon = icon("filter"),
-                     class = "btn btn-sm btn-outline-danger"),
-        actionButton("topo_tout_garder", "Tout réintégrer",
-                     icon = icon("rotate-left"),
-                     class = "btn btn-sm btn-outline-secondary"),
-        span(class = "small text-muted",
-             "Clique une ligne pour l'écarter de l'analyse, ou la réintégrer.")
-      ),
-      DTOutput("topo_table"),
-      div(
-        class = "small text-muted mt-2",
-        tags$b("À risque"), " : un mois des ", FENETRE_RISQUE,
-        " derniers dont les chiffres ne sont pas croyables — presque toujours",
-        " un export comptable encore incomplet.", tags$br(),
-        tags$b("Ancien, à vérifier"), " : le même constat sur un mois plus",
-        " vieux. Passé ", FENETRE_RISQUE, " mois la comptabilité est close,",
-        " et un chiffre étrange est plus probablement un fait de gestion",
-        " qu'un défaut d'import. À lire, donc, pas à écarter d'office.",
-        tags$br(),
-        tags$b("Comptes"), " : combien de comptes ont bougé ce mois-là. La",
-        " cellule rougit sous la moitié de l'habitude. Ce signal-là ne regarde",
-        " aucun montant : un mois peut porter des euros plausibles et n'avoir",
-        " reçu que le tiers de ses écritures.", tags$br(), tags$br(),
-        "Les mois écartés disparaissent des trois onglets suivants."
-      )
-    )
-  )
-}
 
 # Du chiffre d'affaires à la marge d'exploitation, mois par mois.
 # Tout provient de DB_COMPTA : pas de données simulées, donc un mois sans
@@ -673,25 +719,14 @@ ui_exploitation <- function() {
                   value = 12, step = 1, ticks = FALSE),
       hr(),
       div(class = "small text-muted",
-          "Tous les chiffres présentés ici le sont HTVA",
-          tags$br(), tags$br(),
           tags$b("Marge avant amortissements"), tags$br(),
-          "= CA + autres produits − matières − rémunérations − 
-          frais généraux + résultat financier",
-          tags$br(), tags$br(),
-          "L'amortissement est écarté : c'est une écriture comptable.",
-          tags$br(), tags$br(),
-          "C'est l'EBITDA auquel on rend le résultat financier — dans les",
-          " termes du plan comptable, le ", tags$i("résultat avant impôts"),
-          " augmenté des amortissements.",
-          tags$br(), tags$br(),
-          "Tous les pourcentages sont rapportés au ", tags$b("chiffre",
-          " d'affaires seul"), ", jamais aux produits totaux.")
+          "= CA + autres produits − matières − rémunérations −",
+          " frais généraux + résultat financier", tags$br(), tags$br(),
+          "Chiffres HTVA. Pourcentages rapportés au CA seul.")
     ),
     # class = "zone-alerte" : sans elle, un uiOutput vide reste un div, et la
     # grille bslib lui accorde quand même son gap — d'où une bande blanche
     # quand il n'y a rien à signaler (cf. www/style.css).
-    uiOutput("expl_controle", class = "zone-alerte"),
     # Au-dessus de tout le reste : un chiffre invraisemblable rend faux tout ce
     # qui en dérive, il doit donc se lire AVANT les graphes, pas à côté.
     uiOutput("expl_vraisemblance", class = "zone-alerte"),
@@ -712,91 +747,67 @@ ui_exploitation <- function() {
       card_header("Détail par période"),
       DTOutput("expl_table"),
       div(class = "small text-muted mt-1",
-          "Ces quatre postes sont censés être stables d'une période à l'autre.",
-          " Une cellule colorée s'écarte de plus de deux écarts-types de sa",
+          "Une cellule colorée s'écarte de plus de deux écarts-types de sa",
           " propre série : ", tags$span(style = "color:#5B7B5A;font-weight:600",
-                                        "vert"), " si l'écart est favorable,",
-          " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
-          " s'il est défavorable. À vérifier en comptabilité avant d'y lire",
-          " un fait de gestion.")
+                                        "vert"), " si c'est favorable, ",
+          tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+          " sinon.")
     )
   )
 }
 
-# Analyse : le POURQUOI des deux autres sous-onglets.
+# « Pourquoi ça a bougé ? » — une période CONTRE une référence.
 #
-# Même grammaire que le volet Exploitation — la granularité d'abord, puis la
-# période — et un réglage de plus qui porte tout le volet : la RÉFÉRENCE. Rien
-# ici ne s'affiche sans dire à quoi il est comparé.
-ui_compta_analyse <- function() {
+# Rien d'autre. La tendance et la saisonnalité, qui répondaient à une question
+# différente — « où ça va ? » — sont parties dans l'onglet Évolution.
+ui_compta_ecarts <- function() {
   layout_sidebar(
     sidebar = sidebar(
-      title = "Analyse", width = 320,
-      radioButtons("ana_unite", "Granularité",
+      title = "Écart", width = 320,
+      radioButtons("eca_unite", "Granularité",
                    c("Par mois" = "mois", "Par trimestre" = "trimestre",
                      "Par année" = "annee"), selected = "mois"),
-      selectInput("ana_periode", "Période analysée", choices = NULL),
-      selectInput("ana_ref", "Comparée à", choices = MODES_REFERENCE,
+      selectInput("eca_periode", "Période analysée", choices = NULL),
+      selectInput("eca_ref", "Comparée à", choices = MODES_REFERENCE,
                   selected = "precedente"),
       # Coché par défaut : sur une période complète le rabotage ne retire rien,
       # il n'a donc d'effet que là où la comparaison était fausse.
-      checkboxInput("ana_raboter",
+      checkboxInput("eca_raboter",
                     "Raboter la référence à la même taille", TRUE),
       div(class = "small text-muted",
-          "Une période en cours ne porte pas douze mois. Coché, la référence",
-          " est ramenée aux ", tags$b("mêmes mois"), " : huit mois de 2026 se",
-          " comparent à janvier-août 2025, pas à l'année entière. Sans effet",
-          " sur une période complète."),
-      hr(),
-      sliderInput("ana_nb", "Périodes de tendance", min = 6, max = 48,
-                  value = 18, step = 1, ticks = FALSE),
+          "Coché, huit mois de 2026 se comparent à janvier-août 2025, pas à",
+          " l'année entière."),
       hr(),
       div(class = "small text-muted",
           tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
           " — le CA a bougé, les taux non — de ce qui vient de la dérive de",
-          " chaque poste. La somme des barres redonne exactement l'écart.",
-          tags$br(),
-          "Le calcul complet, chiffres à l'appui, est dans l'onglet",
-          " « Décomposition du pont ».",
-          tags$br(), tags$br(),
-          tags$b("Zone habituelle"), " : médiane de la série ± 2 MAD, la même",
-          " mesure que le tableau du volet Exploitation. Les deux écrans",
-          " signalent donc les mêmes périodes.", tags$br(), tags$br(),
-          tags$b("L'indicateur suivi"), " se choisit au-dessus des graphiques",
-          " de tendance et de saisonnalité. Le reste du volet porte toujours",
-          " sur la marge.", tags$br(), tags$br(),
-          "Tous les chiffres sont HTVA, et les pourcentages rapportés au",
-          " chiffre d'affaires seul.")
+          " chaque poste. La somme des barres redonne exactement l'écart.")
     ),
-    uiOutput("ana_vraisemblance", class = "zone-alerte"),
-    uiOutput("ana_alerte", class = "zone-alerte"),
-    uiOutput("ana_kpi"),
+    uiOutput("eca_vraisemblance", class = "zone-alerte"),
+    uiOutput("eca_alerte", class = "zone-alerte"),
+    uiOutput("eca_kpi"),
     card(
       full_screen = TRUE,
       card_header("Pourquoi la marge a bougé"),
-      plotlyOutput("ana_pont", height = "380px"),
+      plotlyOutput("eca_pont", height = "380px"),
       div(class = "small text-muted",
-          "On part de la marge de référence, chaque barre la creuse ou la",
-          " remplit. ", tags$b("Effet volume"), " : l'écart de chiffre",
-          " d'affaires, au taux de marge de la référence. ",
-          tags$b("Les autres barres"), " : l'écart entre ce que le poste a",
-          " coûté et ce qu'il aurait coûté en gardant son poids de la",
-          " référence. Survolez une barre pour voir son calcul, ou ouvrez",
-          " l'onglet ", tags$i("Décomposition du pont"), " juste en dessous.")
+          tags$b("Effet volume"), " : l'écart de CA au taux de marge de la",
+          " référence. ", tags$b("Les autres barres"), " : ce que le poste a",
+          " coûté, moins ce qu'il aurait coûté à poids constant.")
     ),
     navset_card_tab(
       nav_panel(
         title = "Comptes qui expliquent l'écart",
         icon = icon("list-ol"),
-        plotlyOutput("ana_contrib", height = "400px"),
+        plotlyOutput("eca_contrib", height = "400px"),
         div(class = "small text-muted mt-1",
             "Effet de chaque compte sur la marge, signe compris : un achat en",
-            " hausse pèse négativement. Le forage sous le pont ci-dessus.")
+            " hausse pèse négativement.")
       ),
       nav_panel(
         title = "Détail chiffré",
         icon = icon("table"),
-        DTOutput("ana_contrib_table")
+        DTOutput("eca_contrib_table")
       ),
       nav_panel(
         title = "Décomposition du pont",
@@ -804,60 +815,63 @@ ui_compta_analyse <- function() {
         # Le graphe montre le résultat, cet onglet montre l'arithmétique.
         # L'explication vient AVANT les tableaux : on lit la règle, puis on la
         # vérifie sur les chiffres, jamais l'inverse.
-        uiOutput("ana_pont_explication"),
-        DTOutput("ana_pont_table")
-      )
-    ),
-    navset_card_tab(
-      # Le sélecteur vit dans l'en-tête de la carte, avec les deux graphiques
-      # qu'il pilote, et non dans la barre latérale : c'est là qu'on pense à
-      # s'en servir. Même disposition que le sélecteur de la heatmap du volet
-      # Travail.
-      #
-      # `title` et non `header` : en bslib 0.6.1, l'argument `header` de
-      # navset_card_tab() est SILENCIEUSEMENT ignoré — le contenu n'apparaît
-      # nulle part et rien ne le signale. Un test de placement le vérifie.
-      title = div(
-        class = "d-flex flex-wrap gap-2 align-items-center",
-        span(class = "small text-muted", "Indicateur suivi"),
-        div(class = "flex-shrink-0",
-            selectInput("ana_indic", NULL,
-                        choices = setNames(INDICATEURS_ANALYSE$CLE,
-                                           INDICATEURS_ANALYSE$LIBELLE),
-                        selected = "marge", width = "260px"))),
-      nav_panel(
-        title = "Tendance",
-        icon = icon("chart-line"),
-        plotlyOutput("ana_tendance", height = "360px"),
-        div(class = "small text-muted mt-1",
-            "La bande grise est la zone habituelle de la série. Un point",
-            " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
-            " en sort défavorablement, un point ",
-            tags$span(style = "color:#5B7B5A;font-weight:600", "vert"),
-            " favorablement.")
-      ),
-      nav_panel(
-        title = "Saisonnalité",
-        icon = icon("calendar-days"),
-        plotlyOutput("ana_saison", height = "360px"),
-        div(class = "small text-muted mt-1",
-            "Le même indicateur mois par mois, une courbe par année, toujours",
-            " au grain mensuel. Sépare l'effet de saison de l'effet de gestion :",
-            " février est mauvais, mais février est-il toujours mauvais ?")
+        uiOutput("eca_pont_explication"),
+        DTOutput("eca_pont_table")
       )
     ),
     card(
       full_screen = TRUE,
       card_header("Période contre référence"),
-      DTOutput("ana_table")
+      DTOutput("eca_table")
+    )
+  )
+}
+
+# « Où ça va ? » — la série dans le temps, et rien d'autre.
+#
+# Pas de sélecteur de période : une tendance se lit jusqu'à aujourd'hui. La
+# profondeur se règle au curseur, et le gabarit de rabotage est celui de la
+# dernière période — sans quoi, au grain annuel, une année en cours se
+# comparerait à des années entières.
+ui_compta_evolution <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Évolution", width = 320,
+      selectInput("evo_indic", "Indicateur suivi",
+                  choices = setNames(INDICATEURS_ANALYSE$CLE,
+                                     INDICATEURS_ANALYSE$LIBELLE),
+                  selected = "marge"),
+      radioButtons("evo_unite", "Granularité",
+                   c("Par mois" = "mois", "Par trimestre" = "trimestre",
+                     "Par année" = "annee"), selected = "mois"),
+      sliderInput("evo_nb", "Périodes affichées", min = 6, max = 48,
+                  value = 18, step = 1, ticks = FALSE),
+      checkboxInput("evo_raboter",
+                    "Raboter à la taille de la dernière période", TRUE),
+      hr(),
+      div(class = "small text-muted",
+          "La granularité ne vaut que pour la tendance : la saisonnalité est",
+          " toujours mensuelle.")
+    ),
+    uiOutput("evo_vraisemblance", class = "zone-alerte"),
+    card(
+      full_screen = TRUE,
+      card_header("Tendance"),
+      plotlyOutput("evo_tendance", height = "400px"),
+      div(class = "small text-muted mt-1",
+          "La bande grise est la zone habituelle (médiane ± 2 MAD). Un point",
+          " ", tags$span(style = "color:#c0392b;font-weight:600", "rouge"),
+          " en sort défavorablement, un point ",
+          tags$span(style = "color:#5B7B5A;font-weight:600", "vert"),
+          " favorablement.")
     ),
     card(
       full_screen = TRUE,
-      card_header(
-        span("Est-ce que tout va bien ?"),
-        span(class = "small text-muted ms-2", textOutput("ana_diag_resume",
-                                                         inline = TRUE))),
-      uiOutput("ana_diagnostic")
+      card_header("Saisonnalité"),
+      plotlyOutput("evo_saison", height = "400px"),
+      div(class = "small text-muted mt-1",
+          "Une courbe par année : février est mauvais, mais février est-il",
+          " toujours mauvais ?")
     )
   )
 }
@@ -883,14 +897,10 @@ ui_compta_generale <- function() {
       checkboxInput("cg_pct", "En % du chiffre d'affaires", FALSE),
       hr(),
       div(class = "small text-muted",
-          "Tous les chiffres présentés ici le sont HTVA",
-          tags$br(), tags$br(),
           "Les comptes sont classés sur leur ", tags$b("numéro"), " : 70 ventes,",
-          " 60 achats (609 variations de stock), 61 services et biens, 62",
-          " rémunérations, 63 amortissements, 64 autres charges, 65/75",
-          " financier.", tags$br(), tags$br(),
-          tags$b("Soldes"), " : calculés en cumulant les postes qui les",
-          " précèdent, selon leur définition comptable.")
+          " 60 achats (609 stocks), 61 services et biens, 62 rémunérations,",
+          " 63 amortissements, 64 autres charges, 65/75 financier.",
+          tags$br(), tags$br(), "Chiffres HTVA.")
     ),
     uiOutput("cg_vraisemblance", class = "zone-alerte"),
     uiOutput("cg_kpi"),
@@ -899,29 +909,10 @@ ui_compta_generale <- function() {
       card_header(textOutput("cg_titre", inline = TRUE)),
       DTOutput("cg_table")
     ),
-    navset_card_tab(
-      nav_panel(
-        title = "Soldes",
-        icon = icon("chart-column"),
-        plotlyOutput("cg_soldes", height = "330px")
-      ),
-      nav_panel(
-        title = "Contrôle des totaux",
-        icon = icon("scale-balanced"),
-        div(class = "small text-muted mb-2",
-            "Comptes que le plan ne sait pas ranger d'après leur numéro. Ils",
-            " n'entrent dans aucun total : la liste doit rester vide."),
-        DTOutput("cg_controle")
-      ),
-      nav_panel(
-        title = "Vie des comptes",
-        icon = icon("clock-rotate-left"),
-        div(class = "small text-muted mb-2",
-            "Première et dernière période où chaque compte porte un montant.",
-            " Utile pour ne pas lire une baisse là où il n'y a qu'un changement",
-            " de plan comptable."),
-        DTOutput("cg_vie")
-      )
+    card(
+      full_screen = TRUE,
+      card_header("Soldes intermédiaires"),
+      plotlyOutput("cg_soldes", height = "330px")
     )
   )
 }

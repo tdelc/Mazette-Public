@@ -110,8 +110,9 @@ bandeau_alerte <- function(afficher, texte,
 # prochaine zone ajoutée ne retombe pas dans le même verrou.
 ZONES_ALERTE <- c(
   "src_alerte_onss", "src_alerte_manque",
-  "expl_controle", "expl_vraisemblance", "expl_alerte_periode",
-  "ana_vraisemblance", "ana_alerte",
+  "expl_vraisemblance", "expl_alerte_periode",
+  "eca_vraisemblance", "eca_alerte",
+  "evo_vraisemblance",
   "cg_vraisemblance", "ecr_absent",
   "det_bandeau", "det_tickets_alerte"
 )

@@ -144,13 +144,11 @@ ok("les totaux debit et credit", grepl("au débit", k) && grepl("au crédit", k)
 # Sur une selection entiere, debit = credit. C'est un CONTROLE, pas une mesure.
 ok("une selection entiere est equilibree", grepl("équilibré", k))
 ok("et le vert le dit", grepl("#5B7B5A", k))
-# Filtrer coupe des pieces en deux : le desequilibre devient normal, et le
-# KPI doit le dire plutot que d'alarmer.
-kf <- net(kpi_ecritures(filtre_ecritures(e, bloc = "Résultat"), filtre_actif = TRUE))
+# Filtrer coupe des pieces en deux : le desequilibre redevient normal, et
+# l'ambre le dit sans alarmer.
+kf <- net(kpi_ecritures(filtre_ecritures(e, bloc = "Résultat")))
 ok("une selection filtree se desequilibre", grepl("d'écart", kf))
-ok("mais le message l'explique", grepl("le filtre coupe des pièces", kf))
-ok("et sans filtre actif, le meme ecart inquiete",
-   grepl("c'est anormal", net(kpi_ecritures(filtre_ecritures(e, bloc = "Résultat")))))
+ok("en ambre, pas en rouge", grepl("#d98236", kf) && !grepl("#c0392b", kf))
 ok("aucune ecriture se dit", grepl("Aucune écriture",
                                    net(kpi_ecritures(e[0, ]))))
 

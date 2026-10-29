@@ -597,3 +597,20 @@ span.value-box-title { display: block; }
 #ecr_table table.dataTable td,
 #ecr_table table.dataTable th { white-space: nowrap; }
 #ecr_table table.dataTable td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+
+/* Le compteur d'alertes dans le titre de l'onglet Contrôle. Il n'apparaît
+   que lorsqu'il y a quelque chose à faire : un badge permanent cesse d'être
+   lu au bout de trois jours. */
+.badge-onglet {
+  display: inline-block;
+  min-width: 1.35em;
+  margin-left: 0.4em;
+  padding: 0.05em 0.4em;
+  border-radius: 1em;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  vertical-align: 0.1em;
+}

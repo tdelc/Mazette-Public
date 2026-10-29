@@ -371,7 +371,7 @@ R -e 'shiny::runApp()'</code></pre>
         <tr><td>Focaccias</td><td><code>tab_focaccias</code></td><td>Ventes, options (fromage, viande, spicy) et carte de production.</td></tr>
         <tr><td>Pizzwanze</td><td><code>tab_pizzwanze</code></td><td>Analyse des soir&eacute;es pizza, d&eacute;tect&eacute;es automatiquement.</td></tr>
         <tr><td>Simulation</td><td><code>tab_simulation</code></td><td>Effet d&rsquo;une variation de prix sur le CA, par produit ou cat&eacute;gorie.</td></tr>
-        <tr><td>Compta</td><td><code>tab_compta</code></td><td>Trois sous-onglets d&eacute;riv&eacute;s de <code>DB_COMPTA</code>&nbsp;: <strong>Exploitation</strong> (du CA &agrave; la marge), <strong>Analyse</strong> (pourquoi la marge a boug&eacute;) et <strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong> (le compte de r&eacute;sultat).</td></tr>
+        <tr><td>Compta</td><td><code>tab_compta</code></td><td>Six sous-onglets d&eacute;riv&eacute;s de <code>DB_COMPTA</code>, dans l&rsquo;ordre des questions qu&rsquo;on se pose&nbsp;: <strong>Contr&ocirc;le</strong>, <strong>Exploitation</strong>, <strong>&Eacute;carts</strong>, <strong>&Eacute;volution</strong>, <strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong>, <strong>&Eacute;critures</strong>. Voir la note ci-dessous.</td></tr>
 <tr><td>Travail</td><td><code>tab_travail</code></td><td>Deux sous-onglets&nbsp;: <strong>Pilotage</strong> (heures pos&eacute;es, productivit&eacute;, cr&eacute;neaux types) et <strong>Sources</strong> (confrontation des trois sources d&rsquo;heures et de co&ucirc;t).</td></tr>
         <tr><td>Planning</td><td><code>tab_planning</code></td><td>Heures de service &agrave; venir compar&eacute;es aux heures habituelles, puis au CA qu&rsquo;elles devront produire. Comme l&rsquo;onglet Travail, il ne compare que les heures <em>variables</em> &mdash; le service, un jour d&rsquo;ouverture&nbsp;; les heures fixes sont donn&eacute;es en survol. Le seul volet tourn&eacute; vers l&rsquo;avant.</td></tr>
         <tr><td>R&eacute;servations</td><td><code>tab_reservations</code></td><td>R&eacute;servations salle et terrasse, crois&eacute;es avec le CA.</td></tr>
@@ -379,6 +379,52 @@ R -e 'shiny::runApp()'</code></pre>
       </tbody>
     </table></div>
 
+    <div class="note">
+      <span class="l">L&rsquo;ordre des six onglets du volet Compta</span>
+      <p>
+        Le volet a longtemps grossi par ajout&nbsp;: chaque besoin nouveau prenait
+        une carte de plus dans l&rsquo;onglet le plus proche. L&rsquo;onglet
+        &laquo;&nbsp;Analyse&nbsp;&raquo; en portait huit, et m&eacute;langeait deux m&eacute;tiers &mdash;
+        comparer deux p&eacute;riodes, et suivre une s&eacute;rie. Les contr&ocirc;les, eux,
+        vivaient &agrave; <em>cinq</em> endroits.
+      </p>
+      <p>
+        Les six onglets suivent maintenant <strong>l&rsquo;ordre des questions qu&rsquo;on se
+        pose</strong>, et chacun n&rsquo;en traite qu&rsquo;une&nbsp;:
+      </p>
+      <div class="tableau"><table>
+        <thead><tr><th>Onglet</th><th>La question</th><th>Ce qu&rsquo;il contient</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Contr&ocirc;le</strong></td><td>Puis-je me fier &agrave; ces chiffres&nbsp;?</td><td>le diagnostic, le tableau mois par mois et l&rsquo;&eacute;cartement, les comptes hors plan, la vie des comptes, les contr&ocirc;les d&rsquo;import</td></tr>
+          <tr><td><strong>Exploitation</strong></td><td>Combien, sur cette p&eacute;riode&nbsp;?</td><td>KPI, cascade du CA &agrave; la marge, structure des charges, tableau par p&eacute;riode</td></tr>
+          <tr><td><strong>&Eacute;carts</strong></td><td>Pourquoi &ccedil;a a boug&eacute;&nbsp;?</td><td>pont de marge, comptes qui l&rsquo;expliquent, d&eacute;composition, p&eacute;riode contre r&eacute;f&eacute;rence</td></tr>
+          <tr><td><strong>&Eacute;volution</strong></td><td>O&ugrave; &ccedil;a va&nbsp;?</td><td>tendance et saisonnalit&eacute;, sur l&rsquo;indicateur choisi</td></tr>
+          <tr><td><strong>Comptabilit&eacute; g&eacute;n&eacute;rale</strong></td><td>Que dit le compte de r&eacute;sultat&nbsp;?</td><td>le compte de r&eacute;sultat et les soldes interm&eacute;diaires</td></tr>
+          <tr><td><strong>&Eacute;critures</strong></td><td>D&rsquo;o&ugrave; &ccedil;a sort&nbsp;?</td><td>le grand livre, ligne par ligne</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Trois cons&eacute;quences de ce d&eacute;coupage. <strong>Contr&ocirc;le est en
+        premier</strong>, parce qu&rsquo;on ne lit pas un compte de r&eacute;sultat avant de
+        savoir &agrave; quels mois on se fie &mdash; mais son titre porte un
+        <strong>compteur d&rsquo;alertes</strong> (<code>badge_alertes()</code>), sans
+        quoi un &eacute;cran d&rsquo;audit travers&eacute; chaque matin devient un &eacute;cran qu&rsquo;on ne
+        traverse plus&nbsp;: tout vert on passe, trois alertes on ne peut pas les
+        manquer. L&rsquo;ancien onglet Analyse <strong>se coupe en deux</strong>, parce
+        que comparer et suivre ne se font ni avec les m&ecirc;mes r&eacute;glages ni dans le
+        m&ecirc;me geste. Et les cinq endroits o&ugrave; vivaient les contr&ocirc;les n&rsquo;en font plus
+        qu&rsquo;un&nbsp;: deux d&rsquo;entre eux faisaient d&eacute;j&agrave; doublon avec le diagnostic, et
+        deux autres &mdash; <code>CONTROLE_ODOO</code> et
+        <code>CONTROLE_COUTURE</code> &mdash; &eacute;taient calcul&eacute;s, journalis&eacute;s, sauv&eacute;s
+        dans le <code>.RData</code>&hellip; et affich&eacute;s nulle part.
+      </p>
+      <p>
+        C&ocirc;t&eacute; <code>server.R</code>, le volet commence par un <strong>socle
+        commun</strong> &mdash; la compta brute, les mois &eacute;cart&eacute;s, la compta retenue
+        et les postes qui en d&eacute;coulent &mdash; pos&eacute; avant les six onglets, parce que
+        chacun en d&eacute;pend et qu&rsquo;aucun ne doit le recalculer de son c&ocirc;t&eacute;.
+      </p>
+    </div>
     <div class="note">
       <span class="l">Quand la comptabilit&eacute; est incompl&egrave;te</span>
       <p>
@@ -439,14 +485,14 @@ R -e 'shiny::runApp()'</code></pre>
         Il entre dans les m&eacute;dianes, dans les p&eacute;riodes de r&eacute;f&eacute;rence du pont de marge,
         dans les moyennes de tendance &mdash; un seul septembre &agrave; z&eacute;ro rend illisible
         la comparaison de tout un trimestre. D&rsquo;o&ugrave; un <strong>premier sous-onglet,
-        &laquo;&nbsp;Vue d&rsquo;ensemble&nbsp;&raquo;</strong>, avant Exploitation&nbsp;: une ligne par mois,
+        &laquo;&nbsp;Contr&ocirc;le&nbsp;&raquo;</strong>, avant Exploitation&nbsp;: une ligne par mois,
         les chiffres, un &eacute;tat, et pourquoi. On ne lit pas un compte de r&eacute;sultat
         avant de savoir &agrave; quels mois on se fie.
       </p>
       <p>
         <strong>Le tableau EST le contr&ocirc;le.</strong> Une ligne s&eacute;lectionn&eacute;e est une
         ligne &eacute;cart&eacute;e&nbsp;: <code>ecarte_mois()</code> la retire de
-        <code>DB_COMPTA</code> pour les <em>trois</em> sous-onglets suivants.
+        <code>DB_COMPTA</code> pour <em>tous</em> les onglets suivants.
         Pas de case &agrave; cocher pos&eacute;e &agrave; c&ocirc;t&eacute;, qui obligerait &agrave; faire la
         correspondance entre un nom de mois et une ligne de chiffres&nbsp;: on
         clique le mois dont on se m&eacute;fie, l&agrave; o&ugrave; on lit pourquoi s&rsquo;en m&eacute;fier. Le CSS

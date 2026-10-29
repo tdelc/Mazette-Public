@@ -1146,6 +1146,22 @@ diagnostic_compta <- function(db, serie, actuel, unite = "mois",
   bind_rows(res)
 }
 
+#' Le compteur d'alertes, à poser dans le titre de l'onglet Contrôle.
+#'
+#' Rien quand tout est vert : un badge permanent cesse d'être lu. Il
+#' n'apparaît donc QUE lorsqu'il y a quelque chose à faire — et sa couleur dit
+#' laquelle des deux gravités domine.
+badge_alertes <- function(diag) {
+  if (is.null(diag) || !nrow(diag)) return(NULL)
+  n_alerte <- sum(diag$STATUT == "alerte")
+  n_attn   <- sum(diag$STATUT == "attention")
+  n <- n_alerte + n_attn
+  if (!n) return(NULL)
+  span(class = "badge-onglet",
+       style = paste0("background:", if (n_alerte) COUL_ROUGE else COUL_AMBRE),
+       n)
+}
+
 # Rendu du diagnostic : une ligne par contrôle, pastille de couleur à gauche.
 # Volontairement pas un DT : c'est une liste à lire, pas un tableau à trier.
 rendu_diagnostic <- function(diag) {

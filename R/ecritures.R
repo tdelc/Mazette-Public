@@ -101,10 +101,9 @@ filtre_ecritures <- function(e, du = NULL, au = NULL, bloc = "Tout",
 #' Les quatre nombres du haut.
 #'
 #' L'écart débit/crédit est le seul qui soit un CONTRÔLE et non une mesure :
-#' sur une sélection entière il doit valoir zéro, et s'il ne le vaut pas, la
-#' sélection coupe des pièces en deux — ce qui est normal quand on filtre par
-#' compte, et inquiétant quand on ne filtre rien.
-kpi_ecritures <- function(g, filtre_actif = FALSE) {
+#' sur une sélection entière il doit valoir zéro. Filtrée, elle coupe des
+#' pièces en deux et l'écart redevient normal — d'où l'ambre et non le rouge.
+kpi_ecritures <- function(g) {
   if (is.null(g) || !nrow(g))
     return(div(class = "small text-muted mb-2", "Aucune écriture."))
   ecart <- sum(g$DEBIT) - sum(g$CREDIT)
@@ -124,12 +123,7 @@ kpi_ecritures <- function(g, filtre_actif = FALSE) {
     bloc(euro_compta_total(sum(g$CREDIT)), "au crédit", COUL_NEUTRE),
     tags$span("·"),
     if (equilibre) bloc("équilibré", "", COUL_VERT)
-    else tagList(
-      bloc(euro_compta_total(ecart), "d'écart", COUL_AMBRE)
-      # tags$span(class = "text-muted",
-      #           if (filtre_actif) "— normal : le filtre coupe des pièces en deux."
-      #           else "— sur une sélection entière, c'est anormal.")
-    ))
+    else bloc(euro_compta_total(ecart), "d'écart", COUL_AMBRE))
 }
 
 #' Le récapitulatif par poste de la sélection.

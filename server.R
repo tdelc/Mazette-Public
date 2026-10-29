@@ -793,8 +793,12 @@ server <- function(input, output, session) {
   # Un bloc générique sert les deux sous-onglets (semaine / mois). Chaque volet
   # a un panneau A (période analysée) et un panneau B (période comparée), ce
   # dernier étant affiché/masqué par shinyjs — l'UI reste statique.
-  #### Volet "Compta / Gestion" — Exploitation ####
+  #### Volet "Compta / Gestion" — socle commun ####
 
+  # Ce que TOUS les onglets du volet lisent : la compta brute, les mois
+  # écartés, et la compta retenue qui en découle. Posé avant eux, parce que
+  # chacun en dépend et qu'aucun ne doit le recalculer de son côté.
+  #
   # Tout vient de DB_COMPTA. Aucune donnee simulee : si les chiffres ne sont pas
   # la, le volet reste vide.
   # La compta BRUTE, jamais filtrée. C'est elle qui sert à repérer les mois
@@ -867,11 +871,87 @@ server <- function(input, output, session) {
   output$topo_resume <- renderUI({
     resume_topo(compta_topo(), compta_exclus())
   })
+  expl_postes <- reactive({ postes_exploitation(compta()) })
+
+  #### Volet "Compta / Gestion" — Contrôle ####
+
+  # Le diagnostic porte sur la DERNIÈRE période retenue, au grain mensuel, et
+  # sans sélecteur. Un bulletin de santé répond à « est-ce que ça va », pas à
+  # « est-ce que ça allait en mars » — et la période choisie se lit dans le
+  # titre de la carte pour que personne n'ait à le deviner.
+  ctrl_serie <- reactive({
+    p <- agrege_exploitation(expl_postes(), "mois")
+    req(nrow(p) > 0)
+    tail(p, 18)
+  })
+
+  ctrl_actuel <- reactive({
+    p <- ctrl_serie()
+    filter(p, PERIODE == max(PERIODE))
+  })
+
+  ctrl_diagnostic <- reactive({
+    req(exists("DB_COMPTA"))
+    diagnostic_compta(compta(), ctrl_serie(), ctrl_actuel(), "mois")
+  })
+
+  output$ctrl_titre_diag <- renderText({
+    paste("Ce qu'il faut regarder —",
+          etiquette_periode(ctrl_actuel()$PERIODE[1], "mois"))
+  })
+  output$ctrl_diagnostic  <- renderUI({ rendu_diagnostic(ctrl_diagnostic()) })
+  output$ctrl_diag_resume <- renderText({ resume_diagnostic(ctrl_diagnostic()) })
+
+  # Le compteur sur l'onglet. Sans lui, un écran d'audit traversé chaque matin
+  # devient un écran qu'on ne traverse plus : tout vert on passe, trois
+  # alertes on ne peut pas les manquer.
+  output$ctrl_badge <- renderUI({ badge_alertes(ctrl_diagnostic()) })
+
+  # Ces deux-là lisent la compta BRUTE, à dessein : ils répondent à « quels
+  # comptes le plan ignore-t-il » et « quand ce compte a-t-il vécu ». Les
+  # amputer des mois écartés masquerait précisément le compte qu'on cherche.
+  output$ctrl_comptes <- renderDT({
+    nc <- comptes_non_classes(compta_brute())
+    if (!nrow(nc))
+      return(datatable_simple(tibble(
+        Contrôle = "Tous les comptes sont classés par leur numéro.")))
+    datatable_simple(
+      nc %>% transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
+                       Total = euro_compta(TOTAL)))
+  })
+
+  output$ctrl_vie <- renderDT({
+    datatable_simple(
+      vie_des_comptes(compta_brute()) %>%
+        transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
+                  Poste = POSTE,
+                  `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),
+                  `Dernière` = format(DERNIERE, "%m/%Y"),
+                  `Nb périodes` = PERIODES, Total = euro_compta(TOTAL))
+    )
+  })
+
+  # Les contrôles de lecture des écritures. Ils étaient calculés à l'import,
+  # journalisés en console, sauvés dans le .RData — et affichés nulle part.
+  output$ctrl_import <- renderUI({
+    tables <- list(
+      if (exists("CONTROLE_ODOO")) CONTROLE_ODOO else NULL,
+      if (exists("CONTROLE_COUTURE")) CONTROLE_COUTURE else NULL)
+    d <- bind_rows(Filter(Negate(is.null), tables))
+    if (is.null(d) || !nrow(d))
+      return(div(class = "text-muted small p-2",
+                 "Aucun contrôle d'import : la comptabilité ne vient pas",
+                 " d'un export Odoo."))
+    # Même rendu que le diagnostic : une liste à lire, alertes en tête.
+    rendu_diagnostic(d %>% transmute(TITRE = CONTROLE, STATUT = VERDICT,
+                                     MESSAGE = DETAIL))
+  })
 
   # La compta RETENUE : celle que lisent les trois sous-onglets.
   compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
 
-  expl_postes <- reactive({ postes_exploitation(compta()) })
+
+  #### Volet "Compta / Gestion" — Exploitation ####
 
   # La granularite pilote tout l'onglet : la serie complete est agregee une
   # fois, et la cascade comme le tableau y puisent.
@@ -945,38 +1025,30 @@ server <- function(input, output, session) {
   })
   output$expl_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
-  output$expl_controle <- renderUI({
-    ctrl <- controle_exploitation(compta(), expl_postes())
-    n <- sum(abs(ctrl$ECART) > 1, na.rm = TRUE)
-    bandeau_alerte(n > 0, paste0(
-      n, " periode(s) ou la marge recomposee differe du solde comptable. ",
-      "Un compte echappe au classement en postes."))
-  })
 
-
-  #### Volet "Compta / Gestion" — Analyse ####
+  #### Volet "Compta / Gestion" — Écarts ####
 
   # Même socle que le volet Exploitation : postes_exploitation() puis
   # agrege_exploitation() à la granularité choisie. Rien n'est recalculé ici,
   # sinon les deux sous-onglets finiraient par afficher deux marges.
-  ana_unite <- reactive(input$ana_unite %||% "mois")
+  eca_unite <- reactive(input$eca_unite %||% "mois")
 
   # Deux séries, et la distinction porte tout le rabotage.
   #
   # La série COMPLÈTE sert au sélecteur de période : toutes les périodes
   # doivent rester choisissables, y compris celles qu'un rabotage viderait.
-  ana_serie_complete <- reactive({
-    p <- agrege_exploitation(expl_postes(), ana_unite())
+  eca_serie_complete <- reactive({
+    p <- agrege_exploitation(expl_postes(), eca_unite())
     req(nrow(p) > 0)
     p
   })
 
   # Les rangs de mois présents dans la période analysée — le gabarit auquel on
   # ramène les autres périodes (cf. R/analyse.R).
-  ana_offsets <- reactive({
-    if (!isTRUE(input$ana_raboter %||% TRUE))
-      return(seq_len(mois_attendus(ana_unite())) - 1L)
-    offsets_periode(expl_postes(), ana_periode(), ana_unite())
+  eca_offsets <- reactive({
+    if (!isTRUE(input$eca_raboter %||% TRUE))
+      return(seq_len(mois_attendus(eca_unite())) - 1L)
+    offsets_periode(expl_postes(), eca_periode(), eca_unite())
   })
 
   # La série COMPARABLE : chaque période ramenée à ces mêmes rangs. C'est elle
@@ -986,16 +1058,16 @@ server <- function(input, output, session) {
   #
   # La période analysée y est identique à celle de la série complète : tous ses
   # mois sont dans le gabarit, par construction.
-  ana_serie_comparable <- reactive({
-    p <- serie_rabotee(expl_postes(), ana_unite(), ana_offsets())
+  eca_serie_comparable <- reactive({
+    p <- serie_rabotee(expl_postes(), eca_unite(), eca_offsets())
     req(nrow(p) > 0)
     p
   })
 
   # Rabote-t-on réellement quelque chose ? Faux sur une période complète, et
   # c'est ce qui permet de n'annoncer le rabotage que lorsqu'il a lieu.
-  ana_rabotage <- reactive({
-    etiquette_rabotage(ana_offsets(), ana_unite())
+  eca_rabotage <- reactive({
+    etiquette_rabotage(eca_offsets(), eca_unite())
   })
 
   # Le sélecteur de période. Comme partout, il n'est semé qu'une fois les
@@ -1003,16 +1075,16 @@ server <- function(input, output, session) {
   # en silence, et l'observateur ne rejoue pas (cf. R/acces.R).
   observe({
     req(ONGLETS_PRETS())
-    dispo <- sort(unique(ana_serie_complete()$PERIODE), decreasing = TRUE)
-    updateSelectInput(session, "ana_periode",
+    dispo <- sort(unique(eca_serie_complete()$PERIODE), decreasing = TRUE)
+    updateSelectInput(session, "eca_periode",
                       choices = setNames(as.character(dispo),
-                                         etiquette_periode(dispo, ana_unite())),
+                                         etiquette_periode(dispo, eca_unite())),
                       selected = as.character(dispo[1]))
   })
 
-  ana_periode <- reactive({
-    p <- ana_serie_complete()
-    choisie <- suppressWarnings(as.Date(input$ana_periode %||% NA))
+  eca_periode <- reactive({
+    p <- eca_serie_complete()
+    choisie <- suppressWarnings(as.Date(input$eca_periode %||% NA))
     # Changer de granularité laisse un instant l'ancienne valeur dans le select
     # — un début de mois qui n'est pas un début de trimestre. On retombe alors
     # sur la période la plus récente plutôt que de rendre un volet vide.
@@ -1020,31 +1092,23 @@ server <- function(input, output, session) {
       max(p$PERIODE) else choisie
   })
 
-  ana_actuel <- reactive({
-    filter(ana_serie_comparable(), PERIODE == ana_periode())
+  eca_actuel <- reactive({
+    filter(eca_serie_comparable(), PERIODE == eca_periode())
   })
 
-  # La série de tendance s'arrête à la période analysée : prolonger au-delà
-  # ferait juger une période sur des mois qu'elle n'a pas encore vécus.
-  ana_serie <- reactive({
-    ana_serie_comparable() %>%
-      filter(PERIODE <= ana_periode()) %>%
-      tail(as.integer(input$ana_nb %||% 18))
-  })
-
-  ana_reference <- reactive({
-    reference_analyse(ana_serie_comparable(), ana_periode(),
-                      mode = input$ana_ref %||% "precedente",
-                      unite = ana_unite())
+  eca_reference <- reactive({
+    reference_analyse(eca_serie_comparable(), eca_periode(),
+                      mode = input$eca_ref %||% "precedente",
+                      unite = eca_unite())
   })
 
   # Le libellé dit le rabotage quand il a lieu : « 2025 » et « 2025 (janv.–août) »
   # ne désignent pas les mêmes chiffres, et l'en-tête du tableau de comparaison
   # comme le titre du graphe s'appuient dessus.
-  ana_lib_ref <- reactive({
-    r <- ana_reference()
+  eca_lib_ref <- reactive({
+    r <- eca_reference()
     if (is.null(r)) return("aucune référence")
-    rab <- ana_rabotage()
+    rab <- eca_rabotage()
     if (is.null(rab)) r$libelle else paste0(r$libelle, " (", rab, ")")
   })
 
@@ -1052,37 +1116,37 @@ server <- function(input, output, session) {
   # « précédente » et « an dernier », plusieurs pour la médiane. Le forage par
   # compte en a besoin — il ne peut pas travailler sur une ligne médiane, qui
   # n'est la comptabilité d'aucune période réelle.
-  ana_ref_periodes <- reactive({
-    r <- ana_reference()
+  eca_ref_periodes <- reactive({
+    r <- eca_reference()
     if (is.null(r)) return(as.Date(character()))
     if (identical(r$mode, "habituelle")) {
-      serie <- ana_serie_comparable() %>% filter(PERIODE < ana_periode())
+      serie <- eca_serie_comparable() %>% filter(PERIODE < eca_periode())
       return(tail(sort(serie$PERIODE), 6))
     }
     r$ligne$PERIODE
   })
 
-  output$ana_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
+  output$eca_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
-  output$ana_alerte <- renderUI({
-    rab <- ana_rabotage()
+  output$eca_alerte <- renderUI({
+    rab <- eca_rabotage()
     tagList(
       # Sur une période partielle, l'alerte standard dit « les totaux ne sont
       # pas comparables ». Quand le rabotage est actif, ils le redeviennent :
       # on remplace donc l'avertissement par ce qui a été fait, sans quoi on
       # lirait une mise en garde contre un problème déjà résolu.
-      if (is.null(rab)) alerte_periode(etat_periode(ana_actuel(), ana_unite()))
+      if (is.null(rab)) alerte_periode(etat_periode(eca_actuel(), eca_unite()))
       else bandeau_alerte(
         TRUE,
-        paste0(etiquette_periode(ana_periode(), ana_unite()), " ne porte que ",
-               length(ana_offsets()), " mois. Toutes les périodes comparées ",
+        paste0(etiquette_periode(eca_periode(), eca_unite()), " ne porte que ",
+               length(eca_offsets()), " mois. Toutes les périodes comparées ",
                "sont donc ramenées aux mêmes mois (", rab, ") : les écarts ",
                "affichés sont de vrais écarts, pas des différences de durée. ",
                "Décochez « raboter la référence » pour retrouver les périodes ",
                "entières."),
         titre = "Périodes ramenées à la même taille", couleur = COUL_AMBRE,
         icone = "scissors"),
-      if (is.null(ana_reference()))
+      if (is.null(eca_reference()))
         bandeau_alerte(
           TRUE,
           paste0("Aucune période de référence n'existe pour ce mode de ",
@@ -1093,73 +1157,56 @@ server <- function(input, output, session) {
           icone = "circle-info"))
   })
 
-  output$ana_kpi <- renderUI({
-    r <- ana_reference()
-    kpi_analyse(ana_actuel(), if (is.null(r)) NULL else r$ligne,
-                ana_lib_ref(), ana_unite())
+  output$eca_kpi <- renderUI({
+    r <- eca_reference()
+    kpi_analyse(eca_actuel(), if (is.null(r)) NULL else r$ligne,
+                eca_lib_ref(), eca_unite())
   })
 
-  ana_pont <- reactive({
-    r <- ana_reference()
+  eca_pont <- reactive({
+    r <- eca_reference()
     if (is.null(r)) return(NULL)
-    pont_marge(ana_actuel(), r$ligne)
+    pont_marge(eca_actuel(), r$ligne)
   })
 
   # Le libellé de la période analysée sert au graphe, au tableau de
   # décomposition ET aux phrases de lecture : un seul reactive, pour que les
   # trois nomment la même période de la même façon.
-  ana_lib_periode <- reactive(etiquette_periode(ana_periode(), ana_unite()))
+  eca_lib_periode <- reactive(etiquette_periode(eca_periode(), eca_unite()))
 
-  output$ana_pont <- renderPlotly({
-    graph_pont_marge(ana_pont(), ana_lib_periode(), ana_lib_ref(), ana_unite(),
-                     sous_titre = if (is.null(ana_rabotage())) NULL
+  output$eca_pont <- renderPlotly({
+    graph_pont_marge(eca_pont(), eca_lib_periode(), eca_lib_ref(), eca_unite(),
+                     sous_titre = if (is.null(eca_rabotage())) NULL
                                   else "périodes ramenées aux mêmes mois")
   })
 
-  output$ana_pont_explication <- renderUI({
-    explication_pont(ana_pont(), ana_lib_periode(), ana_lib_ref())
+  output$eca_pont_explication <- renderUI({
+    explication_pont(eca_pont(), eca_lib_periode(), eca_lib_ref())
   })
 
-  output$ana_pont_table <- renderDT({
-    datatable_simple(table_pont_marge(ana_pont(), ana_lib_periode(),
-                                      ana_lib_ref()))
+  output$eca_pont_table <- renderDT({
+    datatable_simple(table_pont_marge(eca_pont(), eca_lib_periode(),
+                                      eca_lib_ref()))
   })
 
-  output$ana_pont_verif <- renderDT({
-    datatable_simple(table_verification_pont(ana_pont(), ana_lib_periode(),
-                                             ana_lib_ref()))
-  })
-
-  ana_contrib <- reactive({
+  eca_contrib <- reactive({
     req(exists("DB_COMPTA"))
     # Le même gabarit que la série : sans lui, les contributions ne sommeraient
     # plus à l'écart affiché juste au-dessus.
-    contributions_comptes(compta(), ana_periode(), ana_ref_periodes(),
-                          ana_unite(), ana_offsets())
+    contributions_comptes(compta(), eca_periode(), eca_ref_periodes(),
+                          eca_unite(), eca_offsets())
   })
 
-  output$ana_contrib <- renderPlotly({ graph_contributions(ana_contrib()) })
-  output$ana_contrib_table <- renderDT({
-    datatable_simple(table_contributions(ana_contrib()))
+  output$eca_contrib <- renderPlotly({ graph_contributions(eca_contrib()) })
+  output$eca_contrib_table <- renderDT({
+    datatable_simple(table_contributions(eca_contrib()))
   })
 
-  output$ana_tendance <- renderPlotly({
-    graph_tendance(serie_indicateur(ana_serie(), input$ana_indic),
-                   input$ana_indic, ana_unite())
-  })
-
-  # La saisonnalité travaille toujours au grain MENSUEL : superposer des
-  # années agrégées à l'année ne donnerait qu'un point par courbe.
-  output$ana_saison <- renderPlotly({
-    graph_saisonnalite(saisonnalite(expl_postes(), input$ana_indic),
-                       input$ana_indic)
-  })
-
-  output$ana_table <- renderDT({
-    r <- ana_reference()
-    tbl <- table_comparaison(ana_actuel(), if (is.null(r)) NULL else r$ligne,
-                             etiquette_periode(ana_periode(), ana_unite()),
-                             ana_lib_ref())
+  output$eca_table <- renderDT({
+    r <- eca_reference()
+    tbl <- table_comparaison(eca_actuel(), if (is.null(r)) NULL else r$ligne,
+                             etiquette_periode(eca_periode(), eca_unite()),
+                             eca_lib_ref())
     if (!".sens" %in% names(tbl)) return(datatable_simple(tbl))
     # .sens colore l'écart sans être affichée : même mécanique que les
     # colonnes .f_* du tableau d'exploitation.
@@ -1174,14 +1221,43 @@ server <- function(input, output, session) {
                   fontWeight = styleEqual(c(-1L, 1L), c("600", "600")))
   })
 
-  ana_diagnostic <- reactive({
-    req(exists("DB_COMPTA"))
-    diagnostic_compta(compta(), ana_serie(), ana_actuel(), ana_unite())
+
+  #### Volet "Compta / Gestion" — Évolution ####
+
+  # Pas de sélecteur de période : une tendance se lit jusqu'à aujourd'hui.
+  # Le gabarit de rabotage est donc celui de la DERNIÈRE période — sans quoi,
+  # au grain annuel, une année en cours se comparerait à des années entières
+  # et la courbe plongerait pour une raison de calendrier.
+  evo_unite <- reactive(input$evo_unite %||% "mois")
+
+  evo_offsets <- reactive({
+    if (!isTRUE(input$evo_raboter %||% TRUE))
+      return(seq_len(mois_attendus(evo_unite())) - 1L)
+    p <- agrege_exploitation(expl_postes(), evo_unite())
+    req(nrow(p) > 0)
+    offsets_periode(expl_postes(), max(p$PERIODE), evo_unite())
   })
 
-  output$ana_diagnostic <- renderUI({ rendu_diagnostic(ana_diagnostic()) })
-  output$ana_diag_resume <- renderText({ resume_diagnostic(ana_diagnostic()) })
+  evo_serie <- reactive({
+    p <- serie_rabotee(expl_postes(), evo_unite(), evo_offsets())
+    req(nrow(p) > 0)
+    tail(p, as.integer(input$evo_nb %||% 18))
+  })
 
+  output$evo_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
+
+  output$evo_tendance <- renderPlotly({
+    graph_tendance(serie_indicateur(evo_serie(), input$evo_indic),
+                   input$evo_indic, evo_unite())
+  })
+
+  # La saisonnalité travaille toujours au grain MENSUEL, quelle que soit la
+  # granularité choisie : superposer des années agrégées à l'année ne
+  # donnerait qu'un point par courbe.
+  output$evo_saison <- renderPlotly({
+    graph_saisonnalite(saisonnalite(expl_postes(), input$evo_indic),
+                       input$evo_indic)
+  })
 
   #### Volet "Compta / Gestion" — Comptabilité générale ####
 
@@ -1250,33 +1326,6 @@ server <- function(input, output, session) {
   output$cg_soldes <- renderPlotly({
     graph_soldes(compta(), cg_periodes(), cg_unite()) })
 
-  # Contrôle : un compte que le plan ne sait pas ranger n'entre dans aucun total.
-  #
-  # Les deux diagnostics qui suivent lisent la compta BRUTE, à dessein : ils
-  # répondent à « quels comptes le plan ignore-t-il » et « quand ce compte
-  # a-t-il vécu ». Les amputer des mois écartés masquerait précisément le
-  # compte qu'on cherche.
-  output$cg_controle <- renderDT({
-    nc <- comptes_non_classes(compta_brute())
-    if (!nrow(nc))
-      return(datatable_simple(tibble(
-        Contrôle = "Tous les comptes sont classés par leur numéro.")))
-    datatable_simple(nc %>% transmute(
-      Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
-      `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1)))
-  })
-
-  output$cg_vie <- renderDT({
-    datatable_simple(
-      vie_des_comptes(compta_brute()) %>%
-        transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 50),
-                  Poste = POSTE,
-                  `1ʳᵉ période` = format(PREMIERE, "%m/%Y"),
-                  `Dernière` = format(DERNIERE, "%m/%Y"),
-                  `Nb périodes` = PERIODES, Total = format_CA(TOTAL, -1))
-    )
-  })
-
   #### Volet "Compta / Gestion" — Écritures ####
 
   # DB_ECRITURES est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
@@ -1339,14 +1388,7 @@ server <- function(input, output, session) {
       texte = input$ecr_texte)
   })
 
-  # Un filtre actif coupe des pièces en deux : le déséquilibre débit/crédit
-  # devient alors normal, et le KPI doit le dire plutôt que d'alarmer.
-  ecr_filtre_actif <- reactive({
-    e <- ecritures()
-    !is.null(e) && nrow(ecr_filtre()) < nrow(e)
-  })
-
-  output$ecr_kpi <- renderUI({ kpi_ecritures(ecr_filtre(), ecr_filtre_actif()) })
+  output$ecr_kpi <- renderUI({ kpi_ecritures(ecr_filtre()) })
 
   output$ecr_recap <- renderUI({
     chips_postes(recap_postes(ecr_filtre()), input$ecr_poste)
