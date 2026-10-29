@@ -445,6 +445,37 @@ R -e 'shiny::runApp()'</code></pre>
         qu&rsquo;on rate.
       </p>
       <p>
+        <strong>Une alerte m&egrave;ne aux &eacute;critures qui l&rsquo;ont caus&eacute;e.</strong> C&rsquo;est ce qui
+        fait la diff&eacute;rence entre une liste de constats et une file de travail&nbsp;:
+        &laquo;&nbsp;793000 hors du plan&nbsp;&raquo; suivi d&rsquo;un lien qui ouvre le grand livre filtr&eacute;
+        sur ce compte. Un <strong>seul canal</strong> pour tout le volet&nbsp;: le lien
+        pose sa consigne dans l&rsquo;input <code>ctrl_forage</code>, et un unique
+        observateur l&rsquo;applique. Un bouton Shiny par lien demanderait des
+        identifiants stables, donc des observateurs cr&eacute;&eacute;s &agrave; la vol&eacute;e, qui
+        s&rsquo;empilent &agrave; chaque redessin de la liste.
+      </p>
+      <p>
+        Deux pi&egrave;ges s&rsquo;y cachaient. Le filtre du volet &Eacute;critures vit dans un
+        <code>renderUI</code>&nbsp;: tant qu&rsquo;il n&rsquo;a pas &eacute;t&eacute; <em>rendu</em>, &eacute;crire dedans
+        ne fait rien et ne dit rien &mdash; d&rsquo;o&ugrave; un <code>outputOptions()</code>, qui
+        exige lui-m&ecirc;me que la sortie existe d&eacute;j&agrave;, donc plac&eacute; apr&egrave;s sa d&eacute;finition et
+        non &agrave; c&ocirc;t&eacute; de l&rsquo;observateur. Et <code>forage_spec()</code> est
+        <strong>scalaire</strong>&nbsp;: une consigne d&eacute;signe UNE destination. Sa version
+        vectoris&eacute;e produisait <code>texte=A;texte=B</code>, qu&rsquo;aucun filtre ne sait
+        lire, et le disait d&rsquo;autant moins qu&rsquo;elle ne plantait pas.
+      </p>
+      <p>
+        <strong>Un contr&ocirc;le se nomme par son sujet, jamais par son succ&egrave;s.</strong>
+        &laquo;&nbsp;Bascule respect&eacute;e&nbsp;&raquo; affich&eacute; en rouge se lisait exactement &agrave; l&rsquo;envers de
+        ce qu&rsquo;il disait, et &laquo;&nbsp;Pas de recouvrement&nbsp;&raquo; r&eacute;p&eacute;tait la m&ecirc;me chose vue de
+        l&rsquo;autre c&ocirc;t&eacute;. Les deux n&rsquo;en font plus qu&rsquo;un, <em>Mois d&rsquo;Odoo &eacute;cart&eacute;s</em>, et
+        il est ambre&nbsp;: <code>coud_compta()</code> partitionne par date, un mois ne
+        <em>peut</em> pas &ecirc;tre compt&eacute; deux fois &mdash; ce qui se passe, c&rsquo;est que des
+        lignes d&rsquo;Odoo sont &eacute;cart&eacute;es, le plus souvent la pi&egrave;ce de reprise dat&eacute;e de
+        la veille de la bascule, et c&rsquo;est normal. Chaque d&eacute;tail dit d&eacute;sormais la
+        <em>cons&eacute;quence</em>, pas seulement le constat.
+      </p>
+      <p>
         C&ocirc;t&eacute; <code>server.R</code>, le volet commence par un <strong>socle
         commun</strong> &mdash; la compta brute, les mois &eacute;cart&eacute;s, la compta retenue
         et les postes qui en d&eacute;coulent &mdash; pos&eacute; avant les six onglets, parce que

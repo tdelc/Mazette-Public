@@ -614,3 +614,16 @@ span.value-box-title { display: block; }
   text-align: center;
   vertical-align: 0.1em;
 }
+
+/* Le lien de forage : d'une alerte vers les écritures qui l'ont causée.
+   Discret dans la liste, mais clairement cliquable — c'est ce qui fait la
+   différence entre une liste de constats et une file de travail. */
+.lien-forage {
+  color: inherit;
+  opacity: 0.75;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  white-space: nowrap;
+}
+.lien-forage:hover { opacity: 1; color: inherit; }
+.lien-forage .fa-arrow-right-long { font-size: 0.75em; margin-left: 0.3em; }

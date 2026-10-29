@@ -899,9 +899,13 @@ server <- function(input, output, session) {
     if (!nrow(nc))
       return(datatable_simple(tibble(
         Contrôle = "Tous les comptes sont classés par leur numéro.")))
-    datatable_simple(
-      nc %>% transmute(Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
-                       Total = euro_compta(TOTAL)))
+    tbl <- nc %>% transmute(
+      Compte = COMPTE, Libellé = tronque_nom(LIBELLE, 60),
+      Total = euro_compta(TOTAL),
+      ` ` = lien_forage_html("Écritures", forages_texte(COMPTE)))
+    datatable(tbl, rownames = FALSE, escape = FALSE,
+              options = list(dom = "t", paging = FALSE, ordering = FALSE,
+                             searching = FALSE))
   })
 
   # Les contrôles de lecture des écritures. Ils étaient calculés à l'import,
@@ -915,9 +919,32 @@ server <- function(input, output, session) {
       return(div(class = "text-muted small p-2",
                  "Aucun contrôle d'import : la comptabilité ne vient pas",
                  " d'un export Odoo."))
-    # Même rendu que les alertes : une liste à lire, alertes en tête.
+    # Même rendu que les alertes : une liste à lire, alertes en tête — et la
+    # destination de chacune se DÉDUIT de son nom plutôt que d'être stockée
+    # dans la table. Les contrôles sont calculés à l'import et sauvés dans le
+    # .RData : y ajouter une colonne casserait la lecture des caches déjà
+    # écrits, pour une information qui se retrouve ici sans effort.
     rendu_diagnostic(d %>% transmute(TITRE = CONTROLE, STATUT = VERDICT,
-                                     MESSAGE = DETAIL))
+                                     MESSAGE = DETAIL,
+                                     FORAGE = forage_import(CONTROLE, DETAIL)))
+  })
+
+  # Le forage : une consigne posée par un lien, un seul observateur pour les
+  # appliquer toutes.
+  observeEvent(input[[INPUT_FORAGE]], {
+    f <- analyse_forage(input[[INPUT_FORAGE]])
+    if (is.null(f)) return()
+    updateTabsetPanel(session, "compta_tabs", selected = "ecritures")
+    if (!is.null(f$bloc))  updateRadioButtons(session, "ecr_bloc", selected = f$bloc)
+    updateTextInput(session, "ecr_texte", value = f$texte %||% "")
+    if (!is.null(f$du) && !is.null(f$au))
+      updateDateRangeInput(session, "ecr_dates",
+                           start = as.Date(f$du), end = as.Date(f$au))
+    # Les filtres de poste et de journal ne sont jamais posés par un forage :
+    # les laisser tels quels ferait arriver sur une sélection vide sans qu'on
+    # comprenne pourquoi.
+    updateSelectizeInput(session, "ecr_poste", selected = "")
+    updateSelectizeInput(session, "ecr_journal", selected = "")
   })
 
   #### Volet "Compta / Gestion" — Exploitation ####
@@ -1353,6 +1380,12 @@ server <- function(input, output, session) {
       textInput("ecr_texte", "Recherche",
                 placeholder = "libellé, partenaire, pièce, compte"))
   })
+
+  # Le filtre vit dans un renderUI : il faut qu'il ait été RENDU avant qu'un
+  # forage écrive dedans, sinon la consigne se perd en silence. Même famille
+  # de piège que les zones d'alerte — et outputOptions() exige que la sortie
+  # existe DÉJÀ, d'où cet appel ici et non à côté de l'observateur.
+  outputOptions(output, "ecr_filtres", suspendWhenHidden = FALSE)
 
   # Un seul filtre pour tout le volet : KPI, graphes et tableau. Deux filtres
   # indépendants donneraient un total et une liste qui ne parlent pas de la

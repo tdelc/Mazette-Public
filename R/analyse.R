@@ -1076,9 +1076,12 @@ liste_mois <- function(d, max = MAX_MOIS_NOMMES) {
 alertes_integrite <- function(db, postes, improb = NULL,
                               mois_en_cours = floor_date(today(), "month")) {
   res <- list()
-  ajoute <- function(titre, statut, message)
+  # FORAGE : la consigne de filtre qui mène aux écritures en cause. NA quand
+  # l'alerte ne désigne rien de précis — une liste de quarante mois n'a pas de
+  # destination unique, et un lien qui en choisit un au hasard ment.
+  ajoute <- function(titre, statut, message, forage = NA_character_)
     res[[length(res) + 1]] <<- tibble(TITRE = titre, STATUT = statut,
-                                      MESSAGE = message)
+                                      MESSAGE = message, FORAGE = forage)
 
   ##### 1. Le découpage en postes retombe-t-il sur le solde publié ? #####
   ctrl <- try(controle_exploitation(db, postes), silent = TRUE)
@@ -1100,7 +1103,8 @@ alertes_integrite <- function(db, postes, improb = NULL,
                        " où la marge reconstruite diffère du solde comptable ",
                        "de plus d'un euro — un compte échappe au classement : ",
                        liste_mois(faux), ". Écart maximum ",
-                       euro_compta(max(abs(ctrl$ECART), na.rm = TRUE)), "."))
+                       euro_compta(max(abs(ctrl$ECART), na.rm = TRUE)), "."),
+           if (length(faux)) forage_mois(max(faux)) else NA_character_)
   }
 
   ##### 2. Des comptes que le plan ne sait pas ranger ? #####
@@ -1112,7 +1116,8 @@ alertes_integrite <- function(db, postes, improb = NULL,
            else paste0(nrow(nc), " compte(s) n'entrent dans aucun poste, pour ",
                        euro_compta(sum(abs(nc$TOTAL))), " au total. Le premier ",
                        "est ", nc$COMPTE[1], " ", tronque_nom(nc$LIBELLE[1], 40),
-                       " — le tableau ci-dessous les liste tous."))
+                       " — le tableau ci-dessous les liste tous."),
+           if (nrow(nc)) forage_spec(texte = nc$COMPTE[1]) else NA_character_)
   }
 
   ##### 3. Les mois dont les chiffres ne sont pas croyables #####
@@ -1122,7 +1127,8 @@ alertes_integrite <- function(db, postes, improb = NULL,
       ajoute("Mois invraisemblables", "alerte",
              paste0(length(faux), " mois portent des chiffres improbables : ",
                     liste_mois(faux), ". Le tableau ci-dessous dit pourquoi, ",
-                    "mois par mois, et permet de les écarter."))
+                    "mois par mois, et permet de les écarter."),
+             forage_mois(max(faux)))
     else
       ajoute("Mois invraisemblables", "ok",
              "Aucun mois clos ne porte de chiffres improbables.")
@@ -1149,7 +1155,8 @@ alertes_integrite <- function(db, postes, improb = NULL,
                        "plus de deux MAD : ", liste_mois(mois),
                        ". À vérifier en comptabilité avant d'y lire un fait ",
                        "de gestion (", paste(names(suspects), collapse = ", "),
-                       ")."))
+                       ")."),
+           if (length(mois)) forage_mois(max(as.Date(mois))) else NA_character_)
   }
 
   ##### 5. Le dernier mois est-il clos ? #####
@@ -1161,7 +1168,8 @@ alertes_integrite <- function(db, postes, improb = NULL,
              paste0(etiquette_periode(derniere, "mois"), " n'est pas terminé : ",
                     "ses totaux ne sont comparables à aucun mois clos.")
            else paste0("Le dernier mois de la comptabilité, ",
-                       etiquette_periode(derniere, "mois"), ", est clos."))
+                       etiquette_periode(derniere, "mois"), ", est clos."),
+           forage_mois(derniere))
   }
 
   bind_rows(res)
@@ -1196,6 +1204,11 @@ rendu_diagnostic <- function(diag) {
   # vert n'a pas besoin d'être lu.
   diag <- diag %>% mutate(RANG = match(STATUT, c("alerte", "attention", "ok"))) %>%
     arrange(RANG)
+  # Colonne FORAGE facultative : une alerte qui sait d'où elle vient porte un
+  # lien vers les écritures en cause. Celles qui ne le savent pas n'en ont pas,
+  # et rien ne change pour elles.
+  forages <- if ("FORAGE" %in% names(diag)) diag$FORAGE
+             else rep(NA_character_, nrow(diag))
 
   div(
     class = "diagnostic-liste",
@@ -1211,8 +1224,12 @@ rendu_diagnostic <- function(diag) {
         span(style = paste0("color:", coul, ";font-size:1.05rem;line-height:1.3;"),
              icon(icone[[st]])),
         div(
-          div(style = paste0("font-weight:650;color:", coul, ";"), diag$TITRE[i]),
-          div(class = "small", diag$MESSAGE[i])))
+          div(style = paste0("font-weight:600;color:", coul, ";"),
+              diag$TITRE[i]),
+          div(class = "small", diag$MESSAGE[i]),
+          if (!is.na(forages[i]) && nzchar(forages[i]))
+            div(class = "small mt-1",
+                lien_forage("Voir les écritures", forages[i]))))
     }))
 }
 

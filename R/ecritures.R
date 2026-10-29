@@ -198,6 +198,111 @@ couleur_journal <- function(journal, tous = sort(unique(journal))) {
   PALETTE_JOURNAUX[((i - 1L) %% length(PALETTE_JOURNAUX)) + 1L]
 }
 
+#### Le forage ####
+
+# Aller d'une alerte aux écritures qui l'ont causée.
+#
+# UN SEUL canal pour tout le volet : un lien de forage pose sa consigne dans
+# l'input `ctrl_forage`, et un unique observateur l'applique. L'alternative —
+# un bouton Shiny par lien — demanderait des identifiants stables, donc des
+# observateurs créés à la volée, qui s'empilent à chaque redessin de la liste
+# d'alertes. Ici la liste peut changer à chaque import sans que rien ne bouge.
+#
+# La consigne est une chaîne « clé=valeur;clé=valeur », lisible dans le code
+# source de la page. Elle ne porte que des filtres de lecture : au pire, un
+# forage trafiqué affiche d'autres écritures que prévu.
+INPUT_FORAGE <- "ctrl_forage"
+
+# SCALAIRE, et c'est volontaire : une consigne désigne UNE destination. Pour
+# en fabriquer plusieurs — une par ligne d'un tableau — on boucle à l'appel.
+# La version vectorisée produisait « texte=A;texte=B;bloc=Tout », qu'aucun
+# filtre ne sait lire, et le disait d'autant moins qu'elle ne plantait pas.
+forage_spec <- function(texte = NULL, du = NULL, au = NULL, bloc = "Tout") {
+  stopifnot(length(texte) <= 1, length(du) <= 1, length(au) <= 1)
+  parts <- c(if (length(texte) && nzchar(texte)) paste0("texte=", texte),
+             if (!is.null(du)) paste0("du=", format(as.Date(du), "%Y-%m-%d")),
+             if (!is.null(au)) paste0("au=", format(as.Date(au), "%Y-%m-%d")),
+             if (!is.null(bloc)) paste0("bloc=", bloc))
+  paste(parts, collapse = ";")
+}
+
+# Le mois entier, bornes comprises : c'est la maille de toutes les alertes.
+forage_mois <- function(m, texte = NULL) {
+  m <- as.Date(m)
+  forage_spec(texte = texte, du = m, au = ceiling_date(m, "month") - 1)
+}
+
+analyse_forage <- function(spec) {
+  if (is.null(spec) || !nzchar(spec)) return(NULL)
+  bouts <- strsplit(strsplit(spec, ";", fixed = TRUE)[[1]], "=", fixed = TRUE)
+  out <- lapply(bouts, function(b) if (length(b) >= 2)
+    paste(b[-1], collapse = "=") else "")
+  names(out) <- vapply(bouts, `[`, "", 1)
+  out
+}
+
+#' Un lien qui emmène aux écritures.
+#'
+#' Un <a> brut et non un actionLink : il n'a pas besoin d'identifiant, et
+#' c'est précisément ce qui permet d'en poser autant qu'on veut.
+lien_forage <- function(libelle, spec, classe = "lien-forage") {
+  if (is.null(spec) || !nzchar(spec)) return(NULL)
+  tags$a(
+    class = classe, href = "#",
+    onclick = sprintf(
+      "Shiny.setInputValue('%s', '%s', {priority: 'event'}); return false;",
+      INPUT_FORAGE, gsub("'", "", spec)),
+    libelle, icon("arrow-right-long"))
+}
+
+# La même chose en HTML brut, pour une cellule de DataTable.
+# Plusieurs consignes d'un coup, une par élément. C'est la forme dont a besoin
+# une colonne de tableau.
+forages_texte <- function(textes)
+  vapply(textes, function(x) forage_spec(texte = x), character(1),
+         USE.NAMES = FALSE)
+
+lien_forage_html <- function(libelle, spec) {
+  ifelse(is.na(spec) | !nzchar(spec), "",
+         sprintf(paste0("<a class=\"lien-forage\" href=\"#\" onclick=\"",
+                        "Shiny.setInputValue('%s','%s',{priority:'event'});",
+                        "return false;\">%s &rarr;</a>"),
+                 INPUT_FORAGE, gsub("'", "", spec), libelle))
+}
+
+#' Où mène chacun des contrôles d'import.
+#'
+#' Déduit du NOM du contrôle, pas stocké avec lui : ces tables sont produites
+#' à l'import et sauvées dans le .RData, et leur ajouter une colonne casserait
+#' la lecture des caches déjà écrits.
+#'
+#' @param detail le texte du contrôle, d'où l'on tire le numéro de compte ou
+#'   la date quand il y en a un.
+forage_import <- function(controle, detail, reprise = NULL) {
+  if (is.null(reprise) && exists("REPRISE_ODOO")) reprise <- REPRISE_ODOO
+  vapply(seq_along(controle), function(i) {
+    ctl <- controle[i]; det <- detail[i]
+    # Six chiffres au moins : les numéros de compte en ont six dans ce plan,
+    # là où les montants du message en ont quatre (« 1477 € sans secteur »).
+    # Sans ce seuil, le forage emmenait vers le montant pris pour un compte.
+    if (grepl("^Comptes 6 et 7|^Matières non ventilées", ctl)) {
+      cpt <- regmatches(det, regexpr("[0-9]{6,}", det))
+      return(if (length(cpt)) forage_spec(texte = cpt[1]) else NA_character_)
+    }
+    if (grepl("^Pièce de reprise", ctl) && !is.null(reprise))
+      return(forage_spec(du = reprise, au = reprise))
+    if (grepl("^Mois d'Odoo écartés", ctl)) {
+      m <- regmatches(det, gregexpr("[0-9]{2}/[0-9]{4}", det))[[1]]
+      if (!length(m)) return(NA_character_)
+      d <- as.Date(paste0("01/", m[1]), format = "%d/%m/%Y")
+      return(forage_mois(d))
+    }
+    # « Matières non ventilées » et « Débit = crédit » ne désignent pas un
+    # compte : leur destination se construit côté serveur, qui a les données.
+    NA_character_
+  }, character(1))
+}
+
 #### Le tableau ####
 
 #' Une ligne par écriture, telle qu'Odoo la montre.

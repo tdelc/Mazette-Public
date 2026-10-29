@@ -42,7 +42,16 @@ PLAN_PCMN <- tibble::tribble(
   "75",     "Produits financiers",           "Résultat financier",            1,     40,
   "65",     "Charges financières",           "Résultat financier",           -1,     41,
   "67",     "Impôts",                        "Impôts",                       -1,     50,
-  "77",     "Régularisations d'impôts",      "Impôts",                        1,     51
+  "77",     "Régularisations d'impôts",      "Impôts",                        1,     51,
+  # La classe 79 n'est pas du résultat : c'est son AFFECTATION — bénéfice ou
+  # perte à reporter, dotations aux réserves. 793000 « perte à reporter »
+  # arrive avec la pièce de reprise et porte, d'un coup, le résultat de tout
+  # l'exercice précédent. Classée ici, elle cesse d'être signalée comme un
+  # compte hors plan — et elle reste HORS des blocs de gestion, exactement
+  # comme les impôts : sa section n'est reconnue par aucun d'eux
+  # (cf. bloc_gestion dans R/exploitation.R). Le chiffre d'affaires ne bouge
+  # donc pas d'un centime ; seul le bruit disparaît.
+  "79",     "Affectation du résultat",       "Affectation du résultat",       1,     60
 )
 
 #' Soldes intermédiaires : chacun cumule les postes qui le précèdent.

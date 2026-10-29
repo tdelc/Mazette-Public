@@ -276,26 +276,44 @@ controle_ecritures <- function(ecritures, compta = NULL, reprise = NULL) {
     distinct(COMPTE, LIBELLE)
   res[[length(res) + 1]] <- ligne(
     "Comptes 6 et 7 classés", nrow(inconnus) == 0,
-    if (nrow(inconnus)) paste(inconnus$COMPTE, collapse = ", ")
+    if (nrow(inconnus))
+      paste0(paste(inconnus$COMPTE, collapse = ", "),
+             " — hors du plan, donc dans aucun total.")
     else "tous classés par PLAN_PCMN", nrow(inconnus))
 
   # 4. Ce que pèse le secteur « Non ventilé ». C'est ce chiffre, et lui seul,
   #    qui dira s'il faut un sous-compte dans Odoo pour 604000.
   if (!is.null(compta) && nrow(compta)) {
-    nv <- sum(compta$VALEUR[compta$SECTEUR %in% SECTEUR_NON_VENTILE], na.rm = TRUE)
+    sans <- compta[compta$SECTEUR %in% SECTEUR_NON_VENTILE, , drop = FALSE]
+    nv <- sum(sans$VALEUR, na.rm = TRUE)
+    # On NOMME les comptes. « 1 477 € sans secteur » ne dit pas où chercher,
+    # et c'est précisément la question qu'on se pose en lisant l'alerte.
+    cpts <- sort(unique(sans$COMPTE))
     res[[length(res) + 1]] <- ligne(
       "Matières non ventilées", nv == 0,
-      paste0(round(nv), " € sans secteur"), nv)
+      if (nv == 0) "chaque achat est rattaché à un secteur."
+      else paste0(round(nv), " € d'achats sans secteur, sur le compte ",
+                  paste(cpts, collapse = ", "), " : ils comptent dans la",
+                  " marge mais pas dans les coûts matière par secteur."),
+      nv)
   }
 
   # 5. La pièce de reprise ne doit toucher que le bilan. Une ligne de classe 6
-  #    ou 7 à cette date ferait doublon avec l'ancienne source.
+  #    ou 7 à cette date porte le résultat de l'exercice PRÉCÉDENT.
   if (!is.null(reprise)) {
     d <- as.Date(reprise)
     n <- sum(ecritures$DATE == d & ecritures$CLASSE %in% c("6", "7"))
     res[[length(res) + 1]] <- ligne(
-      "Reprise sans résultat", n == 0,
-      paste0(n, " ligne(s) de classe 6/7 au ", format(d, "%d/%m/%Y")), n)
+      "Pièce de reprise", n == 0,
+      if (n == 0)
+        paste0("la reprise du ", format(d, "%d/%m/%Y"),
+               " ne touche que des comptes de bilan, comme attendu.")
+      else paste0("la reprise du ", format(d, "%d/%m/%Y"), " porte ", n,
+                  " ligne(s) de classe 6 ou 7 : c'est le résultat de",
+                  " l'exercice précédent, repris en bloc. La couture les",
+                  " écarte (le mois vient de l'ancienne source), mais elles",
+                  " restent visibles dans l'onglet Écritures."),
+      n)
   }
 
   bind_rows(res)
@@ -330,16 +348,29 @@ coud_compta <- function(ancien, odoo, bascule = BASCULE_ODOO) {
   if (!nrow(res)) NULL else res %>% arrange(ANNEE, MOIS, COMPTE)
 }
 
-# Les trois contrôles de la couture. Chacun attrape une faute que les deux
-# autres laissent passer : un recouvrement double un mois, un trou se lit comme
-# une chute d'activité, et une reprise mal datée fait les deux à la fois.
+# Les deux contrôles de la couture.
+#
+# Il y en avait trois, et deux disaient la même chose à l'envers l'un de
+# l'autre : « pas de recouvrement » regardait les mois présents des deux
+# côtés, « bascule respectée » les mois d'Odoo antérieurs à la bascule — or
+# c'est le même ensemble. Pire, tous deux étaient NOMMÉS D'APRÈS LEUR SUCCÈS :
+# « Bascule respectée » en rouge se lit exactement à l'envers de ce qu'il dit.
+#
+# Un nom de contrôle doit nommer son SUJET. C'est la couleur qui porte le
+# verdict, et le détail qui dit la conséquence.
+#
+# Et le verdict lui-même était trop dur : coud_compta() PARTITIONNE par date,
+# un mois ne peut donc pas être compté deux fois. Ce qui se passe réellement,
+# c'est que des lignes d'Odoo sont écartées — le plus souvent la pièce de
+# reprise, datée de la veille de la bascule, et c'est normal. D'où l'ambre.
 controle_couture <- function(ancien, odoo, bascule = BASCULE_ODOO) {
   bascule <- as.Date(bascule)
   mois <- function(db) if (is.null(db) || !nrow(db)) as.Date(character())
                        else sort(unique(periode_compta(db)))
 
   m_anc <- mois(ancien); m_odo <- mois(odoo)
-  commun <- intersect(as.character(m_anc), as.character(m_odo))
+  # Les mois d'Odoo que la couture laisse de côté : antérieurs à la bascule.
+  ecartes <- m_odo[m_odo < bascule]
 
   attendus <- if (!length(m_anc) || !length(m_odo)) as.Date(character())
               else seq(min(m_anc), max(m_odo), by = "month")
@@ -347,15 +378,19 @@ controle_couture <- function(ancien, odoo, bascule = BASCULE_ODOO) {
   trous <- setdiff(as.character(attendus), presents)
 
   tibble(
-    CONTROLE = c("Pas de recouvrement", "Pas de trou", "Bascule respectée"),
-    VERDICT  = c(if (!length(commun)) "ok" else "alerte",
-                 if (!length(trous)) "ok" else "alerte",
-                 if (!length(m_odo) || min(m_odo) >= bascule) "ok" else "alerte"),
+    CONTROLE = c("Mois d'Odoo écartés", "Continuité mensuelle"),
+    VERDICT  = c(if (!length(ecartes)) "ok" else "attention",
+                 if (!length(trous)) "ok" else "alerte"),
     DETAIL   = c(
-      if (length(commun)) paste("mois des deux côtés :", paste(commun, collapse = ", "))
-      else "aucun mois présent dans les deux sources",
+      if (!length(ecartes))
+        paste0("Odoo ne contient rien avant la bascule du ",
+               format(bascule, "%d/%m/%Y"), ".")
+      else paste0(length(ecartes), " mois d'Odoo sont antérieurs à la bascule",
+                  " du ", format(bascule, "%d/%m/%Y"), " (",
+                  paste(format(ecartes, "%m/%Y"), collapse = ", "),
+                  ") : leurs lignes sont ignorées, ces mois viennent de",
+                  " l'ancienne source. C'est le cas normal si Odoo n'y porte",
+                  " que la pièce de reprise."),
       if (length(trous)) paste("mois manquants :", paste(trous, collapse = ", "))
-      else "série mensuelle continue",
-      if (!length(m_odo)) "aucun mois Odoo"
-      else paste("premier mois Odoo :", min(m_odo))))
+      else "série mensuelle continue"))
 }

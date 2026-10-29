@@ -84,3 +84,24 @@ ok("une table vide ne fait pas tomber le classement",
    { v <- db[0, ]; is.null(classe_comptes(v)) || nrow(classe_comptes(v)) == 0 })
 ok("un compte de resultat vide rend une table vide",
    nrow(compte_resultat(db[0, ])) == 0)
+
+# ---------- la classe 79 : l'affectation du resultat, pas du resultat ----------
+# 793000 « perte a reporter » arrive avec la piece de reprise et porte, d'un
+# coup, le resultat de tout l'exercice precedent. La classer ne doit RIEN
+# changer aux chiffres : elle doit rester hors des blocs de gestion, comme les
+# impots — seul le bruit « compte hors plan » disparait.
+db79 <- bind_rows(
+  tibble(ANNEE = 2026L, MOIS = 6L, COMPTE = "700000", LIBELLE = "Ventes",
+         VALEUR = 10000, TYPE = "compte", AGREGE = TRUE),
+  tibble(ANNEE = 2026L, MOIS = 6L, COMPTE = "793000", LIBELLE = "Perte à reporter",
+         VALEUR = 250000, TYPE = "compte", AGREGE = TRUE))
+c79 <- classe_comptes(db79)
+ok("793000 est classe", c79$POSTE[c79$COMPTE == "793000"] == "Affectation du résultat")
+ok("et n'est donc plus un compte hors plan",
+   !"793000" %in% comptes_non_classes(db79)$COMPTE)
+ok("sa section n'est reconnue par aucun bloc de gestion",
+   is.na(bloc_gestion("Affectation du résultat", "Affectation du résultat")))
+ok("le chiffre d'affaires ne bouge pas d'un centime",
+   postes_exploitation(db79)$CA == 10000)
+ok("ni les charges", postes_exploitation(db79)$CHARGES == 0)
+ok("ni la marge", postes_exploitation(db79)$MARGE == 10000)

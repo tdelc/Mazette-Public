@@ -11,7 +11,7 @@ vecteur_mois_court <- c("janv.","févr.","mars","avr.","mai","juin",
                         "juil.","août","sept.","oct.","nov.","déc.")
 balise <- function(...) structure(list(args = list(...)), class = "tag")
 div<-balise; span<-balise; tagList<-balise; icon<-balise
-tags <- list(b=balise, br=balise, i=balise, span=balise, div=balise)
+tags <- list(b=balise, br=balise, i=balise, span=balise, div=balise, a=balise)
 texte_tag <- function(x) {
   if (is.character(x)) return(paste(x, collapse=" "))
   if (is.numeric(x)) return(paste(x, collapse=" "))
@@ -260,3 +260,64 @@ ok("le nom du fichier est horodate",
 ok("et porte bien l'instant donne",
    nom_export_ecritures(as.POSIXct("2026-10-29 14:05:00")) ==
      "ecritures_20261029_1405.csv")
+
+# ---------- le forage : d'une alerte vers les ecritures ----------
+# UN SEUL canal pour tout le volet : un lien pose sa consigne dans un input
+# unique, et un seul observateur l'applique. Un bouton Shiny par lien
+# demanderait des identifiants stables, donc des observateurs crees a la
+# volee, qui s'empilent a chaque redessin de la liste d'alertes.
+ok("une consigne nomme ses filtres",
+   forage_spec(texte = "793000") == "texte=793000;bloc=Tout")
+ok("les dates y entrent au format ISO",
+   forage_spec(du = "2026-06-01", au = "2026-06-30") ==
+     "du=2026-06-01;au=2026-06-30;bloc=Tout")
+ok("un forage de mois prend le mois ENTIER, bornes comprises",
+   forage_mois(as.Date("2026-06-01")) ==
+     "du=2026-06-01;au=2026-06-30;bloc=Tout")
+ok("meme sur un mois de 31 jours",
+   grepl("au=2026-07-31", forage_mois(as.Date("2026-07-01"))))
+ok("et il peut porter un texte en plus",
+   grepl("texte=604000", forage_mois(as.Date("2026-06-01"), texte = "604000")))
+
+f <- analyse_forage(forage_mois(as.Date("2026-06-01"), texte = "x"))
+ok("la consigne se relit", f$texte == "x" && f$du == "2026-06-01")
+ok("et rend aussi le perimetre", f$bloc == "Tout")
+ok("une consigne vide ne rend rien",
+   is.null(analyse_forage("")) && is.null(analyse_forage(NULL)))
+
+# Le lien est un <a> brut : pas d'identifiant, donc autant qu'on veut.
+l <- lien_forage("Voir les écritures", forage_spec(texte = "793000"))
+ok("le lien porte la consigne", grepl("texte=793000", l$args$onclick))
+ok("il ecrit dans l'input unique", grepl(INPUT_FORAGE, l$args$onclick))
+ok("et il n'emporte pas la page avec lui",
+   grepl("return false", l$args$onclick))
+ok("sans consigne, pas de lien", is.null(lien_forage("x", NULL)))
+# Une apostrophe dans la consigne fermerait la chaine JavaScript qui
+# l'entoure : la consigne doit arriver SANS apostrophe entre ses guillemets.
+ok("les apostrophes sont retirees de la consigne",
+   grepl("'texte=lété;bloc=Tout'",
+         lien_forage("x", forage_spec(texte = "l'été"))$args$onclick,
+         fixed = TRUE))
+
+h <- lien_forage_html("Écritures", forage_spec(texte = "604000"))
+ok("la version HTML sert dans une cellule de tableau",
+   grepl("^<a ", h) && grepl("604000", h))
+ok("et rend du vide quand il n'y a rien a montrer",
+   lien_forage_html("x", "") == "")
+
+# La destination des controles d'import se DEDUIT de leur nom : ces tables
+# sont sauvees dans le .RData, leur ajouter une colonne casserait les caches.
+ok("un compte hors plan mene a ce compte",
+   grepl("texte=793000",
+         forage_import("Comptes 6 et 7 classés", "793000 — hors du plan.")))
+ok("la piece de reprise mene a sa date",
+   forage_import("Pièce de reprise", "x", reprise = as.Date("2026-06-30")) ==
+     "du=2026-06-30;au=2026-06-30;bloc=Tout")
+ok("un mois ecarte mene a ce mois",
+   grepl("du=2026-06-01",
+         forage_import("Mois d'Odoo écartés", "1 mois ... (06/2026) ...")))
+ok("un controle sans destination n'en invente pas",
+   is.na(forage_import("Débit = crédit", "écart global de 0 €")))
+ok("c'est vectorise, comme la table qu'il lit",
+   length(forage_import(c("Pièce de reprise", "Débit = crédit"), c("a", "b"),
+                        reprise = as.Date("2026-06-30"))) == 2)

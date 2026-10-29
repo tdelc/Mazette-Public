@@ -146,13 +146,18 @@ ok("ce que pese Non ventile est chiffre",
    { l <- ct[ct$CONTROLE == "Matières non ventilées", ]
      l$VERDICT == "alerte" && l$VALEUR == 50 })
 # La reprise ne doit toucher que le bilan.
+# Le NOM d'un contrôle dit son sujet, jamais son succès : « Reprise sans
+# résultat » en rouge se lisait exactement a l'envers de ce qu'il disait.
 ok("une reprise propre passe",
-   controle_ecritures(e, cp, reprise = "2026-06-30")$VERDICT[
-     controle_ecritures(e, cp, reprise = "2026-06-30")$CONTROLE == "Reprise sans résultat"] == "ok")
+   { c3 <- controle_ecritures(e, cp, reprise = "2026-06-30")
+     c3$VERDICT[c3$CONTROLE == "Pièce de reprise"] == "ok" })
+ok("et aucun controle ne porte un nom affirmatif",
+   { c3 <- controle_ecritures(e, cp, reprise = "2026-06-30")
+     !any(grepl("^Pas de |respectée|sans résultat", c3$CONTROLE)) })
 ok("une classe 6 a la date de reprise est signalee",
    { sale <- e |> slice(1) |> mutate(DATE = as.Date("2026-06-30"), COMPTE="623700", CLASSE="6")
      c4 <- controle_ecritures(bind_rows(e, sale), cp, reprise = "2026-06-30")
-     c4$VERDICT[c4$CONTROLE == "Reprise sans résultat"] == "alerte" })
+     c4$VERDICT[c4$CONTROLE == "Pièce de reprise"] == "alerte" })
 ok("aucune ecriture -> alerte, pas une erreur",
    controle_ecritures(NULL)$VERDICT == "alerte")
 
@@ -168,13 +173,23 @@ ok("la couture rend neuf mois", nrow(co) == 9)
 ok("l'ancien tient jusqu'en juin", all(co$COMPTE[co$MOIS <= 6] == "700000"))
 ok("Odoo prend la suite en juillet", all(co$COMPTE[co$MOIS >= 7] == "700200"))
 ok("aucun mois en double", !any(duplicated(paste(co$ANNEE, co$MOIS))))
-# Un recouvrement doit etre VU, pas absorbe en silence.
-ok("un recouvrement est detecte",
-   controle_couture(anc, odo |> add_row(anc[6,]))$VERDICT[1] == "alerte")
+# Un mois d'Odoo anterieur a la bascule doit etre VU, pas absorbe en silence.
+# Mais c'est une ATTENTION et non une alerte : coud_compta() partitionne par
+# date, un mois ne peut donc pas etre compte deux fois — ce qui se passe, c'est
+# que des lignes d'Odoo sont ecartees, le plus souvent la piece de reprise.
+ok("un mois d'Odoo avant la bascule est signale",
+   controle_couture(anc, odo |> add_row(anc[6,]))$VERDICT[1] == "attention")
+ok("et le message dit ce qu'il advient de ces lignes",
+   grepl("ancienne source",
+         controle_couture(anc, odo |> add_row(anc[6,]))$DETAIL[1]))
 ok("un trou est detecte",
    controle_couture(anc |> filter(MOIS != 3), odo)$VERDICT[2] == "alerte")
-ok("un Odoo qui deborde avant la bascule est detecte",
-   controle_couture(anc, odo |> add_row(anc[5,] |> mutate(COMPTE="700200")))$VERDICT[3] == "alerte")
+# Les deux controles qui disaient la meme chose a l'envers l'un de l'autre
+# n'en font plus qu'un.
+ok("un Odoo qui deborde avant la bascule tombe dans le MEME controle",
+   { c <- controle_couture(anc, odo |> add_row(anc[5,] |> mutate(COMPTE="700200")))
+     c$VERDICT[c$CONTROLE == "Mois d'Odoo écartés"] == "attention" })
+ok("la couture n'a plus que deux controles", nrow(controle_couture(anc, odo)) == 2)
 ok("une couture saine ne dit rien", all(controle_couture(anc, odo)$VERDICT == "ok"))
 ok("sans ancien, Odoo seul", nrow(coud_compta(NULL, odo)) == 3)
 ok("sans rien, NULL", is.null(coud_compta(NULL, NULL)))

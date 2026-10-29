@@ -31,6 +31,7 @@ source("R/theme.R",          encoding = "UTF-8", local = TRUE)
 source("R/kpi.R",            encoding = "UTF-8", local = TRUE)
 source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 source("R/exploitation.R",   encoding = "UTF-8", local = TRUE)
+source("R/ecritures.R",      encoding = "UTF-8", local = TRUE)
 source("R/analyse.R",        encoding = "UTF-8", local = TRUE)
 
 periode <- function(ca, autres, mat, rem, gen, fin, p = "2026-09-01") {
