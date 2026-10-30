@@ -74,6 +74,12 @@ Rscript essai_odoo_api.R          # vérifier la connexion Odoo, sans rien écri
 - **[`docs/odoo.md`](docs/odoo.md)** — brancher la comptabilité Odoo : ce qu'il
   faut exporter, le contrat que `DB_COMPTA` doit respecter, et l'API.
 
+## Intégration continue
+
+`.github/workflows/tests.yml` lance la suite à chaque poussée et à chaque pull
+request. Elle prend une douzaine de secondes : une branche rouge se voit donc
+avant d'être mergée, sans avoir à penser à lancer les tests.
+
 ## Les branches
 
 `sql` est la branche par défaut sur GitHub, `claude/compta-armature` porte le

@@ -1,3 +1,9 @@
+# Du libellé de caisse à la catégorie de boisson.
+#
+# La caisse laisse renommer une ligne : un même produit y porte plusieurs
+# orthographes. Cette correspondance-ci se fait sur le texte, faute de mieux ;
+# le reste du dashboard passe par ID_REF (cf. R/donnees.R).
+
 from_product_to_boisson <- function(DB){
   DB |> 
     mutate(PRODUIT_VIDE = str_remove(PRODUIT," *[0-9]+ *[cC][lL]"),

@@ -1,5 +1,10 @@
+# Volet « Pizzwanze » : les soirées pizza.
+#
+# Elles ne sont pas déclarées quelque part — elles se DÉDUISENT des ventes
+# (cf. soirees_pizzwanze). Une soirée oubliée au planning reste donc visible,
+# et c'est la seule façon de ne pas dépendre d'une saisie manuelle.
 
-#### REFONTE — Volet "Pizzwanze" ####
+
 # La Pizzwanze est une soirée pizza qui revient toutes les trois à quatre
 # semaines, le mardi soir. Quelques pizzas sont là à chaque fois, le reste
 # change au gré des produits de saison.

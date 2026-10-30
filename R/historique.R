@@ -1,4 +1,7 @@
-#### REFONTE — Volet "Historique" ####
+# Volet « Historique » : la série longue du chiffre d'affaires.
+#
+# Par semaine, par mois ou par année, sur tout ce que la caisse a enregistré.
+# C'est le seul volet qui ne compare rien : il montre, et c'est tout.
 
 # Agrège le CA réalisé + objectif par semaine ou par mois.
 # (db = sortie de prepa_db : colonnes DATE, ventes, PREMIER_JOUR_SEMAINE, PREMIER_JOUR_MOIS)

@@ -10,6 +10,9 @@ fichier que lorsqu'il y a quelque chose à lire : une suite verte de six cents
 lignes, personne ne la relit, et elle cacherait les trois qui comptent le jour
 où elles apparaissent.
 
+Elle tourne aussi toute seule, à chaque poussée
+(`.github/workflows/tests.yml`).
+
 ## Pas de framework, et pourquoi
 
 Chaque fichier imprime une ligne par assertion, le lanceur compte. Les paquets

@@ -1,4 +1,8 @@
-##### Format #####
+# Les formats d'affichage, et les conventions qui les tiennent.
+#
+# Montants, pourcentages, pastilles, et les « jumelles » de tri des tableaux.
+# Deux précisions coexistent à dessein : la dizaine d'euros pour les ordres de
+# grandeur, le centime pour la comptabilité (cf. DECIMALES_COMPTA).
 
 format_CA <- function(montant,nb_apres=0) {
   # scientific = FALSE, sinon format() bascule en notation scientifique dès que

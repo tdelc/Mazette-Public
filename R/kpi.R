@@ -1,4 +1,9 @@
-##### Tuiles KPI #####
+# Les tuiles de synthèse, partagées par tous les volets.
+#
+# Une tuile porte un chiffre, un intitulé, une couleur et parfois un
+# sous-titre. La couleur dit le verdict — c'est ici que vit le contrôle de
+# gestion des ratios (SEUILS_RATIOS est dans R/exploitation.R, à côté des
+# tuiles d'exploitation qui l'affichent).
 
 # Les tuiles du volet Travail vivent désormais dans R/travail.R
 # (kpi_travail), avec le reste du volet.

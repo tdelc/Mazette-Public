@@ -1,4 +1,8 @@
-#### REFONTE — Volet "Année" ####
+# Volet « Année » : l'année en cours face à son objectif.
+#
+# Le cumul du CA depuis janvier, l'écart à l'objectif annuel, et la projection
+# de fin d'année. Une seule granularité — l'année se lit d'un bloc, ou ne se
+# lit pas.
 # Suivi annuel « à date » : on ne compare que les jours déjà écoulés, en cumulé.
 
 # Série quotidienne de l'année : CA, objectif, et marge d'exploitation.

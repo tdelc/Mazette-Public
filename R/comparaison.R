@@ -1,4 +1,4 @@
-#### Volet "Comparaison" ####
+# Volet « Comparaison » : plusieurs périodes face à face, au choix.
 #
 # Comparer des périodes deux à deux, ou dix à dix. Deux sources se croisent :
 #

@@ -1,4 +1,8 @@
-#### REFONTE — Volet "Consommation" (bières & focaccias) ####
+# Volet « Consommation » : ce qui se boit et ce qui se mange.
+#
+# Bières et focaccias partagent le même écran parce qu'ils posent la même
+# question — quel produit part, à quel rythme — et que les séparer obligerait
+# à comparer deux onglets de tête.
 # Deux volets de suivi de la consommation, à la maille SEMAINE, toujours
 # comparés à la semaine précédente (S-1).
 #

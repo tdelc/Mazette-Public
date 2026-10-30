@@ -41,7 +41,7 @@ piège qu'il a coûté. C'est là qu'il faut lire avant de modifier.
 
 ## Les volets
 
-`accueil.R`, `maintenant.R`, `details.R`, `historique.R`, `année.R`,
+`accueil.R`, `maintenant.R`, `details.R`, `historique.R`, `annee.R`,
 `boissons.R`, `consommation.R`, `focaccia.R`, `pizzwanze.R`, `brassins.R`,
 `simulation.R`, `travail.R`, `planning.R`, `reservations.R`, `comparaison.R`,
 `objectifs.R`.
@@ -50,7 +50,8 @@ Un fichier par volet, nommé comme son onglet. Il contient les calculs et les
 graphiques de ce volet, et rien d'autre : ce qui sert à deux volets remonte
 dans le socle.
 
-## `sql.R`
+## Un fichier par volet, et rien de plus
 
-La couche Cloudflare D1 — écrite, testée nulle part, appelée nulle part pour
-l'instant. Elle attend son usage.
+Ce qui sert à deux volets remonte dans le socle. Ce qui ne sert plus à aucun
+s'en va : `compta.R` et `sql.R` sont partis ainsi, l'un remplacé par les six
+onglets de Compta, l'autre resté sans usage.

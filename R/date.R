@@ -1,3 +1,10 @@
+# Le calendrier de référence.
+#
+# Une table d'une ligne par jour, qui porte le jour de semaine, le mois et
+# l'année. Tout ce qui agrège par période s'y joint plutôt que de recalculer
+# un format(), parce qu'un jour sans vente doit exister dans la série — sinon
+# une fermeture se lit comme un trou de données.
+
 correct_date <- function(x){
   if (class(x)[1] == "character") 
     janitor::excel_numeric_to_date(as.numeric(x))

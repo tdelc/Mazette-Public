@@ -1,0 +1,62 @@
+# La suite de tests, à chaque poussée et à chaque pull request.
+#
+# Elle prend une douzaine de secondes : il n'y a donc aucune raison de la
+# réserver aux grandes occasions. Le but est qu'une branche rouge se voie
+# AVANT d'être mergée, pas qu'on pense à lancer les tests.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:      # et à la main, depuis l'onglet Actions
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    name: Rscript tests/lancer.R
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          # Les binaires du RStudio Package Manager : l'installation passe de
+          # plusieurs minutes de compilation à quelques dizaines de secondes.
+          use-public-rspm: true
+
+      # Seulement ce que la SUITE utilise, pas tout le dashboard. Les tests
+      # éprouvent du calcul : shiny, DT et plotly ne servent qu'au test des
+      # onglets, qui se met de côté proprement s'ils manquent.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::tibble
+            any::tidyr
+            any::stringr
+            any::lubridate
+            any::readr
+            any::jsonlite
+            any::shiny
+            any::bslib
+            any::htmltools
+            any::DT
+            any::plotly
+
+      # Une seule exécution : on garde sa sortie, et le résumé la relit. La
+      # relancer pour l'afficher doublerait le temps et pourrait, sur un
+      # échec intermittent, afficher un verdict différent de celui qui compte.
+      - name: Lancer la suite
+        run: |
+          set -o pipefail
+          Rscript tests/lancer.R 2>&1 | tee resultat-tests.txt
+
+      - name: Résumé
+        if: always()
+        run: |
+          {
+            echo "### Suite de tests"
+            echo '```'
+            tail -n 20 resultat-tests.txt 2>/dev/null || echo "aucune sortie"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,4 +1,8 @@
-#### REFONTE — Volet "Maintenant" ####
+# Volet « Maintenant » : la page d'atterrissage de tous les jours.
+#
+# La veille, la semaine en cours, l'avancement du mois, les produits qui
+# bougent. Tout y est à J-1 : la caisse du jour n'est close qu'au soir, et un
+# chiffre partiel affiché comme un chiffre final se lit comme une chute.
 
 # Top produits (CA HTVA) sur une période [date_debut, date_fin]
 top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10,

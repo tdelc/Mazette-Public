@@ -1,4 +1,4 @@
-##### Boisson — consommation #####
+# Volet « Boissons » : ce qui se boit, par catégorie et par créneau.
 
 # Lignes de ticket correspondant à des boissons, sur une fenêtre de dates.
 tickets_boissons <- function(db_ticket, ref, d1, d2) {

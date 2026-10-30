@@ -1,3 +1,9 @@
+# Les encarts de l'écran d'accueil et du volet Maintenant.
+#
+# Des tuiles qui portent un chiffre, sa comparaison et sa couleur. Elles sont
+# construites ici plutôt que dans chaque volet, pour que « +12 % » veuille dire
+# la même chose partout.
+
 
 
 #### Box Ventes ####

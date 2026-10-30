@@ -1,4 +1,8 @@
-#### Volet "Travail" ####
+# Volet « Travail » : les heures posées et ce qu'elles coûtent.
+#
+# Deux sous-onglets — le pilotage (heures, productivité, créneaux types) et
+# les sources, qui confrontent les trois origines des heures et du coût
+# (cf. R/sources_travail.R).
 # Suivi des heures et de la productivité.
 #
 # Vocabulaire, volontairement ramené à deux catégories :
