@@ -123,22 +123,6 @@ normalise_couts_matiere <- function(df, granularite = c("mois", "semaine"),
     arrange(PERIODE, SECTEUR)
 }
 
-#' Assemble plusieurs sources en une table canonique.
-#'
-#' L'ordre compte : en cas de recouvrement sur une même période x secteur x
-#' granularité, la PREMIÈRE source l'emporte. Placer donc le réel avant le
-#' fictif.
-empile_couts_matiere <- function(...) {
-  sources <- Filter(function(x) !is.null(x) && nrow(x) > 0, list(...))
-  if (!length(sources)) return(normalise_couts_matiere(tibble()))
-  bind_rows(sources) %>%
-    group_by(PERIODE, GRANULARITE, SECTEUR) %>%
-    slice_head(n = 1) %>%
-    ungroup() %>%
-    arrange(PERIODE, SECTEUR) |> 
-    mutate(simu = replace_na(FALSE))
-}
-
 #' Lignes utilisables pour une granularité d'analyse donnée.
 #'
 #' Règle : une vue hebdomadaire n'accepte que des lignes hebdomadaires. Une vue
@@ -166,17 +150,6 @@ couts_matiere_effectifs <- function(db, unite = c("semaine", "mois", "annee")) {
   bind_rows(hebdo, mensuel) %>% arrange(PERIODE, SECTEUR)
 }
 
-#' Lignes de coûts dont la période contient `jour`.
-#'
-#' Remplace les `filter(SEMAINE == floor_date(jour, "week"))` : la période
-#' englobante est un mois ou une semaine selon la ligne, on ne peut donc plus
-#' la calculer depuis le jour, il faut la chercher.
-couts_matiere_du_jour <- function(db, jour) {
-  jour <- as.Date(jour)
-  if (!nrow(db)) return(db)
-  db %>% filter(PERIODE <= jour, fin_granularite(PERIODE, GRANULARITE) >= jour)
-}
-
 #' Étale les coûts d'une période sur ses jours d'ouverture.
 #'
 #' Sert au volet « détail par jour », qui a besoin d'un montant journalier.
@@ -198,31 +171,6 @@ couts_matiere_par_jour <- function(db, db_date, jusqu_a = today()) {
     select(DATE, PERIODE, GRANULARITE, SECTEUR,
            COUT_MATIERE, ACHATS, VARIATION_STOCK, STOCK_CONNU, SIMU) %>%
     arrange(DATE, SECTEUR)
-}
-
-#' Fenêtre réellement analysable par la compta.
-#'
-#' `agrege_compta()` croise CA, travail et matières : la marge n'a de sens que
-#' là où les trois existent. Avec un historique matière long et un historique
-#' travail court, l'analyse se limite au second — ce que cette fonction rend
-#' visible plutôt que de laisser un tableau vide sans explication.
-couverture_compta <- function(db_kpi, db_travail, db_matiere) {
-  plage <- function(x, lab) {
-    if (!length(x) || all(is.na(x)))
-      tibble(source = lab, debut = as.Date(NA), fin = as.Date(NA))
-    else tibble(source = lab, debut = min(x, na.rm = TRUE), fin = max(x, na.rm = TRUE))
-  }
-  fins <- if (nrow(db_matiere))
-    fin_granularite(db_matiere$PERIODE, db_matiere$GRANULARITE) else as.Date(NA)
-
-  res <- bind_rows(
-    plage(db_kpi$DATE[db_kpi$ventes > 0], "CA"),
-    plage(db_travail$DATE, "Travail"),
-    plage(c(db_matiere$PERIODE, fins), "Matières")
-  )
-  bind_rows(res, tibble(source = "→ analysable",
-                        debut = suppressWarnings(max(res$debut, na.rm = TRUE)),
-                        fin   = suppressWarnings(min(res$fin,   na.rm = TRUE))))
 }
 
 #' Départage les deux conventions de signe sur pièces.

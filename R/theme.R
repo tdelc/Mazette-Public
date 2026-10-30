@@ -1,17 +1,5 @@
 ##### Format #####
 
-theme_mazette <- function(){
-  theme(
-    axis.title.x.top = element_text(margin = margin(b=10)),
-    axis.text = element_text(face = "bold",size = 12),
-    axis.title = element_text(face = "bold",size = 12),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_rect(fill = "transparent", colour = NA),
-    plot.background = element_rect(fill = "transparent", colour = NA)
-  )
-}
-
 format_CA <- function(montant,nb_apres=0) {
   # scientific = FALSE, sinon format() bascule en notation scientifique dès que
   # celle-ci est plus COURTE que la notation décimale : un chiffre d'affaires de

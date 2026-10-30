@@ -239,13 +239,6 @@ normalise_secteur <- function(x) {
   )
 }
 
-# Palette des secteurs, complétée pour les libellés non reconnus : un secteur
-# inattendu doit rester visible dans le graphe plutôt que de disparaître.
-couleur_secteur <- function(secteur) {
-  ifelse(secteur %in% names(COULEURS_SECTEURS),
-         COULEURS_SECTEURS[secteur], COUL_NEUTRE)
-}
-
 #### Heures planifiées ####
 
 # Libellé du service posé un jour de fermeture. Distinct de « Service » : c'est

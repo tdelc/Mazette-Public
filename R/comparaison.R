@@ -168,35 +168,3 @@ table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee"),
   res
 }
 
-#' Écarts entre deux périodes, quand il n'y en a que deux de sélectionnées.
-#'
-#' C'est le cas d'usage le plus fréquent — « ce mois-ci contre le précédent » —
-#' et une ligne d'écarts se lit plus vite que deux lignes à soustraire de tête.
-tuiles_ecart_comparaison <- function(comp, unite = "mois") {
-  if (is.null(comp) || nrow(comp) != 2) return(NULL)
-  comp <- arrange(comp, PERIODE)
-  a <- comp[1, ]; b <- comp[2, ]
-
-  tuile <- function(libelle, va, vb, fmt = function(x) format_CA(x, -1),
-                    sens_positif = TRUE, icone = "arrow-right-arrow-left") {
-    if (is.na(va) || is.na(vb)) return(NULL)
-    d <- vb - va
-    coul <- if (d == 0) COUL_NEUTRE
-    else if ((d > 0) == sens_positif) COUL_VERT else COUL_ROUGE
-    kpi_tile(paste0(if (d >= 0) "+" else "", fmt(d)), libelle, coul, icone,
-             sous_titre = paste(fmt(va), "→", fmt(vb)))
-  }
-
-  tuiles <- Filter(Negate(is.null), list(
-    tuile("CA", a$CA, b$CA, icone = "euro-sign"),
-    tuile("CA par jour", a$CA_JOUR, b$CA_JOUR, icone = "calendar-day"),
-    tuile("Atteinte de l'objectif", a$PCT_OBJ, b$PCT_OBJ,
-          fmt = function(x) format_pct(x), icone = "bullseye"),
-    tuile("Marge av. amort.", a$MARGE_AA, b$MARGE_AA, icone = "piggy-bank"),
-    # Un prime cost qui baisse est une bonne nouvelle : le sens s'inverse.
-    tuile("Prime cost", a$PCT_PRIME, b$PCT_PRIME,
-          fmt = function(x) format_pct(x), sens_positif = FALSE,
-          icone = "scale-balanced")))
-
-  if (!length(tuiles)) NULL else div(class = "kpi-grid", tuiles)
-}

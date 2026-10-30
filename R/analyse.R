@@ -569,30 +569,6 @@ table_pont_marge <- function(pont, lib_actuel = "la période",
     Lecture = paste0("somme des ", nrow(pont), " effets ci-dessus")))
 }
 
-# La preuve par trois lignes : marge de départ, somme des effets, marge
-# d'arrivée. C'est ce qui transforme le pont d'illustration en démonstration —
-# on voit que rien ne s'est perdu en route.
-table_verification_pont <- function(pont, lib_actuel = "la période",
-                                    lib_ref = "la référence") {
-  if (is.null(pont) || !nrow(pont)) return(tibble(Info = "Pas de référence."))
-  total   <- sum(pont$EFFET)
-  arrivee <- pont$ARRIVEE[1]
-  # L'écart de bouclage n'est jamais qu'un arrondi d'affichage : l'identité est
-  # exacte. On l'affiche quand même — un contrôle qu'on ne montre pas est un
-  # contrôle auquel on ne croit pas.
-  reste <- pont$DEPART[1] + total - arrivee
-
-  tibble(
-    Étape = c(paste0("Marge de ", lib_ref),
-              paste0("+ somme des ", nrow(pont), " effets"),
-              paste0("= Marge de ", lib_actuel),
-              "Écart de bouclage"),
-    Montant = c(euro_exact(pont$DEPART[1]), euro_signe(total),
-                euro_exact(arrivee),
-                if (abs(reste) < 0.5) "0 € — le pont boucle"
-                else format_CA(reste, -1)))
-}
-
 # Le paragraphe d'accueil du sous-onglet, écrit AVEC LES CHIFFRES DE LA PÉRIODE
 # affichée plutôt qu'avec un exemple générique. Une formule illustrée par ses
 # propres nombres se comprend du premier coup ; la même formule en lettres se

@@ -1,12 +1,5 @@
 ##### Boisson — consommation #####
 
-ref_boissons <- function(db_produits) {
-  db_produits %>%
-    filter(est_biere(CATEGORIE), !is.na(BOISSON), BOISSON != "") %>%
-    distinct(BOISSON) %>%
-    pull(BOISSON)
-}
-
 # Lignes de ticket correspondant à des boissons, sur une fenêtre de dates.
 tickets_boissons <- function(db_ticket, ref, d1, d2) {
   db_ticket %>%

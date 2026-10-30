@@ -138,17 +138,6 @@ resultat_par_poste <- function(db, periodes = NULL, unite = "mois") {
     arrange(PERIODE, ORDRE_G)
 }
 
-#' Détail d'un poste : ses comptes, pour le déroulé fin.
-detail_poste <- function(db, poste, periodes = NULL, unite = "mois") {
-  d <- consolide_periode(classe_comptes(db), unite) %>% filter(POSTE == poste)
-  if (!is.null(periodes)) d <- filter(d, PERIODE %in% as.Date(periodes))
-  d %>%
-    group_by(COMPTE, LIBELLE) %>%
-    summarise(VALEUR = sum(VALEUR, na.rm = TRUE), .groups = "drop") %>%
-    filter(VALEUR != 0) %>%
-    arrange(desc(abs(VALEUR)))
-}
-
 #' Compte de résultat complet : postes + soldes intermédiaires, par période.
 compte_resultat <- function(db, periodes = NULL, unite = "mois") {
   p <- resultat_par_poste(db, periodes, unite)

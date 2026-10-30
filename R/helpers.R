@@ -137,13 +137,3 @@ liste_periodes_dispo <- function(db_kpi, unite = c("semaine", "mois", "annee")) 
     pull(PERIODE)
 }
 
-# Périodes disponibles d'après la compta, de la plus récente à la plus ancienne.
-liste_periodes_compta_dispo <- function(db_compta) {
-  unite <- match.arg(unite)
-  db_kpi %>%
-    filter(ventes > 0) %>%
-    mutate(PERIODE = debut_periode(DATE, unite)) %>%
-    distinct(PERIODE) %>%
-    arrange(desc(PERIODE)) %>%
-    pull(PERIODE)
-}

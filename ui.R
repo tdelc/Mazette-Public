@@ -917,69 +917,6 @@ ui_compta_generale <- function() {
   )
 }
 
-# Un volet compta (semaine ou mois). `sfx` préfixe tous les identifiants pour
-# que les deux sous-onglets soient indépendants.
-# NB : tout est construit statiquement ; l'activation du panneau de comparaison
-# se fait par shinyjs::show/hide (pas de renderUI, qui casserait les
-# dépendances CSS bslib).
-ui_compta_volet <- function(sfx) {
-  id <- function(x) paste0("compta_", sfx, "_", x)
-
-  panneau <- function(cle) {
-    div(
-      class = "compta-panel", id = id(paste0("panel_", cle)),
-      div(class = "compta-panel-titre",
-          textOutput(id(paste0("titre_", cle)), inline = TRUE)),
-      uiOutput(id(paste0("kpi_", cle))),
-      card(
-        full_screen = TRUE,
-        card_header("Coûts par secteur"),
-        plotlyOutput(id(paste0("secteurs_", cle)), height = "260px"),
-        DTOutput(id(paste0("table_", cle)))
-      )
-    )
-  }
-
-  layout_sidebar(
-    sidebar = sidebar(
-      title = "Période",
-      width = 290,
-      selectInput(id("a"), "Période analysée", choices = NULL),
-      hr(),
-      checkboxInput(id("cmp"), "Comparer avec une autre période", value = FALSE),
-      shinyjs::hidden(
-        div(id = id("cmp_box"),
-            selectInput(id("b"), "Période comparée", choices = NULL))
-      ),
-      hr(),
-      div(class = "small text-muted",
-          tags$b("Food Cost"), " = matières / CA", tags$br(),
-          tags$b("Work Cost"), " = personnel / CA", tags$br(),
-          tags$b("Prime Cost"), " = (matières + personnel) / CA", tags$br(),
-          tags$b("Marge"), " = CA − prime cost", tags$br(), tags$br(),
-          "Coûts des matières issus de la comptabilité (DB_COMPTA).")
-    ),
-    card(
-      full_screen = TRUE,
-      card_header("Évolution — cliquez sur une barre pour analyser la période"),
-      plotlyOutput(id("evo"), height = "330px")
-    ),
-    div(class = "compta-split", panneau("a"), shinyjs::hidden(panneau("b"))),
-    shinyjs::hidden(
-      div(id = id("ecarts_box"),
-          card(
-            card_header("Écarts — période analysée moins période comparée"),
-            uiOutput(id("ecarts"))
-          ))
-    ),
-    card(
-      full_screen = TRUE,
-      card_header("Évolution des indicateurs (% du CA)"),
-      plotlyOutput(id("kpi_evo"), height = "320px")
-    )
-  )
-}
-
 ui_annee <- function() {
   tagList(
     card(

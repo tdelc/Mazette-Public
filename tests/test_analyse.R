@@ -84,10 +84,9 @@ ok("sans reference du tout -> NULL", is.null(pont_marge(ACT, NULL)))
 # Le reproche d'origine : « je percois le principe, mais je n'arrive pas a
 # refaire le calcul ». Le tableau affiche donc des EUROS, pas des points
 # arrondis : reel - attendu doit redonner l'effet, au centime.
-tv <- table_verification_pont(pt)
-ok("la verification affiche les trois etapes et le bouclage", nrow(tv) == 4)
-ok("et elle annonce que le pont boucle",
-   grepl("boucle", tv$Montant[tv$Étape == "Écart de bouclage"]))
+# table_verification_pont() est partie avec son output : elle calculait une
+# table que plus aucun ecran n'affichait. Du code mort sous tests a l'air
+# maintenu, ce qui est pire que pas de code du tout.
 tb <- table_pont_marge(pt)
 ok("le tableau du pont a une ligne par effet", nrow(tb) >= nrow(pt))
 # La soustraction affichee doit tomber juste : c'est tout l'enjeu. Elle ne
