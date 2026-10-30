@@ -82,7 +82,7 @@ avant d'être mergée, sans avoir à penser à lancer les tests.
 
 ## Les branches
 
-`sql` est la branche par défaut sur GitHub, `claude/compta-armature` porte le
+`main` est la branche par défaut sur GitHub, `dev` porte le
 développement en cours. Une fonctionnalité vit sur sa propre branche le temps
 d'être éprouvée, puis rejoint la branche de développement, puis la branche
 principale.
