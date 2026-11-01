@@ -950,7 +950,9 @@ ui_annee <- function() {
       plotlyOutput("annee_marge", height = "340px"),
       div(class = "small text-muted",
           "Marge = CA + autres produits − matières − rémunérations − frais ",
-          "généraux − amortissements, telle que la donne la comptabilité.",
+          "généraux − amortissements, telle que la donne la comptabilité. ",
+          "La courbe « avant amort. » est celle du volet Compta : la même, ",
+          "amortissements exclus et résultat financier inclus.",
           tags$br(),
           "Elle est mensuelle : ses charges sont réparties uniformément sur les ",
           "jours d'ouverture du mois. Le cumul est donc exact à chaque fin de ",
@@ -961,8 +963,8 @@ ui_annee <- function() {
       card_header("Écart cumulé de marge vs N-1"),
       plotlyOutput("annee_ecart_marge", height = "340px"),
       div(class = "small text-muted",
-          "L'écart est disponible que pour les dates où les deux marges sont ",
-          "disponibles.")
+          "L'écart n'existe qu'aux dates où la comptabilité des deux années ",
+          "est là.")
     )
   )
 }
