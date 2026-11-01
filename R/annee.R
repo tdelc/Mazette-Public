@@ -52,36 +52,61 @@ serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
   # de fermeture donnerait une marge négative sans activité en face.
   res %>%
     left_join(charges, by = "MOIS") %>%
+    # Un mois sans comptabilité est inconnu pour TOUS ses jours. Il faut le
+    # retenir ici : la répartition ci-dessous donne 0 à un jour de fermeture,
+    # zéro charge en face de zéro vente, et sa marge passerait pour connue et
+    # nulle. Un mois écarté continuerait alors de peser dans la comparaison
+    # avec N-1 par ses jours de fermeture.
+    mutate(CONNU = !is.na(CHARGES)) %>%
     group_by(MOIS) %>%
     mutate(N_OUVERTS = sum(ventes > 0),
            across(c(AUTRES, MATIERES, REMUNERATION, GENERAUX, AMORTISSEMENT,
                     CHARGES),
                   ~ if_else(N_OUVERTS > 0 & ventes > 0, . / N_OUVERTS, 0))) %>%
     ungroup() %>%
-    mutate(MARGE = if_else(is.na(CHARGES), NA_real_,
-                           ventes + AUTRES - CHARGES)) %>%
-    select(-MOIS, -N_OUVERTS)
+    mutate(MARGE = if_else(CONNU, ventes + AUTRES - CHARGES, NA_real_)) %>%
+    select(-MOIS, -N_OUVERTS, -CONNU)
 }
 
 # Marge cumulée de l'année, superposée à celle de N-1 alignée sur la date N
 graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
   
+  # Le RANG se compte sur TOUS les jours d'ouverture, y compris ceux dont la
+  # marge est inconnue — un mois écarté, une comptabilité pas encore arrivée.
+  # C'est lui qui aligne l'année sur N-1 : les numéroter après avoir retiré ces
+  # jours, ce que faisait la version précédente, décalait la courbe. Mars
+  # écarté, et le 31 décembre se retrouvait comparé au 5 décembre de l'an
+  # d'avant : la comparaison devenait fausse sans qu'aucun chiffre ne le soit.
+  #
+  # Le cumul n'avance pas sur ces jours-là, et la courbe s'y interrompt : un
+  # trait continu laisserait croire qu'on y a gagné zéro, alors qu'on n'en sait
+  # rien. Plotly achève le travail au tracé — il retire les jours inconnus de
+  # fin de série, si bien que la courbe s'arrête simplement au dernier mois
+  # connu, et réduit un trou intérieur à une seule coupure sans toucher au rang
+  # des jours qui suivent. Le tracé compte donc moins de points que la série.
   cum <- function(d) {
-    d <- d %>% filter(DATE < today(),ventes > 0,!is.na(MARGE)) %>% arrange(DATE)
-    if (!nrow(d)) return(NULL)
-    d %>% mutate(RANG = row_number(), MARGE = replace_na(MARGE,0), CUMUL = cumsum(MARGE))
+    d <- d %>% filter(DATE < today(), ventes > 0) %>% arrange(DATE)
+    if (!nrow(d) || all(is.na(d$MARGE))) return(NULL)
+    d %>% mutate(RANG  = row_number(),
+                 CUMUL = cumsum(replace_na(MARGE, 0)),
+                 CUMUL = if_else(is.na(MARGE), NA_real_, CUMUL))
   }
   a <- cum(serie); b <- cum(serie_m1)
   if (is.null(a))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas de comptabilité sur cette année")))
 
-  fin <- slice_tail(a, n = 1)
+  # Le dernier point CONNU : l'annotation de fin ne peut pas se poser sur un
+  # trou, et le dernier jour de l'année peut en être un.
+  fin <- a %>% filter(!is.na(CUMUL)) %>% slice_tail(n = 1)
   couleur <- if (fin$CUMUL >= 0) COUL_VERT else COUL_ROUGE
   
   g <- plot_ly() %>%
     add_trace(x = a$RANG, y = a$CUMUL, type = "scatter", mode = "lines",
               name = as.character(annee), fill = "tozeroy",
+              # Sans ça, plotly relie les deux bords du trou et le mois
+              # écarté redevient invisible.
+              connectgaps = FALSE,
               fillcolor = if (fin$CUMUL >= 0) "rgba(91,123,90,0.18)"
                           else "rgba(192,57,43,0.15)",
               line = list(color = if (fin$CUMUL >= 0) COUL_VERT else COUL_ROUGE,
@@ -91,7 +116,7 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
                                      "<extra></extra>"))
   if (!is.null(b)) {
     g <- g %>% add_trace(x = b$RANG, y = b$CUMUL, type = "scatter", mode = "lines",
-                         name = as.character(annee - 1),
+                         name = as.character(annee - 1), connectgaps = FALSE,
                          line = list(color = COUL_NEUTRE, width = 2, dash = "dot"),
                          hovertemplate = paste0(format(b$DATE, "%d/%m/%Y"),
                                   "<br>Marge cumulée N-1 : ", format_CA(b$CUMUL, -1),
@@ -193,7 +218,23 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
   dat <- cur %>%
     left_join(prec, by = c("WEEK", "WDAY")) %>%
     arrange(DATE) %>%
-    filter(DATE < today()) %>%
+    filter(DATE < today())
+
+  # Une marge INCONNUE n'est pas une marge nulle.
+  #
+  # replace_na(VAL, 0) est juste pour le chiffre d'affaires : un jour sans
+  # vente a bien vendu zéro. Il est FAUX pour la marge : un mois écarté, ou
+  # une comptabilité pas encore arrivée, donne un NA qui devenait un zéro —
+  # et l'écart cumulé plongeait alors de toute la marge de l'an dernier, comme
+  # si on n'avait rien gagné ce mois-là. On retire donc ces jours de la
+  # comparaison plutôt que de leur inventer un résultat.
+  if (var == "marge")
+    dat <- dat %>% filter(!is.na(VAL), !is.na(VAL_M1))
+  if (!nrow(dat))
+    return(plotly_empty(type = "scatter", mode = "markers") %>%
+             layout(title = list(text = "Pas de comptabilité à comparer")))
+
+  dat <- dat %>%
     mutate(
       VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
       ECART = replace_na(cumsum(VAL - VAL_M1), 0),
