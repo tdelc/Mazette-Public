@@ -414,7 +414,7 @@ ui_reservations <- function() {
           card_header("Couverts réservés par jour"),
           radioButtons("resa_agenda_par", NULL,
                        c("Salle / terrasse" = "lieu", "Midi / soir" = "creneau"),
-                       selected = "lieu", inline = TRUE),
+                       selected = "creneau", inline = TRUE),
           plotlyOutput("resa_agenda", height = "320px")
         ),
         card(
