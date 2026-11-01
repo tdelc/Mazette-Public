@@ -5,17 +5,20 @@
 # lit pas.
 # Suivi annuel « à date » : on ne compare que les jours déjà écoulés, en cumulé.
 
-# Série quotidienne de l'année : CA, objectif, et marge d'exploitation.
+# Série quotidienne de l'année : CA, objectif, et marge.
 #
 # La marge vient de DB_COMPTA, seule source qui couvre tout l'historique avec
-# TOUTES les charges — matières, rémunérations, frais généraux, amortissements.
+# TOUTES les charges — matières, rémunérations, frais généraux.
 # L'ancienne version croisait DB_HEURES (avril 2025 → mars 2026) et les matières
 # seules : hors de cette fenêtre le coût du travail valait zéro, et la marge
 # était surévaluée de moitié. Comparer deux années devenait sans objet.
 #
-# Deux marges en sortent, les mêmes que dans le volet Compta (cf. l'en-tête de
-# R/exploitation.R) : MARGE, le résultat d'exploitation comptable, et MARGE_AA,
-# l'indicateur de gestion — amortissements exclus, résultat financier inclus.
+# La marge retenue ici est MARGE_AA, celle du volet Compta : amortissements
+# exclus, résultat financier inclus (cf. l'en-tête de R/exploitation.R). Un
+# seul indicateur de marge dans tout le dashboard, sinon deux onglets donnent
+# deux chiffres et personne ne sait lequel lire. MARGE, le résultat
+# d'exploitation comptable, reste calculée — c'est d'elle que MARGE_AA se
+# dérive, et c'est elle que le contrôle confronte au solde publié.
 #
 # La comptabilité étant mensuelle, ses charges sont étalées uniformément sur les
 # jours d'ouverture du mois. Le cumul est donc exact à chaque fin de mois ; seul
@@ -97,13 +100,10 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
   # des jours qui suivent. Le tracé compte donc moins de points que la série.
   cum <- function(d) {
     d <- d %>% filter(DATE < today(), ventes > 0) %>% arrange(DATE)
-    if (!nrow(d) || all(is.na(d$MARGE))) return(NULL)
-    if (!"MARGE_AA" %in% names(d)) d$MARGE_AA <- NA_real_
-    d %>% mutate(RANG     = row_number(),
-                 CUMUL    = cumsum(replace_na(MARGE, 0)),
-                 CUMUL    = if_else(is.na(MARGE), NA_real_, CUMUL),
-                 CUMUL_AA = cumsum(replace_na(MARGE_AA, 0)),
-                 CUMUL_AA = if_else(is.na(MARGE_AA), NA_real_, CUMUL_AA))
+    if (!nrow(d) || all(is.na(d$MARGE_AA))) return(NULL)
+    d %>% mutate(RANG  = row_number(),
+                 CUMUL = cumsum(replace_na(MARGE_AA, 0)),
+                 CUMUL = if_else(is.na(MARGE_AA), NA_real_, CUMUL))
   }
   a <- cum(serie); b <- cum(serie_m1)
   if (is.null(a))
@@ -114,13 +114,7 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
   # trou, et le dernier jour de l'année peut en être un.
   fin <- a %>% filter(!is.na(CUMUL)) %>% slice_tail(n = 1)
   couleur <- if (fin$CUMUL >= 0) COUL_VERT else COUL_ROUGE
-
-  # La marge avant amortissements : celle que le volet Compta met en tuile.
-  # Elle court au-dessus de l'autre, et l'écart entre les deux courbes est
-  # exactement l'amortissement de la période, rendu au résultat financier.
-  avec_aa <- any(!is.na(a$CUMUL_AA))
-  fin_aa  <- if (avec_aa) a %>% filter(!is.na(CUMUL_AA)) %>% slice_tail(n = 1)
-
+  
   g <- plot_ly() %>%
     add_trace(x = a$RANG, y = a$CUMUL, type = "scatter", mode = "lines",
               name = as.character(annee), fill = "tozeroy",
@@ -134,18 +128,6 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
               hovertemplate = paste0(format(a$DATE, "%d/%m/%Y"),
                                      "<br>Marge cumulée : ", format_CA(a$CUMUL, -1),
                                      "<extra></extra>"))
-  if (avec_aa) {
-    # fill = "tonexty" : l'aire se referme sur la courbe précédente, celle de
-    # la marge d'exploitation. La bande qui apparaît EST l'amortissement.
-    g <- g %>% add_trace(x = a$RANG, y = a$CUMUL_AA, type = "scatter",
-                         mode = "lines", connectgaps = FALSE,
-                         name = paste(annee, "· avant amort."),
-                         fill = "tonexty", fillcolor = "rgba(141,123,104,0.16)",
-                         line = list(color = couleur, width = 2, dash = "dash"),
-                         hovertemplate = paste0(format(a$DATE, "%d/%m/%Y"),
-                                  "<br>Marge cumulée avant amort. : ",
-                                  format_CA(a$CUMUL_AA, -1), "<extra></extra>"))
-  }
   if (!is.null(b)) {
     g <- g %>% add_trace(x = b$RANG, y = b$CUMUL, type = "scatter", mode = "lines",
                          name = as.character(annee - 1), connectgaps = FALSE,
@@ -153,64 +135,37 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
                          hovertemplate = paste0(format(b$DATE, "%d/%m/%Y"),
                                   "<br>Marge cumulée N-1 : ", format_CA(b$CUMUL, -1),
                                   "<extra></extra>"))
-    if (any(!is.na(b$CUMUL_AA)))
-      g <- g %>% add_trace(x = b$RANG, y = b$CUMUL_AA, type = "scatter",
-                           mode = "lines", connectgaps = FALSE,
-                           name = paste(annee - 1, "· avant amort."),
-                           line = list(color = COUL_NEUTRE, width = 1.5,
-                                       dash = "dashdot"),
-                           hovertemplate = paste0(format(b$DATE, "%d/%m/%Y"),
-                                    "<br>Marge cumulée N-1 avant amort. : ",
-                                    format_CA(b$CUMUL_AA, -1), "<extra></extra>"))
   }
   g %>%
     layout(
       shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1,
                          y0 = 0, y1 = 0,
                          line = list(color = "#260b01", width = 1.5))),
-      # L'une part vers le bas, l'autre vers le haut : les deux points sont
-      # au même jour, et deux étiquettes au même endroit se recouvrent.
-      annotations = c(
-        list(list(
-          x = fin$RANG, y = fin$CUMUL,
-          text = paste0("<b>", format_CA(fin$CUMUL, -1), "</b>"),
-          showarrow = TRUE, arrowhead = 0, ax = -45, ay = 32,
-          font = list(color = couleur, size = 13),
-          bgcolor = "rgba(255,255,255,0.75)", bordercolor = couleur)),
-        if (avec_aa) list(list(
-          x = fin_aa$RANG, y = fin_aa$CUMUL_AA,
-          text = paste0("<b>", format_CA(fin_aa$CUMUL_AA, -1),
-                        "</b> av. amort."),
-          showarrow = TRUE, arrowhead = 0, ax = -60, ay = -30,
-          font = list(color = COUL_NEUTRE, size = 12),
-          bgcolor = "rgba(255,255,255,0.75)", bordercolor = COUL_NEUTRE))),
+      annotations = list(list(
+        x = fin$RANG, y = fin$CUMUL,
+        text = paste0("<b>", format_CA(fin$CUMUL, -1), "</b>"),
+        showarrow = TRUE, arrowhead = 0, ax = -45, ay = -30,
+        font = list(color = couleur, size = 13),
+        bgcolor = "rgba(255,255,255,0.75)", bordercolor = couleur)),
       xaxis = list(title = "Jours d'ouverture écoulés"),
            yaxis = list(title = "Marge cumulée (€)", zeroline = TRUE,
                         zerolinecolor = "#8d7b68"),
-           # traceorder : plotly renverse la legende des que des aires sont
-           # empilees, et l'annee en cours finissait en dernier.
-           legend = list(orientation = "h", y = -0.2, traceorder = "normal"),
+           legend = list(orientation = "h", y = -0.2),
            margin = list(b = 60),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
 # Graphe générique d'écart cumulé « à date » (aire verte au-dessus de 0, rouge en
 # dessous) + point et annotation sur la dernière valeur connue.
-graph_ecart_cumule <- function(dat, titre_y, libelle,
-                               col2 = NULL, libelle2 = NULL) {
+graph_ecart_cumule <- function(dat, titre_y, libelle) {
   dat <- dat %>% filter(!is.na(ECART))
   if (nrow(dat) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-
+  
   dernier <- dat %>% slice_tail(n = 1)
   couleur <- if (dernier$ECART >= 0) COUL_VERT else COUL_ROUGE
-
-  # Seconde série : la même chose mesurée sur l'autre marge. Elle n'a ni aire
-  # ni étiquette de fin — c'est un repère à côté de la courbe principale, pas
-  # un second graphe empilé sur le premier.
-  second <- !is.null(col2) && col2 %in% names(dat) && any(!is.na(dat[[col2]]))
-
-  g <- plot_ly(dat) %>%
+  
+  plot_ly(dat) %>%
     add_lines(x = ~DATE, y = ~ECART, name = libelle,
               line = list(color = couleur, width = 2.5),
               fill = "tozeroy",
@@ -218,23 +173,8 @@ graph_ecart_cumule <- function(dat, titre_y, libelle,
               else "rgba(192,57,43,0.15)",
               hovertemplate = ~paste0(LABEL, "<extra></extra>")) %>%
     add_markers(data = dernier, x = ~DATE, y = ~ECART, name = "Dernier jour",
-                marker = list(color = couleur, size = 10), showlegend = FALSE,
-                hovertemplate = ~paste0(LABEL, "<extra></extra>"))
-
-  if (second) {
-    # En neutre, et pas au vert/rouge de la principale : les deux courbes se
-    # superposent presque toujours — elles ne diffèrent que de la variation
-    # des amortissements d'une année sur l'autre — et de deux traits de même
-    # couleur au même endroit, on n'en voit qu'un.
-    d2 <- dat %>% filter(!is.na(.data[[col2]]))
-    g <- g %>% add_lines(x = d2$DATE, y = d2[[col2]], name = libelle2,
-                         inherit = FALSE,
-                         line = list(color = COUL_NEUTRE, width = 2,
-                                     dash = "dash"),
-                         hovertemplate = paste0(d2$LABEL2, "<extra></extra>"))
-  }
-
-  g %>%
+                marker = list(color = couleur, size = 10),
+                hovertemplate = ~paste0(LABEL, "<extra></extra>")) %>%
     layout(
       shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1,
                          y0 = 0, y1 = 0,
@@ -247,8 +187,7 @@ graph_ecart_cumule <- function(dat, titre_y, libelle,
         bgcolor = "rgba(255,255,255,0.75)", bordercolor = couleur)),
       xaxis = list(title = ""),
       yaxis = list(title = titre_y),
-      showlegend = second,
-      legend = list(orientation = "h", y = -0.15),
+      showlegend = FALSE,
       paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
@@ -276,19 +215,16 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
   
   if (var == "ventes") {
     cur <- db_kpi %>% filter(year(DATE) == annee) %>%
-      transmute(DATE, VAL = ventes, VAL2 = NA_real_) %>% prep()
+      transmute(DATE, VAL = ventes) %>% prep()
     prec <- db_kpi %>% filter(year(DATE) == annee - 1) %>%
-      transmute(DATE, VAL_M1 = ventes, VAL2_M1 = NA_real_) %>% prep() %>%
-      select(WEEK, WDAY, VAL_M1, VAL2_M1)
+      transmute(DATE, VAL_M1 = ventes) %>% prep() %>%
+      select(WEEK, WDAY, VAL_M1)
     titre <- "Écart cumulé de CA vs N-1 (€)"
     nom   <- "CA"
   } else {
-    # VAL2 : la marge avant amortissements, celle du volet Compta.
-    aa <- function(d) if ("MARGE_AA" %in% names(d)) d$MARGE_AA else NA_real_
-    cur <- serie %>% transmute(DATE, VAL = MARGE, VAL2 = aa(serie)) %>% prep()
-    prec <- serie_m1 %>%
-      transmute(DATE, VAL_M1 = MARGE, VAL2_M1 = aa(serie_m1)) %>% prep() %>%
-      select(WEEK, WDAY, VAL_M1, VAL2_M1)
+    cur <- serie %>% transmute(DATE, VAL = MARGE_AA) %>% prep()
+    prec <- serie_m1 %>% transmute(DATE, VAL_M1 = MARGE_AA) %>% prep() %>%
+      select(WEEK, WDAY, VAL_M1)
     titre <- "Écart cumulé de marge vs N-1 (€)"
     nom   <- "Marge"
   }
@@ -316,23 +252,12 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
     mutate(
       VAL = replace_na(VAL, 0), VAL_M1 = replace_na(VAL_M1, 0),
       ECART = replace_na(cumsum(VAL - VAL_M1), 0),
-      ECART2 = if (all(is.na(VAL2)) || all(is.na(VAL2_M1))) NA_real_
-               else cumsum(replace_na(VAL2, 0) - replace_na(VAL2_M1, 0)),
       LABEL = paste0(format(DATE, "%d/%m/%Y"),
                      "<br>", nom, " : ", format_CA(VAL, -1),
                      "<br>", nom, " N-1 : ", format_CA(VAL_M1, -1),
-                     "<br><b>Écart cumulé : ", format_CA(ECART, -1), "</b>"),
-      LABEL2 = paste0(format(DATE, "%d/%m/%Y"),
-                      "<br>Avant amort. : ", format_CA(VAL2, -1),
-                      "<br>Avant amort. N-1 : ", format_CA(VAL2_M1, -1),
-                      "<br><b>Écart cumulé : ", format_CA(ECART2, -1), "</b>"))
-
-  graph_ecart_cumule(
-    dat, titre,
-    libelle  = if (var == "marge") "Marge d'exploitation"
-               else paste("Écart", nom, "vs N-1"),
-    col2     = if (var == "marge") "ECART2",
-    libelle2 = "Avant amortissements")
+                     "<br><b>Écart cumulé : ", format_CA(ECART, -1), "</b>"))
+  
+  graph_ecart_cumule(dat, titre, paste("Écart", nom, "vs N-1"))
 }
 
 # Tuiles de synthèse annuelle « à date ».
@@ -343,8 +268,8 @@ kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
 
   # La marge ne se cumule que sur les jours où la comptabilité existe : ajouter
   # un jour sans charges y ferait entrer son CA en marge pure.
-  avec_marge <- ecoule %>% filter(!is.na(MARGE), ventes > 0)
-  marge      <- sum(avec_marge$MARGE, na.rm = TRUE)
+  avec_marge <- ecoule %>% filter(!is.na(MARGE_AA), ventes > 0)
+  marge      <- sum(avec_marge$MARGE_AA, na.rm = TRUE)
   ca_marge   <- sum(avec_marge$ventes, na.rm = TRUE)
 
   # N-1 sur le même nombre de jours d'ouverture écoulés. La marge se compare sur
@@ -352,8 +277,8 @@ kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
   n_jours   <- nrow(ecoule %>% filter(ventes > 0))
   ecoule_m1 <- serie_m1 %>% filter(ventes > 0) %>% arrange(DATE) %>% head(n_jours)
   ca_m1     <- sum(ecoule_m1$ventes, na.rm = TRUE)
-  marge_m1  <- ecoule_m1 %>% filter(!is.na(MARGE)) %>% arrange(DATE) %>%
-    head(nrow(avec_marge)) %>% pull(MARGE) %>% sum(na.rm = TRUE)
+  marge_m1  <- ecoule_m1 %>% filter(!is.na(MARGE_AA)) %>% arrange(DATE) %>%
+    head(nrow(avec_marge)) %>% pull(MARGE_AA) %>% sum(na.rm = TRUE)
 
   div(
     class = "kpi-grid",
@@ -368,10 +293,10 @@ kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
              if (ca >= ca_m1) COUL_VERT else COUL_ROUGE, "clock-rotate-left",
              sous_titre = paste0("N-1 : ", format_CA(ca_m1, -1))),
     if (nrow(avec_marge) == 0)
-      kpi_tile("—", "Marge d'exploitation", COUL_NEUTRE, "piggy-bank",
+      kpi_tile("—", "Marge avant amort.", COUL_NEUTRE, "piggy-bank",
                sous_titre = "pas de comptabilité")
     else
-      kpi_tile(format_CA(marge, -1), "Marge d'exploitation à date",
+      kpi_tile(format_CA(marge, -1), "Marge avant amort. à date",
                if (marge >= 0) COUL_VERT else COUL_ROUGE, "piggy-bank",
                sous_titre = paste0(format_pct(ratio_pct(marge, ca_marge)),
                                    " du CA · ", nrow(avec_marge), " jours couverts")),
