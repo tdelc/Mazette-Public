@@ -476,6 +476,31 @@ R -e 'shiny::runApp()'</code></pre>
         <em>cons&eacute;quence</em>, pas seulement le constat.
       </p>
       <p>
+        <strong>L&rsquo;&eacute;cartement sort du volet Compta.</strong> Le cumul annuel de
+        marge, dans l&rsquo;onglet Ann&eacute;e, lisait <code>DB_COMPTA</code> directement&nbsp;: il
+        additionnait donc un octobre dont l&rsquo;export n&rsquo;est pas termin&eacute;, et deux
+        &eacute;crans donnaient deux marges. Il passe par <code>compta_si_dispo()</code>,
+        qui rend la compta <em>retenue</em> &mdash; ou <code>NULL</code> plut&ocirc;t que de
+        s&rsquo;interrompre, parce que ce volet sait afficher son CA sans comptabilit&eacute;,
+        il y perd seulement la marge.
+      </p>
+      <p>
+        Le r&eacute;sultat surprend, et c&rsquo;est le bon sens&nbsp;: &eacute;carter les mois incomplets
+        <em>baisse</em> la marge cumul&eacute;e. Ces mois-l&agrave; portent les ventes de la
+        caisse mais presque aucune charge comptable&nbsp;; chaque jour y affichait
+        donc une marge quasi pure. Sur le jeu d&rsquo;essai, trois mois partiels
+        ajoutaient 110&nbsp;000&nbsp;&euro; de marge fant&ocirc;me &mdash; 143&nbsp;480&nbsp;&euro; avant,
+        33&nbsp;110&nbsp;&euro; apr&egrave;s.
+      </p>
+      <p>
+        Et <code>bandeau_mois_a_risque()</code> pr&eacute;vient l&agrave; o&ugrave; l&rsquo;on ne va pas
+        chercher&nbsp;: le volet Compta sait que trois mois sont douteux, mais
+        personne n&rsquo;y va avant d&rsquo;y avoir &eacute;t&eacute; envoy&eacute;. Seulement les mois
+        <em>r&eacute;cents</em>, seulement ceux de l&rsquo;ann&eacute;e regard&eacute;e &mdash; pr&eacute;venir en 2024
+        qu&rsquo;octobre 2026 est incomplet serait du bruit &mdash; et en ambre, parce que
+        rien n&rsquo;est faux sur cet &eacute;cran-l&agrave;&nbsp;: c&rsquo;est ailleurs qu&rsquo;on d&eacute;cide.
+      </p>
+      <p>
         C&ocirc;t&eacute; <code>server.R</code>, le volet commence par un <strong>socle
         commun</strong> &mdash; la compta brute, les mois &eacute;cart&eacute;s, la compta retenue
         et les postes qui en d&eacute;coulent &mdash; pos&eacute; avant les six onglets, parce que

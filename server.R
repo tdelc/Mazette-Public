@@ -874,6 +874,14 @@ server <- function(input, output, session) {
   # La compta RETENUE : celle que lisent les six onglets.
   compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
 
+  # La même, mais qui rend NULL au lieu de s'interrompre quand DB_COMPTA
+  # manque. Le volet Année sait afficher son CA sans comptabilité — il perd
+  # juste la marge — là où les onglets de Compta n'ont rien à montrer sans
+  # elle. Le `if` évite d'appeler compta(), donc le req() qu'elle porte.
+  compta_si_dispo <- reactive({
+    if (exists("DB_COMPTA")) compta() else NULL
+  })
+
   expl_postes <- reactive({ postes_exploitation(compta()) })
 
   #### Volet "Compta / Gestion" — Contrôle ####
@@ -1727,14 +1735,28 @@ server <- function(input, output, session) {
     if (length(a) != 1 || is.na(a)) year(today()) else a
   })
 
+  # compta_si_dispo() et non DB_COMPTA : un mois écarté dans l'onglet Contrôle
+  # doit sortir du cumul annuel aussi. Sinon l'écartement ne vaudrait que pour
+  # le volet où on le décide, et deux écrans donneraient deux marges.
   serie_annee <- reactive({
     serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                   if (exists("DB_COMPTA")) DB_COMPTA else NULL, annee_val())
+                   compta_si_dispo(), annee_val())
   })
 
   serie_annee_m1 <- reactive({
     serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                   if (exists("DB_COMPTA")) DB_COMPTA else NULL, annee_val() - 1)
+                   compta_si_dispo(), annee_val() - 1)
+  })
+
+  # Deux messages, dans cet ordre : ce qui reste à vérifier, puis ce qui a
+  # déjà été retiré. Les deux ne s'affichent que pour l'année regardée.
+  output$annee_compta_alerte <- renderUI({
+    if (!exists("DB_COMPTA")) return(NULL)
+    a <- annee_val()
+    ex <- compta_exclus()
+    tagList(
+      bandeau_mois_a_risque(compta_topo(), ex, a),
+      bandeau_mois_ecartes(ex[year(ex) == a]))
   })
 
   output$annee_kpi <- renderUI({
