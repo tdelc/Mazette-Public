@@ -919,6 +919,10 @@ ui_compta_generale <- function() {
 
 ui_annee <- function() {
   tagList(
+    # La marge affichée ici vient de la comptabilité, et ce volet-ci ne dit
+    # rien de sa fiabilité. Le bandeau s'en charge : il n'apparaît que si des
+    # mois récents de l'année regardée sont douteux, ou écartés.
+    uiOutput("annee_compta_alerte", class = "zone-alerte"),
     card(
       card_header("Suivi de l'année en cours (à date)"),
       layout_columns(

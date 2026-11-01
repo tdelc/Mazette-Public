@@ -114,6 +114,7 @@ ZONES_ALERTE <- c(
   "eca_vraisemblance", "eca_alerte",
   "evo_vraisemblance",
   "cg_vraisemblance", "ecr_absent",
+  "annee_compta_alerte",
   "det_bandeau", "det_tickets_alerte"
 )
 
