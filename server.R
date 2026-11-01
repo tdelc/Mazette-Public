@@ -839,7 +839,7 @@ server <- function(input, output, session) {
       tbl, rownames = FALSE, escape = FALSE,
       selection = list(mode = "multiple", target = "row"),
       options = list(dom = "t", paging = FALSE, searching = FALSE,
-                     scrollX = TRUE, scrollY = "58vh", scrollCollapse = TRUE,
+                     scrollX = TRUE, scrollCollapse = TRUE,
                      order = list(list(0, "desc")),
                      columnDefs = defs))
     # Le nombre de comptes mouvementés : signal d'incomplétude indépendant des
