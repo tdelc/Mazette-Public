@@ -1478,15 +1478,22 @@ server <- function(input, output, session) {
   # qu'un doute qui entre dans une médiane ne se voit plus.
   proj_reels <- reactive({ postes_exploitation(compta_brute()) })
 
-  # Les deux sources extérieures à la comptabilité. DB_HEURES_PLANNING est
-  # optionnelle (cf. TABLES_OPTIONNELLES) : son absence fait changer la
-  # méthode des rémunérations, elle n'empêche pas l'écran.
+  # Les sources extérieures à la comptabilité. Toutes sont facultatives : leur
+  # absence fait changer la MÉTHODE affichée, elle n'empêche pas l'écran.
   proj_ventes <- reactive({
     if (!exists("DB_KPI_SIMPLE")) NULL else ventes_par_mois(DB_KPI_SIMPLE)
   })
-  proj_heures <- reactive({
-    if (!exists("DB_HEURES_PLANNING")) NULL else
-      heures_par_mois(DB_HEURES_PLANNING)
+
+  # Paie, pointage, planning : les trois mesures du travail, rangées de la
+  # meilleure à la dernière (cf. PROJ_SOURCES_REMU). DB_ONSS et
+  # DB_HEURES_PLANNING sont optionnelles (cf. TABLES_OPTIONNELLES), et on ne
+  # dépend pas ici du SRC_ONSS() du volet Travail : ce bloc doit pouvoir être
+  # rejoué seul.
+  proj_sources <- reactive({
+    sources_remuneration(
+      if (exists("DB_COUTS_TRAVAIL")) DB_COUTS_TRAVAIL else NULL,
+      if (exists("DB_ONSS")) DB_ONSS else NULL,
+      if (exists("DB_HEURES_PLANNING")) DB_HEURES_PLANNING else NULL)
   })
 
   # La proposition de départ : les mois de l'année écoulée auxquels il manque
@@ -1552,7 +1559,7 @@ server <- function(input, output, session) {
   projection <- reactive({
     req(exists("DB_COMPTA"))
     projette_mois_multiples(proj_reels(), proj_mois_sel(), input$proj_postes,
-                            proj_ventes(), proj_heures(), proj_nref(),
+                            proj_ventes(), proj_sources(), proj_nref(),
                             compta_exclus(), proj_ajust())
   })
 
@@ -1563,12 +1570,13 @@ server <- function(input, output, session) {
   proj_ctrl <- reactive({
     req(exists("DB_COMPTA"))
     controle_modele(proj_reels(), input$proj_postes, proj_ventes(),
-                    proj_heures(), proj_nref(), compta_exclus())
+                    proj_sources(), proj_nref(), compta_exclus())
   })
 
   output$proj_bandeau <- renderUI({
     if (!exists("DB_COMPTA")) return(NULL)
-    bandeau_projection(projection(), !is.null(proj_heures()))
+    bandeau_projection(projection(),
+                       any(!vapply(proj_sources(), is.null, logical(1))))
   })
 
   output$proj_kpi <- renderUI({
@@ -1577,20 +1585,67 @@ server <- function(input, output, session) {
 
   output$proj_graph <- renderPlotly({ graph_projection(proj_compte()) })
 
+  # Les mois que la trajectoire montre : ce sont eux, et pas d'autres, qu'on
+  # peut détailler en cascade. Choisir un mois absent du graphe du dessus
+  # ferait un écran qui se contredit.
+  proj_mois_traj <- reactive({
+    d <- proj_compte()
+    if (is.null(d) || !nrow(d)) return(as.Date(character()))
+    sort(tail(sort(d$PERIODE), PROJ_MOIS_GRAPHE), decreasing = TRUE)
+  })
+
+  observe({
+    m <- proj_mois_traj()
+    req(length(m) > 0)
+    proj <- proj_mois_sel()
+    # Le dernier mois projeté par défaut : c'est celui qu'on vient de
+    # demander. Faute de projection, le dernier mois tout court.
+    defaut <- as.character(if (length(proj)) max(proj) else max(m))
+    # isolate() : cet observateur ÉCRIT dans l'entrée qu'il lit. Sans cela,
+    # chaque mise à jour se rappellerait elle-même.
+    actuel <- isolate(input$proj_mois_cascade)
+    garde <- !is.null(actuel) && actuel %in% as.character(m)
+    updateSelectInput(session, "proj_mois_cascade",
+      choices = setNames(as.character(m), etiquette_periode(m, "mois")),
+      selected = if (garde) actuel else defaut)
+  })
+
+  # Un clic sur une barre de la trajectoire choisit le mois. L'événement rend
+  # l'ÉTIQUETTE de la catégorie (« sept. 2026 ») et non la date : on remonte
+  # donc par le libellé, qui est fabriqué au même endroit pour les deux.
+  observeEvent(event_data("plotly_click", source = "proj_traj"), {
+    e <- event_data("plotly_click", source = "proj_traj")
+    m <- proj_mois_traj()
+    req(length(m) > 0, !is.null(e$x))
+    i <- match(as.character(e$x), etiquette_periode(m, "mois"))
+    req(!is.na(i))
+    updateSelectInput(session, "proj_mois_cascade",
+                      selected = as.character(m[i]))
+  })
+
+  proj_mois_cascade <- reactive({
+    m <- input$proj_mois_cascade
+    traj <- proj_mois_traj()
+    if (is.null(m) || !nzchar(m) || !as.Date(m) %in% traj) {
+      p <- proj_mois_sel()
+      if (length(p)) max(p) else if (length(traj)) max(traj) else NULL
+    } else as.Date(m)
+  })
+
   output$proj_titre_cascade <- renderText({
-    m <- proj_mois_sel()
-    if (!length(m)) "Le mois projeté"
-    else paste0(etiquette_periode(max(m), "mois"), ", projection comprise")
+    m <- proj_mois_cascade()
+    if (is.null(m)) return("Le mois projeté")
+    projete <- m %in% proj_mois_sel()
+    paste0(etiquette_periode(m, "mois"),
+           if (projete) ", projection comprise" else ", tel qu'il est")
   })
 
   # La cascade du volet Exploitation, telle quelle : c'est le même mois, lu de
   # la même façon. En refaire une ici en aurait fait deux à maintenir.
   output$proj_cascade <- renderPlotly({
-    m <- proj_mois_sel()
-    # length(m) seul ne suffit pas : req() tient 0 pour une valeur valable,
-    # et la cascade partait alors chercher max(numeric(0)).
-    req(length(m) > 0)
-    graph_cascade_exploitation(proj_compte() %>% filter(PERIODE == max(m)))
+    m <- proj_mois_cascade()
+    req(!is.null(m))
+    graph_cascade_exploitation(proj_compte() %>% filter(PERIODE == m))
   })
 
   output$proj_detail <- renderDT({

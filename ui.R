@@ -758,7 +758,17 @@ ui_compta_projection <- function() {
     card(
       full_screen = TRUE,
       card_header(textOutput("proj_titre_cascade", inline = TRUE)),
-      plotlyOutput("proj_cascade", height = "360px")
+      # Le sélecteur EST dans la carte, pas dans la barre latérale : il ne
+      # pilote que ce graphe, et une commande rangée loin de ce qu'elle
+      # change se cherche.
+      div(class = "d-flex align-items-center gap-2",
+          span(class = "small text-muted", "Mois détaillé"),
+          div(class = "mb-0", style = "width:170px;",
+              selectInput("proj_mois_cascade", NULL, choices = NULL,
+                          width = "100%"))),
+      plotlyOutput("proj_cascade", height = "360px"),
+      div(class = "small text-muted mt-1",
+          "Un clic sur une barre de la trajectoire change aussi le mois.")
     ),
     card(
       full_screen = TRUE,

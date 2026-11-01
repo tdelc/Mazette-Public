@@ -19,6 +19,10 @@ plotly_empty<-function(...) structure(list(),class="p")
 add_bars<-function(p,...){force(p);p}; add_lines<-function(p,...){force(p);p}
 add_trace<-function(p,...){force(p);p}; add_markers<-function(p,...){force(p);p}
 layout<-function(p,...){force(p);p}; change_cursor_plotly<-function(p){force(p);p}
+# event_data / event_register vivent dans plotly, que ces tests ne chargent
+# pas : le bloc serveur les appelle pour le clic sur la trajectoire.
+event_register <- function(p, ...) p
+event_data <- function(...) NULL
 datatable<-function(x,...) structure(list(data=x),class="dt")
 formatStyle<-function(x,...) x; styleEqual<-function(...) NULL
 render_stub <- function(expr, env=parent.frame(), quoted=FALSE){
@@ -26,7 +30,7 @@ render_stub <- function(expr, env=parent.frame(), quoted=FALSE){
 renderPlotly <- render_stub; renderDT <- render_stub
 for (f in c("R/helpers.R","R/theme.R","R/kpi.R","R/plan_comptable.R",
             "R/exploitation.R","R/analyse.R","R/ecritures.R","R/planning.R",
-            "R/projection.R"))
+            "R/sources_travail.R","R/projection.R"))
   source(f, encoding="UTF-8", local = TRUE)
 
 # Le socle (d'ou viennent compta_brute() et compta_exclus()) et la Projection.
@@ -64,8 +68,18 @@ DB_COMPTA <- bind_rows(l)
 jours <- seq(min(MOIS), fin_periode(EN_COURS, "mois"), by = "day")
 DB_KPI_SIMPLE <- tibble(DATE = jours) %>%
   mutate(CA_HTVA = 62000 / 0.95 / days_in_month(DATE), CA_TVAC = CA_HTVA * 1.12)
-DB_HEURES_PLANNING <- tibble(DATE = MOIS, SERVICE = "Salle",
-                             HEURES = HEURES_MOIS)
+# Planning au jour le jour, sur tout le mois : une ligne par mois ferait
+# passer chaque mois pour tronqué.
+DB_HEURES_PLANNING <- bind_rows(lapply(seq_along(MOIS), function(i) {
+  j <- seq(MOIS[i], fin_periode(MOIS[i], "mois"), by = "day")
+  tibble(DATE = j, SERVICE = "Salle", HEURES = HEURES_MOIS[i] / length(j))
+}))
+# Le pointage : 95 % des heures planifiées, et il s'arrête hier — comme le
+# vrai, qui ne connaît pas l'avenir.
+DB_COUTS_TRAVAIL <- DB_HEURES_PLANNING %>%
+  filter(DATE < today()) %>%
+  transmute(DATE, SECTEUR = "Service", HEURES = HEURES * 0.95,
+            COUT_TRAVAIL = HEURES * 18)
 
 srv <- function(input, output, session) {
   ONGLETS_PRETS <- reactiveVal(TRUE)
@@ -76,7 +90,9 @@ srv <- function(input, output, session) {
 
 testServer(srv, {
   ok("les ventes de caisse arrivent jusqu'au bloc", nrow(proj_ventes()) > 20)
-  ok("les heures planifiées aussi", nrow(proj_heures()) == length(MOIS))
+  ok("le pointage et le planning arrivent jusqu'au bloc",
+     { s <- proj_sources()
+       !is.null(s$horeko) && !is.null(s$planning) && is.null(s$paie) })
 
   # Ce que l'écran propose en s'ouvrant.
   d <- proj_defauts()
@@ -94,11 +110,17 @@ testServer(srv, {
 
   p <- projection()
   ok("chaque mois troué reçoit ses deux postes", nrow(p) == 6)
-  ok("les rémunérations viennent des heures planifiées",
-     all(p$METHODE[p$CLE == "remuneration"] == "Heures planifiées"))
-  ok("et tombent sur les heures du mois au taux médian",
-     { h <- HEURES_MOIS[match(p$PERIODE[p$CLE == "remuneration"], MOIS)]
-       all(abs(p$RETENU[p$CLE == "remuneration"] - 25 * h) < 0.01) })
+  # LE point de ce lot : sur un mois CLOS on prend ce qui a été mesuré — les
+  # heures pointées — et le planning ne répond que pour le mois en cours,
+  # dont le pointage s'arrête hier.
+  r <- p %>% filter(CLE == "remuneration")
+  ok("un mois clos est estimé sur les heures POINTÉES",
+     all(r$METHODE[r$PERIODE < EN_COURS] == "Heures pointées"))
+  ok("le mois en cours, lui, sur les heures planifiées",
+     r$METHODE[r$PERIODE == EN_COURS] == "Heures planifiées")
+  ok("et les deux tombent sur les heures du mois au taux médian",
+     { h <- HEURES_MOIS[match(r$PERIODE, MOIS)]
+       all(abs(r$RETENU - 25 * h) < 1) })
 
   c1 <- proj_compte()
   ok("le compte d'exploitation projeté couvre tous les mois",
@@ -144,8 +166,22 @@ testServer(srv, {
                               output$proj_bandeau))))
   ok("la fiabilité se rend",
      nzchar(as.character(output$proj_fiabilite$html %||% output$proj_fiabilite)))
-  ok("le titre de la cascade nomme le mois projeté",
-     grepl("projection comprise", output$proj_titre_cascade))
+  # La cascade se choisit : le dernier mois projeté par défaut, n'importe
+  # quel mois de la trajectoire ensuite.
+  ok("la trajectoire ne propose que les mois qu'elle montre",
+     { t <- proj_mois_traj()
+       length(t) == min(PROJ_MOIS_GRAPHE, length(MOIS)) &&
+         max(t) == EN_COURS })
+  ok("le titre de la cascade nomme le mois projeté par défaut",
+     grepl(etiquette_periode(EN_COURS, "mois"), output$proj_titre_cascade,
+           fixed = TRUE) &&
+       grepl("projection comprise", output$proj_titre_cascade))
+  session$setInputs(proj_mois_cascade = as.character(MOIS[length(MOIS) - 6]))
+  ok("en choisir un autre déplace la cascade",
+     identical(proj_mois_cascade(), MOIS[length(MOIS) - 6]))
+  ok("et un mois réel est annoncé comme tel",
+     grepl("tel qu'il est", output$proj_titre_cascade))
+  ok("la cascade du mois choisi se calcule", !is.null(output$proj_cascade))
   for (sortie in c("proj_graph", "proj_cascade", "proj_detail",
                    "proj_resultat", "proj_controle"))
     ok(paste(sortie, "se calcule sans erreur"), !is.null(output[[sortie]]))

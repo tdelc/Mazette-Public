@@ -29,9 +29,14 @@ TRACES <- list()
 add_trace <- function(p, ...) { TRACES[[length(TRACES)+1L]] <<- list(...); p }
 MISE_EN_PAGE <- list()
 layout <- function(p, ...) { MISE_EN_PAGE <<- list(...); p }
+# event_data / event_register vivent dans plotly, que ces tests ne chargent
+# pas : le bloc serveur les appelle pour le clic sur la trajectoire.
+event_register <- function(p, ...) p
+event_data <- function(...) NULL
 
 for (f in c("R/helpers.R", "R/theme.R", "R/kpi.R", "R/plan_comptable.R",
-            "R/exploitation.R", "R/planning.R", "R/projection.R"))
+            "R/exploitation.R", "R/planning.R", "R/sources_travail.R",
+            "R/projection.R"))
   source(f, encoding = "UTF-8", local = TRUE)
 
 #### Un fixture dont on connaît les réponses ####
@@ -69,11 +74,27 @@ KPI <- tibble(DATE = jours) %>%
   mutate(M = floor_date(DATE, "month"),
          CA_HTVA = CA_MOIS[match(M, MOIS)] / CALIBRAGE / days_in_month(M)) %>%
   select(DATE, CA_HTVA)
-PLANNING <- tibble(DATE = MOIS, SERVICE = "Salle",
-                   HEURES = HEURES_MOIS)
+# Le planning couvre chaque jour du mois : une seule ligne par mois ferait
+# passer tous les mois pour tronqués.
+PLANNING <- bind_rows(lapply(seq_along(MOIS), function(i) {
+  j <- seq(MOIS[i], fin_periode(MOIS[i], "mois"), by = "day")
+  tibble(DATE = j, SERVICE = "Salle", HEURES = HEURES_MOIS[i] / length(j))
+}))
+# Le pointage : 95 % des heures planifiées. Son coût horaire médian vaut donc
+# 25 / 0,95 — et c'est bien ce recalage-là qu'on veut voir sortir.
+PART_POINTEE <- 0.95
+POINTAGE <- PLANNING %>%
+  mutate(HEURES = HEURES * PART_POINTEE, SECTEUR = "Service",
+         COUT_TRAVAIL = HEURES * 18)
+# La paie : 90 % du compte 62 (il y manque provisions et pécules).
+PART_PAIE <- 0.90
+PAIE <- tibble(ANNEE = year(MOIS), MOIS = month(MOIS), SECTEUR = "Service",
+               HEURES = HEURES_MOIS,
+               COUT = PART_PAIE * TAUX_HORAIRE * HEURES_MOIS)
 
 VENTES <- ventes_par_mois(KPI)
-HEURES <- heures_par_mois(PLANNING)
+SRC_PLAN <- sources_remuneration(db_planning = PLANNING)
+SRC_TOUT <- sources_remuneration(POINTAGE, PAIE, PLANNING)
 CIBLE  <- TROUES[1]
 
 ok("le fixture a bien les mois qu'on croit", nrow(POSTES) == length(MOIS))
@@ -81,9 +102,19 @@ ok("les ventes de caisse se somment par mois",
    nrow(VENTES) == length(MOIS) &&
    abs(VENTES$VENTES[1] - CA_MOIS[1] / CALIBRAGE) < 0.01)
 ok("les heures planifiées se somment par mois",
-   nrow(HEURES) == length(MOIS) && HEURES$HEURES[1] == HEURES_MOIS[1])
+   { h <- heures_par_mois(PLANNING)
+     nrow(h) == length(MOIS) && abs(h$HEURES[1] - HEURES_MOIS[1]) < 1e-9 })
 ok("une table de planning absente ne casse rien",
    is.null(heures_par_mois(NULL)) && is.null(heures_par_mois(tibble(A = 1))))
+ok("les trois sources de rémunération se mettent à la même forme",
+   { ok3 <- vapply(c("paie", "horeko", "planning"),
+                   function(k) !is.null(SRC_TOUT[[k]]) &&
+                     all(c("PERIODE", "VALEUR") %in% names(SRC_TOUT[[k]])),
+                   logical(1))
+     all(ok3) })
+ok("et sans pointage ni paie, il ne reste que le planning",
+   is.null(SRC_PLAN$paie) && is.null(SRC_PLAN$horeko) &&
+     !is.null(SRC_PLAN$planning))
 ok("un CA HTVA absent de la table de ventes non plus",
    is.null(ventes_par_mois(tibble(DATE = jours[1]))))
 
@@ -140,20 +171,21 @@ ok("et une fermeture exceptionnelle ne les change pas",
      setequal(jours_ouverts_habituels(j, as.Date("2025-07-01")),
               setdiff(1:7, 2)) })
 
-# Le planning tronqué : on le signale, on ne le redresse pas. Un redressement
-# au prorata gonflerait de 3 % tous les mois dont le dernier jour est fermé.
-ok("un planning arrêté en cours de mois est signalé, pas gonflé",
-   { pl <- tibble(DATE = seq(floor_date(today(), "month"),
-                             floor_date(today(), "month") + 9, by = "day"),
+# Une source arrêtée en cours de mois : on le signale, on ne la redresse pas.
+# Un redressement au prorata gonflerait de 3 % tous les mois dont le dernier
+# jour est fermé.
+ok("une source arrêtée en cours de mois est signalée, pas gonflée",
+   { dep <- floor_date(today(), "month")
+     pl <- tibble(DATE = seq(dep, dep + 9, by = "day"),
                   SERVICE = "Salle", HEURES = 30)
-     h <- heures_par_mois(bind_rows(PLANNING, pl))
-     r <- projette_remuneration(floor_date(today(), "month"), h,
-            mois_reference(POSTES, max(MOIS) + 1, "REMUNERATION", 6))
-     abs(r$VALEUR - 300 * median(
-       (POSTES %>% filter(REMUNERATION > 1) %>% tail(6))$REMUNERATION /
-       HEURES_MOIS[match((POSTES %>% filter(REMUNERATION > 1) %>%
-                          tail(6))$PERIODE, MOIS)])) < 0.01 &&
-       grepl("planning arrêté au", r$DETAIL) })
+     src <- sources_remuneration(db_planning = bind_rows(PLANNING, pl))
+     r <- projette_remuneration(dep, src,
+            mois_reference(POSTES, dep, "REMUNERATION", 6))
+     ref6 <- POSTES %>% filter(REMUNERATION > 1) %>% tail(6)
+     taux <- median(ref6$REMUNERATION /
+                    HEURES_MOIS[match(ref6$PERIODE, MOIS)])
+     abs(r$VALEUR - 300 * taux) < 0.01 &&
+       grepl("source arrêtée au", r$DETAIL) })
 
 #### Les mois de référence ####
 
@@ -203,16 +235,52 @@ mat <- projette_matieres(100000, mois_reference(POSTES, CIBLE, "MATIERES", 6))
 ok("les matières suivent le ratio médian au CA",
    abs(mat$VALEUR - 100000 * RATIO_MAT) < 0.01)
 
-rem <- projette_remuneration(CIBLE, HEURES,
-                             mois_reference(POSTES, CIBLE, "REMUNERATION", 6))
-ok("les rémunérations sont les heures planifiées au coût horaire médian",
-   abs(rem$VALEUR - HEURES_MOIS[match(CIBLE, MOIS)] * TAUX_HORAIRE) < 0.01)
-ok("et la méthode le dit", rem$METHODE == "Heures planifiées")
-ok("sans planning, on reconduit la médiane et on change de méthode",
-   { r <- projette_remuneration(CIBLE, NULL,
-            mois_reference(POSTES, CIBLE, "REMUNERATION", 6))
+ref_rem <- mois_reference(POSTES, CIBLE, "REMUNERATION", 6)
+attendu <- HEURES_MOIS[match(CIBLE, MOIS)] * TAUX_HORAIRE
+
+# Les trois sources doivent tomber sur le MÊME montant : chacune est recalée
+# sur elle-même, et c'est tout l'intérêt du recalage. Ce qui les sépare, c'est
+# la confiance qu'on leur fait, pas le résultat sur un fixture régulier.
+rem <- projette_remuneration(CIBLE, SRC_PLAN, ref_rem)
+ok("à défaut de mieux, les heures planifiées au coût horaire médian",
+   abs(rem$VALEUR - attendu) < 0.01 && rem$METHODE == "Heures planifiées")
+
+# LE point : sur un mois CLOS, on prend ce qui a été MESURÉ. Le planning est
+# une prévision ; lui préférer le pointage, c'est préférer ce qui s'est passé
+# à ce qu'on avait prévu.
+rem_tout <- projette_remuneration(CIBLE, SRC_TOUT, ref_rem)
+ok("mais la paie passe devant tout le reste",
+   rem_tout$METHODE == "Coût de la paie" &&
+     abs(rem_tout$VALEUR - attendu) < 0.01)
+ok("et elle dit son rapport de recalage",
+   grepl("rapport médian compta/paie", rem_tout$DETAIL))
+
+rem_point <- projette_remuneration(CIBLE, SRC_TOUT["horeko"], ref_rem)
+ok("sans paie, le pointage passe devant le planning",
+   rem_point$METHODE == "Heures pointées" &&
+     abs(rem_point$VALEUR - attendu) < 0.01)
+ok("et son coût horaire est celui des heures POINTÉES, pas des planifiées",
+   grepl(euro_compta(TAUX_HORAIRE / PART_POINTEE), rem_point$DETAIL,
+         fixed = TRUE))
+
+# Un mois qui n'est pas fini : paie et pointage y sont forcément partiels.
+# Les appliquer donnerait une rémunération amputée des jours restants.
+en_cours <- floor_date(today(), "month")
+src_en_cours <- list(
+  paie     = tibble(PERIODE = c(MOIS, en_cours), VALEUR = 1,
+                    DERNIER = fin_periode(c(MOIS, en_cours), "mois"),
+                    FIN = fin_periode(c(MOIS, en_cours), "mois")),
+  horeko   = NULL, planning = NULL)
+ok("sur un mois en cours, une source partielle est écartée",
+   { r <- projette_remuneration(en_cours, src_en_cours,
+            mois_reference(POSTES, en_cours, "REMUNERATION", 6))
      r$METHODE == "Médiane des mois précédents" &&
-     grepl("pas d'heures planifiées", r$DETAIL) })
+       grepl("le mois n'est pas fini", r$DETAIL) })
+
+ok("sans aucune source, on reconduit la médiane et on change de méthode",
+   { r <- projette_remuneration(CIBLE, NULL, ref_rem)
+     r$METHODE == "Médiane des mois précédents" &&
+     grepl("aucune source", r$DETAIL) })
 
 gen <- projette_generaux(mois_reference(POSTES, CIBLE, "GENERAUX", 6))
 ok("les frais généraux sont la médiane des mois de référence",
@@ -221,7 +289,7 @@ ok("les frais généraux sont la médiane des mois de référence",
 #### L'orchestration ####
 
 proj <- projette_mois(POSTES, CIBLE, c("remuneration", "generaux"),
-                      VENTES, HEURES, 6, a_projeter = TROUES)
+                      VENTES, SRC_PLAN, 6, a_projeter = TROUES)
 ok("une ligne par poste demandé", nrow(proj) == 2)
 ok("le réel du mois troué est bien zéro", all(proj$REEL == 0))
 ok("et le retenu, lui, ne l'est pas", all(proj$RETENU > 0))
@@ -229,10 +297,10 @@ ok("et le retenu, lui, ne l'est pas", all(proj$RETENU > 0))
 # L'ordre de PROJ_POSTES n'est pas décoratif : les matières se calculent sur
 # le CA RETENU. Projeter les deux doit donner les matières du CA projeté, et
 # surtout pas celles d'un CA à zéro.
-sans_ca <- projette_mois(POSTES, max(MOIS), c("matieres"), VENTES, HEURES, 6,
+sans_ca <- projette_mois(POSTES, max(MOIS), c("matieres"), VENTES, SRC_PLAN, 6,
                          a_projeter = TROUES)
 avec_ca <- projette_mois(POSTES, max(MOIS), c("ca", "matieres"), VENTES,
-                         HEURES, 6, a_projeter = TROUES)
+                         SRC_PLAN, 6, a_projeter = TROUES)
 ok("les matières se calculent sur le CA retenu, projeté compris",
    { r <- avec_ca$RETENU[avec_ca$CLE == "ca"]
      abs(avec_ca$RETENU[avec_ca$CLE == "matieres"] - r * RATIO_MAT) < 0.01 })
@@ -240,19 +308,19 @@ ok("et sur le CA réel quand celui-ci n'est pas projeté",
    abs(sans_ca$RETENU[1] -
        POSTES$CA[POSTES$PERIODE == max(MOIS)] * RATIO_MAT) < 0.01)
 
-aj <- projette_mois(POSTES, CIBLE, c("generaux"), VENTES, HEURES, 6,
+aj <- projette_mois(POSTES, CIBLE, c("generaux"), VENTES, SRC_PLAN, 6,
                     a_projeter = TROUES, ajustements = list(generaux = 10))
 ok("l'hypothèse s'applique APRÈS le modèle, et les deux restent lisibles",
    { abs(aj$MODELE - GENERAUX) < 0.01 &&
      abs(aj$RETENU - GENERAUX * 1.1) < 0.01 && aj$AJUST == 10 })
 
 multi <- projette_mois_multiples(POSTES, TROUES, c("remuneration"),
-                                 VENTES, HEURES, 6)
+                                 VENTES, SRC_PLAN, 6)
 ok("plusieurs mois se projettent d'un coup", nrow(multi) == 3)
 # Le point : juillet ne sert pas de référence à août. Sinon le modèle se
 # nourrirait de lui-même, et l'erreur du premier mois se propagerait.
 ok("et aucun ne sert de référence aux autres",
-   { h <- HEURES$HEURES[match(TROUES, HEURES$PERIODE)]
+   { h <- HEURES_MOIS[match(TROUES, MOIS)]
      all(abs(multi$RETENU - h * TAUX_HORAIRE) < 0.01) })
 
 #### Le compte d'exploitation projeté ####
@@ -286,7 +354,7 @@ p_neuf <- applique_projection(
                         ventes_par_mois(KPI %>%
                           bind_rows(tibble(DATE = seq(neuf, neuf + 29, by = "day"),
                                            CA_HTVA = 2000))),
-                        HEURES, 6))
+                        SRC_PLAN, 6))
 ok("un mois absent de la comptabilité est créé pour être projeté",
    neuf %in% p_neuf$PERIODE && isTRUE(p_neuf$PROJETE[p_neuf$PERIODE == neuf]))
 ok("et son CA projeté vient bien de la caisse",
@@ -309,7 +377,7 @@ ok("un poste absent de tout l'historique n'est pas réputé manquant",
 
 #### Le contrôle du modèle ####
 
-ctrl <- controle_modele(POSTES, c("matieres", "generaux"), VENTES, HEURES,
+ctrl <- controle_modele(POSTES, c("matieres", "generaux"), VENTES, SRC_PLAN,
                         n_ref = 6, n_mois = 5)
 ok("le contrôle rejoue le modèle sur des mois connus", nrow(ctrl) > 0)
 ok("il ne juge que des mois où le poste est réellement là",

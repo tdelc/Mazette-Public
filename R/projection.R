@@ -27,8 +27,9 @@
 #
 #        CA             les ventes de caisse du mois (DB_KPI_SIMPLE)
 #        Matières       le ratio médian matières / CA des mois de référence
-#        Rémunérations  les heures planifiées (DB_HEURES_PLANNING) x le coût
-#                       horaire médian des mois de référence
+#        Rémunérations  ce qui a été MESURÉ ce mois-là — la paie, à défaut les
+#                       heures pointées, à défaut les heures planifiées —
+#                       recalé sur la comptabilité (cf. PROJ_SOURCES_REMU)
 #        Frais généraux la médiane des mois de référence
 #
 #      Les autres postes — autres produits, amortissements, financier — sont
@@ -57,6 +58,11 @@ PROJ_POSTES <- tibble::tribble(
   "matieres",     "MATIERES",     "Matières premières", "le ratio au CA",
   "remuneration", "REMUNERATION", "Rémunérations",      "les heures planifiées",
   "generaux",     "GENERAUX",     "Frais généraux",     "les mois précédents")
+
+# Combien de mois la trajectoire montre. Partagé par le graphe, le tableau de
+# résultat et le sélecteur de la cascade : les trois doivent parler des mêmes
+# mois, sinon on choisit dans la liste un mois qui n'est pas sur la courbe.
+PROJ_MOIS_GRAPHE <- 14
 
 # Nombre de mois de référence par défaut. Six : assez pour qu'une médiane ait
 # un sens, assez peu pour rester dans la saison en cours.
@@ -150,6 +156,22 @@ ventes_par_mois <- function(db_kpi, colonne = "CA_HTVA",
     arrange(PERIODE)
 }
 
+# Jusqu'où une source couvre chaque mois.
+#
+# Une source au grain JOUR peut s'arrêter en cours de mois — le calendrier de
+# shifts ne garde que l'avenir proche, le pointage s'arrête à la date
+# d'import. Un mois à moitié couvert donnerait une estimation amputée de
+# moitié, et rien ne le dirait.
+couverture_mois <- function(dates) {
+  d <- as.Date(dates)
+  d <- d[!is.na(d)]
+  if (!length(d)) return(NULL)
+  tibble(PERIODE = floor_date(d, "month"), DATE = d) %>%
+    group_by(PERIODE) %>%
+    summarise(DERNIER = max(DATE), .groups = "drop") %>%
+    mutate(FIN = fin_periode(PERIODE, "mois"))
+}
+
 # Heures planifiées par mois, tous services confondus.
 #
 # Tous services, et non les seules heures « variables » du volet Planning : en
@@ -167,16 +189,87 @@ ventes_par_mois <- function(db_kpi, colonne = "CA_HTVA",
 # estimation basse qu'on voit.
 heures_par_mois <- function(db_planning) {
   if (!planning_valide(db_planning)) return(NULL)
-  db_planning %>%
+  d <- db_planning %>%
     transmute(DATE = as.Date(DATE),
               PERIODE = floor_date(as.Date(DATE), "month"), HEURES) %>%
-    filter(!is.na(PERIODE)) %>%
+    filter(!is.na(PERIODE))
+  if (!nrow(d)) return(NULL)
+  d %>%
     group_by(PERIODE) %>%
-    summarise(HEURES = sum(HEURES, na.rm = TRUE),
-              DERNIER = max(DATE), .groups = "drop") %>%
+    summarise(HEURES = sum(HEURES, na.rm = TRUE), .groups = "drop") %>%
     filter(HEURES > 0) %>%
-    mutate(FIN = fin_periode(PERIODE, "mois")) %>%
+    left_join(couverture_mois(d$DATE), by = "PERIODE") %>%
     arrange(PERIODE)
+}
+
+#### Les sources de la rémunération, de la meilleure à la dernière ####
+
+# On ne modélise les rémunérations que si quelque chose les a MESURÉES. Trois
+# sources le font, et elles ne se valent pas :
+#
+#   la PAIE (DB_ONSS) mesure le coût employeur du mois, c'est-à-dire presque
+#   exactement ce qu'on cherche. Il ne manque que ce que la comptabilité y
+#   ajoute — provisions, pécules — et c'est un rapport stable, donc modélisable ;
+#
+#   le POINTAGE (DB_COUTS_TRAVAIL) mesure les heures réellement faites. Il
+#   ignore les charges patronales et le personnel non pointé, mais un coût
+#   horaire médian les rattrape ;
+#
+#   le PLANNING (DB_HEURES_PLANNING) annonce les heures qu'on s'apprête à
+#   poser. C'est une prévision, pas une mesure — mais c'est la seule source
+#   qui existe pour un mois qui n'est pas fini.
+#
+# D'où la règle de choix : sur un mois CLOS, on descend la liste et les
+# sources qui MESURENT répondent les premières — préférer le planning à un
+# pointage, ce serait préférer ce qu'on avait prévu à ce qui s'est passé. Le
+# planning ne répond alors que si aucune des deux n'est là. Sur un mois EN
+# COURS, les mesures sont forcément partielles (le pointage s'arrête hier) :
+# elles sont écartées, et le planning, qui couvre le mois entier, reste seul.
+#
+# Le recalage est propre à chaque source : le rapport médian se calcule
+# toujours entre LA MÊME source et le compte 62 des mois de référence. Un
+# coût horaire calculé sur des heures pointées ne s'applique pas à des heures
+# planifiées, qui n'en sont pas le même compte.
+PROJ_SOURCES_REMU <- tibble::tribble(
+  ~CLE,       ~LIBELLE,            ~UNITE, ~QUOI,                ~MOIS_EN_COURS,
+  "paie",     "Coût de la paie",   "euro", "de coût employeur",  FALSE,
+  "horeko",   "Heures pointées",   "heure", "h pointées",        FALSE,
+  "planning", "Heures planifiées", "heure", "h planifiées",      TRUE)
+
+#' Les trois sources, mises à la même forme : PERIODE, VALEUR, et la
+#' couverture du mois.
+#'
+#' sources_mensuelles() (R/sources_travail.R) fait déjà le gros du travail
+#' pour la paie et le pointage — leurs colonnes changent de nom d'un import à
+#' l'autre, et cette fonction-là connaît le piège. En refaire une ici en
+#' aurait fait deux à maintenir.
+sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
+                                 db_planning = NULL) {
+  src <- list(paie = NULL, horeko = NULL, planning = NULL)
+
+  utilisable <- !is.null(db_couts) && is.data.frame(db_couts) &&
+    nrow(db_couts) > 0 && "DATE" %in% names(db_couts) &&
+    any(c("HEURES", "HEURES_HOREKO") %in% names(db_couts))
+  if (utilisable) {
+    m <- sources_mensuelles(db_couts, db_onss)
+    cv <- couverture_mois(db_couts$DATE)
+    if (!is.null(m)) {
+      h <- m %>% filter(SOURCE == "horeko", !is.na(HEURES), HEURES > 0) %>%
+        transmute(PERIODE, VALEUR = HEURES)
+      if (nrow(h)) src$horeko <- h %>% left_join(cv, by = "PERIODE")
+      # La paie est mensuelle : présente, elle couvre son mois entier.
+      p <- m %>% filter(SOURCE == "paie", !is.na(COUT), COUT > 0) %>%
+        transmute(PERIODE, VALEUR = COUT)
+      if (nrow(p)) src$paie <- p %>%
+        mutate(DERNIER = fin_periode(PERIODE, "mois"),
+               FIN = fin_periode(PERIODE, "mois"))
+    }
+  }
+
+  pl <- heures_par_mois(db_planning)
+  if (!is.null(pl) && nrow(pl))
+    src$planning <- pl %>% transmute(PERIODE, VALEUR = HEURES, DERNIER, FIN)
+  src
 }
 
 #### Les mois de référence ####
@@ -286,51 +379,71 @@ projette_matieres <- function(ca, ref) {
     nrow(r))
 }
 
-#' Rémunérations : les heures planifiées x le coût horaire médian.
+#' Rémunérations : ce qui a été mesuré ce mois-là, recalé sur le compte 62.
 #'
-#' Le planning est une PRÉVISION d'heures, pas un pointage : il dérive
-#' toujours un peu du réalisé. On ne corrige pas cette dérive, on la calibre —
-#' le coût horaire est calculé sur les mêmes heures planifiées des mois de
-#' référence, face au compte 62 réel de ces mois. Le biais planning/réalisé
-#' entre donc dans le taux et s'annule.
+#' On descend PROJ_SOURCES_REMU jusqu'à ce qu'une source réponde. Pour chacune,
+#' le recalage se fait entre elle-même et le compte 62 des mois de référence :
+#' un coût horaire calculé sur des heures pointées ne s'applique pas à des
+#' heures planifiées, qui ne comptent pas la même chose.
 #'
-#' Sans planning exploitable, repli sur la médiane des montants. C'est moins
-#' bon et l'écran le dit : la méthode affichée change.
-projette_remuneration <- function(cible, heures, ref) {
+#' Sur un mois en cours, les sources qui MESURENT sont forcément partielles —
+#' le pointage s'arrête hier. Elles sont donc écartées, et c'est le planning,
+#' puis la médiane, qui répondent.
+#'
+#' Dernier recours : la médiane des montants. L'écran le dit, la méthode
+#' affichée change.
+projette_remuneration <- function(cible, sources, ref, aujourd_hui = today()) {
   cible <- as.Date(cible)
-  ligne <- if (is.null(heures)) NULL else heures[heures$PERIODE == cible, ]
-  h <- if (is.null(ligne) || !nrow(ligne)) numeric(0) else ligne$HEURES[1]
-  # Le taux se calcule sur les heures PLANIFIÉES des mois de référence, face
-  # à leur compte 62 réel : le biais planning/réalisé entre dans le taux et
-  # s'annule. Ces mois-là sont complets, leur facteur vaut 1.
-  cal <- if (is.null(heures)) NULL else
-    ref %>% inner_join(heures, by = "PERIODE") %>%
-      filter(HEURES > 0, REMUNERATION > PROJ_SEUIL_PRESENT)
+  clos  <- fin_periode(cible, "mois") < as.Date(aujourd_hui)
+  if (is.null(sources) || !is.list(sources)) sources <- list()
+  raisons <- character()
 
-  if (length(h) && !is.na(h) && h > 0 &&
-      !is.null(cal) && nrow(cal) >= PROJ_MIN_REF) {
-    taux <- median(cal$REMUNERATION / cal$HEURES)
-    # Un mois en cours dont le planning s'arrête avant la fin : on le dit,
-    # l'estimation est alors basse de ce qui manque.
-    tronque <- !is.null(ligne$DERNIER) && !is.null(ligne$FIN) &&
-      ligne$DERNIER[1] < ligne$FIN[1] && ligne$FIN[1] >= today()
-    return(proj_valeur(h * taux, "Heures planifiées",
-      paste0(round(h), " h planifiées x ", proj_taux(taux),
-             " (coût horaire médian sur ", nrow(cal), " mois)",
-             if (tronque) paste0(" — planning arrêté au ",
-                                 format(ligne$DERNIER[1], "%d/%m")) else ""),
+  for (i in seq_len(nrow(PROJ_SOURCES_REMU))) {
+    s   <- PROJ_SOURCES_REMU[i, ]
+    tbl <- sources[[s$CLE]]
+    if (is.null(tbl) || !nrow(tbl)) next
+    if (!clos && !s$MOIS_EN_COURS) {
+      raisons <- c(raisons, paste0(tolower(s$LIBELLE),
+                                   " : le mois n'est pas fini"))
+      next
+    }
+    ligne <- tbl[tbl$PERIODE == cible, ]
+    if (!nrow(ligne) || is.na(ligne$VALEUR[1]) || ligne$VALEUR[1] <= 0) next
+    v <- ligne$VALEUR[1]
+
+    cal <- ref %>% inner_join(tbl, by = "PERIODE") %>%
+      filter(VALEUR > 0, REMUNERATION > PROJ_SEUIL_PRESENT)
+    if (nrow(cal) < PROJ_MIN_REF) {
+      raisons <- c(raisons, paste0(tolower(s$LIBELLE), " : ", nrow(cal),
+                                   " mois de référence seulement"))
+      next
+    }
+    r <- median(cal$REMUNERATION / cal$VALEUR)
+
+    # Une source au grain jour qui s'arrête avant la fin du mois : on le dit.
+    # L'estimation est alors basse de ce qui manque — et la redresser au
+    # prorata supposerait que les jours absents ressemblent aux autres.
+    tronque <- !is.null(ligne$DERNIER) && !is.na(ligne$DERNIER[1]) &&
+      ligne$DERNIER[1] < ligne$FIN[1]
+    base <- if (s$UNITE == "euro")
+      paste0(euro_exact(v), " ", s$QUOI, " x ", proj_facteur(r),
+             " (rapport médian compta/paie sur ", nrow(cal), " mois)")
+    else
+      paste0(round(v), " ", s$QUOI, " x ", proj_taux(r),
+             " (coût horaire médian sur ", nrow(cal), " mois)")
+    return(proj_valeur(v * r, s$LIBELLE,
+      paste0(base, if (tronque) paste0(" — source arrêtée au ",
+                                       format(ligne$DERNIER[1], "%d/%m")) else ""),
       nrow(cal)))
   }
 
   if (!nrow(ref))
     return(proj_valeur(NA_real_, "Médiane des mois précédents",
                        "Aucun mois de référence avec des rémunérations."))
-  pourquoi <- if (is.null(heures)) "pas d'heures planifiées importées"
-              else if (!length(h) || is.na(h) || h <= 0)
-                "aucune heure planifiée sur ce mois"
-              else paste("moins de", PROJ_MIN_REF, "mois planifiés en face")
+  if (!length(raisons)) raisons <- "aucune source d'heures ou de paie"
   proj_valeur(median(ref$REMUNERATION), "Médiane des mois précédents",
-    paste0("Médiane de ", nrow(ref), " mois (", pourquoi, ")"), nrow(ref))
+    paste0("Médiane de ", nrow(ref), " mois (", paste(raisons, collapse = " ; "),
+           ")"), nrow(ref))
 }
 
 #' Frais généraux : la médiane des mois de référence.
@@ -355,11 +468,11 @@ projette_generaux <- function(ref) {
 #' @param cible premier jour du mois à projeter.
 #' @param cles les postes à projeter (clés de PROJ_POSTES).
 #' @param ventes sortie de ventes_par_mois(), ou NULL.
-#' @param heures sortie de heures_par_mois(), ou NULL.
+#' @param sources sortie de sources_remuneration(), ou NULL.
 #' @param ajustements vecteur nommé par clé, en % : l'hypothèse de
 #'   l'utilisateur, appliquée APRÈS le modèle. Le tableau montre les deux.
 #' @return une ligne par poste projeté.
-projette_mois <- function(postes, cible, cles, ventes = NULL, heures = NULL,
+projette_mois <- function(postes, cible, cles, ventes = NULL, sources = NULL,
                           n_ref = PROJ_DEFAUT_REF, exclus = NULL,
                           a_projeter = NULL, ajustements = NULL) {
   vide <- tibble(PERIODE = as.Date(character()), CLE = character(),
@@ -390,7 +503,7 @@ projette_mois <- function(postes, cible, cles, ventes = NULL, heures = NULL,
     r <- switch(cle,
       ca           = projette_ca(cible, ventes, ref),
       matieres     = projette_matieres(ca_retenu, ref),
-      remuneration = projette_remuneration(cible, heures, ref),
+      remuneration = projette_remuneration(cible, sources, ref),
       generaux     = projette_generaux(ref))
 
     a <- aj(cle)
@@ -413,12 +526,12 @@ projette_mois <- function(postes, cible, cles, ventes = NULL, heures = NULL,
 #' référence à août, et le modèle se nourrirait de lui-même — trois mois plus
 #' loin, plus personne ne saurait sur quoi repose le chiffre.
 projette_mois_multiples <- function(postes, mois, cles, ventes = NULL,
-                                    heures = NULL, n_ref = PROJ_DEFAUT_REF,
+                                    sources = NULL, n_ref = PROJ_DEFAUT_REF,
                                     exclus = NULL, ajustements = NULL) {
   mois <- sort(as.Date(mois))
   if (!length(mois)) return(projette_mois(postes, Sys.Date(), character()))
   bind_rows(lapply(mois, function(m)
-    projette_mois(postes, m, cles, ventes, heures, n_ref, exclus,
+    projette_mois(postes, m, cles, ventes, sources, n_ref, exclus,
                   a_projeter = mois, ajustements = ajustements)))
 }
 
@@ -517,7 +630,7 @@ postes_manquants <- function(postes, depuis = NULL) {
 #' inconnu — ses propres références s'arrêtant avant lui — et on confronte au
 #' réel. L'écart médian qui en sort est la seule chose qui permette de dire si
 #' un chiffre projeté vaut 5 % près ou 30 %.
-controle_modele <- function(postes, cles, ventes = NULL, heures = NULL,
+controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
                             n_ref = PROJ_DEFAUT_REF, exclus = NULL,
                             n_mois = 6) {
   vide <- tibble(PERIODE = as.Date(character()), CLE = character(),
@@ -537,7 +650,7 @@ controle_modele <- function(postes, cles, ventes = NULL, heures = NULL,
   candidats <- candidats[-1]
 
   res <- lapply(candidats, function(m) {
-    p <- projette_mois(postes, m, cles, ventes, heures, n_ref, exclus,
+    p <- projette_mois(postes, m, cles, ventes, sources, n_ref, exclus,
                        a_projeter = m)
     # On ne juge que les postes RÉELLEMENT présents ce mois-là : comparer un
     # modèle à un zéro manquant mesurerait le trou, pas le modèle.
@@ -639,7 +752,7 @@ table_projection_detail <- function(proj) {
 }
 
 #' Le compte d'exploitation mois par mois, projection comprise.
-table_projection_resultat <- function(p, proj, n = 14) {
+table_projection_resultat <- function(p, proj, n = PROJ_MOIS_GRAPHE) {
   if (is.null(p) || !nrow(p)) return(tibble(Résultat = "Aucune comptabilité."))
   d <- p %>% arrange(desc(PERIODE)) %>% head(n)
   cell <- function(col) proj_marque_cellule(d[[col]], d$PERIODE, col, proj)
@@ -667,7 +780,7 @@ table_projection_resultat <- function(p, proj, n = 14) {
 #' Hachures et non seconde couleur : la couleur dit déjà le signe de la marge,
 #' et lui faire dire deux choses à la fois la rend muette. La texture est le
 #' seul canal libre.
-graph_projection <- function(p, n = 14) {
+graph_projection <- function(p, n = PROJ_MOIS_GRAPHE, source = "proj_traj") {
   if (is.null(p) || !nrow(p))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Aucune comptabilité")))
@@ -680,7 +793,7 @@ graph_projection <- function(p, n = 14) {
   reels <- d %>% filter(!PROJETE)
   repere <- if (nrow(reels) >= 3) median(reels$MARGE_AA) else NA_real_
 
-  g <- plot_ly() %>%
+  g <- plot_ly(source = source) %>%
     add_trace(
       x = axe, y = d$MARGE_AA,
       type = "bar", name = "Marge avant amort.",
@@ -702,6 +815,10 @@ graph_projection <- function(p, n = 14) {
       line = list(color = COUL_NEUTRE, width = 1.5, dash = "dot"),
       hovertemplate = paste0("Médiane des mois réels : ",
                              euro_exact(repere), "<extra></extra>"))
+
+  # event_register : sans lui, plotly n'envoie pas l'événement à Shiny et le
+  # clic sur une barre ne change rien — en silence, comme toujours.
+  g <- event_register(g, "plotly_click")
 
   g %>% layout(
     xaxis = list(title = "", type = "category",
@@ -767,15 +884,14 @@ resume_fiabilite <- function(fiab) {
 }
 
 #' Ce qui empêche le modèle de bien travailler, s'il y a lieu.
-bandeau_projection <- function(proj, heures_dispo) {
+bandeau_projection <- function(proj, source_mesuree = TRUE) {
   if (is.null(proj) || !nrow(proj)) return(NULL)
   maigres <- proj %>% filter(!is.na(RETENU), N_REF > 0, N_REF < PROJ_MIN_REF)
   sans <- proj %>% filter(is.na(RETENU))
   msg <- c(
-    if (!heures_dispo && "remuneration" %in% proj$CLE)
-      paste0("Les heures planifiées ne sont pas importées : les rémunérations",
-             " sont reconduites à la médiane, ce qui ignore l'activité du",
-             " mois."),
+    if (!source_mesuree && "remuneration" %in% proj$CLE)
+      paste0("Ni paie, ni pointage, ni planning : les rémunérations sont",
+             " reconduites à la médiane, ce qui ignore l'activité du mois."),
     if (nrow(maigres))
       paste0(nrow(maigres), " projection", if (nrow(maigres) > 1) "s" else "",
              " repose", if (nrow(maigres) > 1) "nt" else "",
