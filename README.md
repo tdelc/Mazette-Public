@@ -33,7 +33,7 @@ source entre sans bloquer l'import de tout le reste.
 | **Historique** / **Année** | la série longue, et l'année face à son objectif |
 | **Boissons** / **Nourriture** | la consommation par catégorie, les fûts, les focaccias |
 | **Simulation** | l'effet d'une variation de prix |
-| **Compta** | six sous-onglets, dans l'ordre des questions — voir ci-dessous |
+| **Compta** | sept sous-onglets, dans l'ordre des questions — voir ci-dessous |
 | **Travail** | heures posées, productivité, et les trois sources de coût |
 | **Planning** | les heures à venir, face aux heures habituelles et à l'objectif |
 | **Réservations** / **Comparaison** | salle et terrasse ; comparaison libre de périodes |
@@ -42,6 +42,9 @@ Le volet **Compta** suit son propre fil : *Contrôle* (puis-je me fier à ces
 chiffres), *Exploitation* (combien), *Écarts* (pourquoi ça a bougé),
 *Évolution* (où ça va), *Comptabilité générale* (le compte de résultat),
 *Écritures* (d'où ça sort). Une alerte du premier mène d'un clic au dernier.
+En dernier, *Projection* complète les mois dont la comptabilité n'est pas
+encore entière — le seul écran du dashboard qui affiche des chiffres qui
+n'existent pas, et rien de ce qu'il calcule n'en sort.
 
 ## Lancer
 

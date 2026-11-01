@@ -36,6 +36,7 @@ piège qu'il a coûté. C'est là qu'il faut lire avant de modifier.
 | `ecritures.R` | le grand livre, ses filtres, et le forage depuis une alerte |
 | `odoo.R` | des écritures Odoo brutes à `DB_COMPTA`, et la couture avec l'ancienne source |
 | `odoo_api.R` | la même lecture, par l'API plutôt que par un fichier |
+| `projection.R` | compléter un mois incomplet : les quatre estimateurs, et le contrôle du modèle |
 | `couts.R` | coûts matière : table canonique et normalisation des sources |
 | `sources_travail.R` | les trois sources d'heures et de coût du travail, et leur réconciliation |
 

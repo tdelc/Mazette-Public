@@ -46,6 +46,8 @@ seconde, partout, sans installer la moitié du CRAN.
 | `test_exploitation_srv.R` | la chaîne réactive, sur le **vrai** bloc de `server.R` |
 | `test_analyse.R` | le pont de marge, le rabotage, les alertes d'intégrité |
 | `test_ecritures.R` | le grand livre, ses filtres, le forage |
+| `test_projection.R` | les estimateurs, les mois de référence, le mois en cours |
+| `test_projection_srv.R` | le câblage du volet, sur le **vrai** bloc de `server.R` |
 | `test_odoo.R` / `test_odoo_api.R` | la lecture des écritures, par fichier et par API |
 | `test_import_odoo.R` | le branchement dans `import.R`, sur le vrai bloc |
 | `test_details.R`, `test_planning.R`, `test_sources_travail.R` | les volets |

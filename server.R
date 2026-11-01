@@ -1470,6 +1470,166 @@ server <- function(input, output, session) {
       write.csv2(ecr_filtre(), file, row.names = FALSE, fileEncoding = "UTF-8")
     })
 
+  #### Volet "Compta / Gestion" — Projection ####
+
+  # Tout part de la compta BRUTE, et non de la compta retenue : les mois
+  # écartés sont précisément ceux qu'on vient combler ici. L'écartement garde
+  # un rôle, mais un seul — un mois écarté ne sert jamais de RÉFÉRENCE, parce
+  # qu'un doute qui entre dans une médiane ne se voit plus.
+  proj_reels <- reactive({ postes_exploitation(compta_brute()) })
+
+  # Les deux sources extérieures à la comptabilité. DB_HEURES_PLANNING est
+  # optionnelle (cf. TABLES_OPTIONNELLES) : son absence fait changer la
+  # méthode des rémunérations, elle n'empêche pas l'écran.
+  proj_ventes <- reactive({
+    if (!exists("DB_KPI_SIMPLE")) NULL else ventes_par_mois(DB_KPI_SIMPLE)
+  })
+  proj_heures <- reactive({
+    if (!exists("DB_HEURES_PLANNING")) NULL else
+      heures_par_mois(DB_HEURES_PLANNING)
+  })
+
+  # La proposition de départ : les mois de l'année écoulée auxquels il manque
+  # un poste, et les postes qui y manquent. C'est une PROPOSITION — l'écran
+  # s'ouvre dessus, l'utilisateur en fait ce qu'il veut.
+  proj_defauts <- reactive({
+    p <- proj_reels()
+    manque <- postes_manquants(p, floor_date(today(), "month") %m-% months(11))
+    en_cours <- floor_date(today(), "month")
+    mois <- sort(unique(manque$PERIODE), decreasing = TRUE)
+    # Le mois en cours n'a parfois AUCUNE écriture : il n'apparaît alors pas
+    # dans les postes, donc pas dans les manquants, alors que c'est le
+    # premier qu'on veuille projeter.
+    if (!en_cours %in% p$PERIODE) mois <- unique(c(en_cours, mois))
+    cles <- unique(manque$CLE)
+    if (!length(cles)) cles <- PROJ_POSTES$CLE
+    list(mois = mois, cles = cles)
+  })
+
+  proj_applique_defauts <- function() {
+    p <- proj_reels()
+    d <- proj_defauts()
+    mois <- sort(unique(c(p$PERIODE, floor_date(today(), "month"))),
+                 decreasing = TRUE)
+    mois <- head(mois, 24)
+    updateSelectizeInput(
+      session, "proj_mois",
+      choices  = setNames(as.character(mois), etiquette_periode(mois, "mois")),
+      selected = as.character(d$mois))
+    updateCheckboxGroupInput(
+      session, "proj_postes",
+      choices  = setNames(PROJ_POSTES$CLE, PROJ_POSTES$LIBELLE),
+      selected = d$cles)
+  }
+
+  observe({
+    req(ONGLETS_PRETS(), exists("DB_COMPTA"))
+    req(nrow(proj_reels()) > 0)
+    proj_applique_defauts()
+  })
+  observeEvent(input$proj_detecte, { proj_applique_defauts() })
+
+  proj_mois_sel <- reactive({
+    m <- input$proj_mois
+    if (is.null(m) || !length(m)) as.Date(character()) else as.Date(m)
+  })
+
+  proj_nref <- reactive({
+    n <- suppressWarnings(as.integer(input$proj_nref))
+    if (length(n) != 1 || is.na(n)) PROJ_DEFAUT_REF else n
+  })
+
+  # Les hypothèses de l'utilisateur, en pourcentage. Elles s'appliquent APRÈS
+  # le modèle, et le tableau montre les deux valeurs : sans cela, un curseur
+  # oublié à +10 % devient un chiffre qu'on prend pour un calcul.
+  proj_ajust <- reactive({
+    list(ca           = input$proj_aj_ca,
+         matieres     = input$proj_aj_matieres,
+         remuneration = input$proj_aj_remuneration,
+         generaux     = input$proj_aj_generaux)
+  })
+
+  projection <- reactive({
+    req(exists("DB_COMPTA"))
+    projette_mois_multiples(proj_reels(), proj_mois_sel(), input$proj_postes,
+                            proj_ventes(), proj_heures(), proj_nref(),
+                            compta_exclus(), proj_ajust())
+  })
+
+  # Le compte d'exploitation tel qu'il serait. Il ne quitte pas cet onglet :
+  # aucun autre rendu du dashboard ne le lit.
+  proj_compte <- reactive({ applique_projection(proj_reels(), projection()) })
+
+  proj_ctrl <- reactive({
+    req(exists("DB_COMPTA"))
+    controle_modele(proj_reels(), input$proj_postes, proj_ventes(),
+                    proj_heures(), proj_nref(), compta_exclus())
+  })
+
+  output$proj_bandeau <- renderUI({
+    if (!exists("DB_COMPTA")) return(NULL)
+    bandeau_projection(projection(), !is.null(proj_heures()))
+  })
+
+  output$proj_kpi <- renderUI({
+    kpi_projection(proj_compte(), proj_mois_sel(), projection())
+  })
+
+  output$proj_graph <- renderPlotly({ graph_projection(proj_compte()) })
+
+  output$proj_titre_cascade <- renderText({
+    m <- proj_mois_sel()
+    if (!length(m)) "Le mois projeté"
+    else paste0(etiquette_periode(max(m), "mois"), ", projection comprise")
+  })
+
+  # La cascade du volet Exploitation, telle quelle : c'est le même mois, lu de
+  # la même façon. En refaire une ici en aurait fait deux à maintenir.
+  output$proj_cascade <- renderPlotly({
+    m <- proj_mois_sel()
+    # length(m) seul ne suffit pas : req() tient 0 pour une valeur valable,
+    # et la cascade partait alors chercher max(numeric(0)).
+    req(length(m) > 0)
+    graph_cascade_exploitation(proj_compte() %>% filter(PERIODE == max(m)))
+  })
+
+  output$proj_detail <- renderDT({
+    tbl <- table_projection_detail(projection())
+    if (ncol(tbl) == 1) return(datatable_simple(tbl))
+    datatable(tbl, rownames = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(0, "desc")),
+                             columnDefs = defs_tri(tbl)))
+  })
+
+  output$proj_resultat <- renderDT({
+    tbl <- table_projection_resultat(proj_compte(), projection())
+    if (ncol(tbl) == 1) return(datatable_simple(tbl))
+    # escape = FALSE pour la pastille d'état. Tout le contenu est fabriqué
+    # ici : aucun libellé venu d'un export ne traverse sans échappement.
+    chiffres <- which(!names(tbl) %in% c("Mois", "État") &
+                      !startsWith(names(tbl), PREFIXE_TRI)) - 1L
+    datatable(tbl, rownames = FALSE, escape = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(0, "desc")),
+                             columnDefs = c(defs_tri(tbl),
+                               list(list(targets = as.list(chiffres),
+                                         className = "dt-right")))))
+  })
+
+  output$proj_fiabilite <- renderUI({
+    resume_fiabilite(fiabilite_modele(proj_ctrl()))
+  })
+
+  output$proj_controle <- renderDT({
+    tbl <- table_controle_modele(proj_ctrl())
+    if (ncol(tbl) == 1) return(datatable_simple(tbl))
+    datatable(tbl, rownames = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(0, "desc")),
+                             columnDefs = defs_tri(tbl)))
+  })
+
   #### Volet "Travail" — Sources ####
   # DB_ONSS est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
   # R/connect.R) : tout part donc de ce reactive, qui vaut NULL en son absence,

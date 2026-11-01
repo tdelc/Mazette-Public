@@ -587,6 +587,15 @@ ui_compta <- function() {
       icon = icon("receipt"),
       value = "ecritures",
       ui_compta_ecritures()
+    ),
+    # En dernier, et c'est voulu : les cinq onglets précédents lisent ce qui
+    # s'est passé, celui-ci dit ce qui manque encore. On ne projette pas
+    # avant d'avoir regardé.
+    nav_panel(
+      title = "Projection",
+      icon = icon("wand-magic-sparkles"),
+      value = "projection",
+      ui_compta_projection()
     )
   )
 }
@@ -692,6 +701,91 @@ ui_compta_ecritures <- function() {
   )
 }
 
+
+# Compléter un mois dont la comptabilité n'est pas encore entière.
+#
+# Le seul écran du volet qui affiche des chiffres QUI N'EXISTENT PAS. D'où la
+# discipline, tenue par R/projection.R : chaque montant modélisé porte sa
+# méthode et sa base, le signe « ≈ » le distingue partout d'un montant réel,
+# et rien de ce qui est calculé ici ne ressort de cet onglet.
+ui_compta_projection <- function() {
+  layout_sidebar(
+    sidebar = sidebar(
+      title = "Projeter", width = 330,
+      selectizeInput("proj_mois", "Mois à compléter", choices = NULL,
+                     multiple = TRUE,
+                     options = list(plugins = list("remove_button"),
+                                    placeholder = "Choisir un ou plusieurs mois")),
+      checkboxGroupInput("proj_postes", "Postes à modéliser",
+                         choices = setNames(PROJ_POSTES$CLE,
+                                            PROJ_POSTES$LIBELLE)),
+      actionLink("proj_detecte", "Revenir à ce qui manque", class = "small"),
+      hr(),
+      sliderInput("proj_nref", "Mois de référence", min = 3, max = 18,
+                  value = PROJ_DEFAUT_REF, step = 1, ticks = FALSE),
+      # Les hypothèses sont repliées : le modèle doit d'abord être lu tel
+      # qu'il est. On ne tord un chiffre qu'après l'avoir regardé.
+      accordion(
+        open = FALSE,
+        accordion_panel(
+          value = "proj_hyp", title = "Hypothèses", icon = icon("sliders"),
+          div(class = "small text-muted mb-2",
+              "Appliquées après le modèle, poste par poste."),
+          sliderInput("proj_aj_ca", "Chiffre d'affaires", -25, 25, 0,
+                      step = 1, post = " %", ticks = FALSE),
+          sliderInput("proj_aj_matieres", "Matières premières", -25, 25, 0,
+                      step = 1, post = " %", ticks = FALSE),
+          sliderInput("proj_aj_remuneration", "Rémunérations", -25, 25, 0,
+                      step = 1, post = " %", ticks = FALSE),
+          sliderInput("proj_aj_generaux", "Frais généraux", -25, 25, 0,
+                      step = 1, post = " %", ticks = FALSE)
+        )
+      ),
+      hr(),
+      div(class = "small text-muted",
+          "Rien de ce qui est calculé ici ne sort de cet onglet : les autres",
+          " écrans continuent de ne montrer que la comptabilité réelle.")
+    ),
+    uiOutput("proj_bandeau", class = "zone-alerte"),
+    uiOutput("proj_kpi"),
+    card(
+      full_screen = TRUE,
+      card_header("Trajectoire de la marge"),
+      plotlyOutput("proj_graph", height = "360px"),
+      div(class = "small text-muted mt-1",
+          "Les barres hachurées sont projetées.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header(textOutput("proj_titre_cascade", inline = TRUE)),
+      plotlyOutput("proj_cascade", height = "360px")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Le travail du modèle"),
+      DTOutput("proj_detail"),
+      div(class = "small text-muted mt-1",
+          tags$b("Réf"), " : le nombre de mois derrière la médiane.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Le compte d'exploitation, projection comprise"),
+      DTOutput("proj_resultat"),
+      div(class = "small text-muted mt-1",
+          "Le signe ≈ marque un montant modélisé.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Le modèle, éprouvé sur les mois connus"),
+      uiOutput("proj_fiabilite"),
+      DTOutput("proj_controle"),
+      div(class = "small text-muted mt-1",
+          "Chaque mois est rejoué comme s'il était inconnu, avec les seuls",
+          " mois qui le précèdent. L'écart est celui du modèle, pas celui",
+          " de la comptabilité.")
+    )
+  )
+}
 
 # Du chiffre d'affaires à la marge d'exploitation, mois par mois.
 # Tout provient de DB_COMPTA : pas de données simulées, donc un mois sans
