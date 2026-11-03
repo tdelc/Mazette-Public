@@ -19,20 +19,12 @@ source("R/helpers.R",  encoding = "UTF-8", local = TRUE)
 source("R/theme.R",    encoding = "UTF-8", local = TRUE)
 source("R/kpi.R",      encoding = "UTF-8", local = TRUE)
 source("R/travail.R",  encoding = "UTF-8", local = TRUE)   # jour_ferme
+source("R/date.R",     encoding = "UTF-8", local = TRUE)   # parse_date_souple
 source("R/planning.R", encoding = "UTF-8", local = TRUE)
 
 # ---------- 1. la date, d'ou qu'elle vienne ----------
-# Un aller-retour par Google Sheets rend les dates en texte, en POSIXct, ou en
-# numero de serie. On ne peut rien supposer de ce qui revient.
-ok("une date ISO", parse_date_souple("2026-09-17") == as.Date("2026-09-17"))
-ok("une date belge saisie a la main", parse_date_souple("17/09/2026") == as.Date("2026-09-17"))
-ok("une Date passe telle quelle", parse_date_souple(as.Date("2026-09-17")) == as.Date("2026-09-17"))
-ok("un POSIXct aussi", parse_date_souple(as.POSIXct("2026-09-17 14:00", tz="UTC")) == as.Date("2026-09-17"))
-# Le numero de serie : origine 1899-12-30, et surtout pas 1900-01-01.
-ok("un numero de serie Sheets", parse_date_souple(46282) == as.Date("2026-09-17"))
-ok("un format inconnu rend NA, et la ligne sera ecartee",
-   is.na(parse_date_souple("pas une date")))
-ok("vectorise", length(parse_date_souple(c("2026-09-17", "18/09/2026"))) == 2)
+# parse_date_souple() a rejoint le socle : ses cas vivent desormais dans
+# tests/test_date.R. Ici on garde ce qui lui est propre au planning.
 
 # googlesheets4 rend une colonne en LISTE des qu'il y voit des types meles.
 # unlist() aplatirait en perdant l'alignement sur les cellules vides.

@@ -28,7 +28,7 @@ formatStyle<-function(x,...) x; styleEqual<-function(...) NULL
 render_stub <- function(expr, env=parent.frame(), quoted=FALSE){
   f <- exprToFunction(expr, env, quoted); renderText({ f(); "" })}
 renderPlotly <- render_stub; renderDT <- render_stub
-for (f in c("R/helpers.R","R/theme.R","R/kpi.R","R/plan_comptable.R",
+for (f in c("R/date.R", "R/helpers.R","R/theme.R","R/kpi.R","R/plan_comptable.R",
             "R/exploitation.R","R/analyse.R","R/ecritures.R","R/planning.R",
             "R/sources_travail.R","R/projection.R"))
   source(f, encoding="UTF-8", local = TRUE)

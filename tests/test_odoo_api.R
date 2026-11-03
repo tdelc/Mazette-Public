@@ -167,7 +167,8 @@ ok("aucune ligne rend NULL, comme la lecture d'un fichier absent",
 # « seule lit_ecritures_fichier() est remplacee ».
 source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 source("R/sources_travail.R", encoding = "UTF-8", local = TRUE)  # nombre_europeen
-source("R/planning.R",        encoding = "UTF-8", local = TRUE)  # parse_date_souple
+source("R/date.R",            encoding = "UTF-8", local = TRUE)  # parse_date_souple
+source("R/planning.R",        encoding = "UTF-8", local = TRUE)
 source("R/helpers.R",         encoding = "UTF-8", local = TRUE)  # ratio_pct
 source("R/odoo.R",            encoding = "UTF-8", local = TRUE)
 ok("le tableau de l'API porte exactement les colonnes attendues du fichier",

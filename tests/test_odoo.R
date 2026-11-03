@@ -10,7 +10,8 @@ COULEURS_SECTEURS <- c("Service"="#2980b9", "Transformation alimentaire"="#5B7B5
                        "Brasserie"="#d98236", "Support"="#8d7b68")
 source("R/plan_comptable.R", encoding="UTF-8", local = TRUE)
 source("R/sources_travail.R", encoding="UTF-8", local = TRUE)   # nombre_europeen, SECTEUR_NON_VENTILE
-source("R/planning.R",        encoding="UTF-8", local = TRUE)   # parse_date_souple
+source("R/date.R",            encoding="UTF-8", local = TRUE)   # parse_date_souple
+source("R/planning.R",        encoding="UTF-8", local = TRUE)
 source("R/helpers.R",         encoding="UTF-8", local = TRUE)   # ratio_pct
 source("R/exploitation.R",    encoding="UTF-8", local = TRUE)   # postes_exploitation
 source("R/odoo.R",            encoding="UTF-8", local = TRUE)

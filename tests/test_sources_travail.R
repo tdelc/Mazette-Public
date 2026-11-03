@@ -8,6 +8,7 @@ COULEURS_SECTEURS <- c("Service"="#2980b9", "Transformation alimentaire"="#5B7B5
                        "Brasserie"="#d98236", "Support"="#8d7b68")
 COUL_VERT<-"#5B7B5A"; COUL_AMBRE<-"#d98236"; COUL_ROUGE<-"#c0392b"
 COUL_NEUTRE<-"#8d7b68"; COUL_BRUN<-"#732c02"; COUL_TRAVAIL<-"#8d5b8c"
+source("R/date.R",            encoding = "UTF-8", local = TRUE)
 source("R/planning.R",        encoding = "UTF-8", local = TRUE)   # normalise_secteur
 source("R/sources_travail.R", encoding = "UTF-8", local = TRUE)
 

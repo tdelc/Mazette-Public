@@ -41,6 +41,7 @@ seconde, partout, sans installer la moitié du CRAN.
 |---|---|
 | `test_donnees.R` | la normalisation des tickets, la jointure au référentiel |
 | `test_theme.R` | les formats d'affichage, et le tri des tableaux |
+| `test_date.R` | la lecture d'une date, d'où qu'elle vienne, et le bloc réel d'`import.R` |
 | `test_plan_comptable.R` | le classement des comptes par leur numéro |
 | `test_exploitation.R` | du CA à la marge, la vraisemblance, le topo des mois |
 | `test_exploitation_srv.R` | la chaîne réactive, sur le **vrai** bloc de `server.R` |

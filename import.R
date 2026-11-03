@@ -330,6 +330,12 @@ if (class(drive_mazette_2023)[1] == "try-error"){
 try({
   if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
     IMPORT_DB_JOURS_OLD$BRUSSELS = 0
+  # rbind() fabrique UNE colonne a partir de deux : si l'archive porte ses
+  # dates en texte et l'import du jour en POSIXct, le resultat est du texte,
+  # et tout ce qui suit croit lire des dates. On aligne les deux cotes avant
+  # d'empiler, plutot que de reparer apres.
+  IMPORT_DB_JOURS_OLD$DATEVALUE <- parse_date_souple(IMPORT_DB_JOURS_OLD$DATEVALUE)
+  IMPORT_DB_JOURS$DATEVALUE     <- parse_date_souple(IMPORT_DB_JOURS$DATEVALUE)
   IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
   IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
   IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
@@ -350,6 +356,12 @@ if (class(drive_mazette_2025)[1] == "try-error"){
 try({
   if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
     IMPORT_DB_JOURS_OLD$BRUSSELS = 0
+  # rbind() fabrique UNE colonne a partir de deux : si l'archive porte ses
+  # dates en texte et l'import du jour en POSIXct, le resultat est du texte,
+  # et tout ce qui suit croit lire des dates. On aligne les deux cotes avant
+  # d'empiler, plutot que de reparer apres.
+  IMPORT_DB_JOURS_OLD$DATEVALUE <- parse_date_souple(IMPORT_DB_JOURS_OLD$DATEVALUE)
+  IMPORT_DB_JOURS$DATEVALUE     <- parse_date_souple(IMPORT_DB_JOURS$DATEVALUE)
   IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
   IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
   IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
@@ -362,10 +374,14 @@ try({
 
 cli::cli_h3("Import de la DB JOURS")
 
+# On PARSE avant de filtrer, et on filtre sur la date obtenue : filtrer sur
+# DATEVALUE laissait passer une cellule non vide mais illisible, qui tombait
+# plus loin sans dire d'où elle venait.
 DB_JOURS <- IMPORT_DB_JOURS  |>
-  filter(!is.na(DATEVALUE)) |> 
+  mutate(DATE = parse_date_souple(DATEVALUE)) |>
+  filter(!is.na(DATE)) |>
   transmute(
-    DATE     = ymd(format(DATEVALUE, "%Y-%m-%d")),
+    DATE,
     CARTES,
     CASH,
     GIFTCARD,
@@ -373,6 +389,18 @@ DB_JOURS <- IMPORT_DB_JOURS  |>
     CA_HTVA  = `CA HTVA`,
     CA_TVAC  = `CA TVAC`
   )
+
+# Les lignes perdues se comptent : une colonne de dates qui bascule en texte
+# illisible ne doit pas vider la table en silence.
+controle_dates_jours <- function(brut, net) {
+  perdues <- sum(!is.na(brut$DATEVALUE)) - nrow(net)
+  if (perdues > 0)
+    cli::cli_alert_warning(
+      "DB JOURS : {perdues} ligne{?s} datée{?s} mais illisible{?s}")
+  else
+    cli::cli_alert_success("DB JOURS : {nrow(net)} jours, toutes dates lues")
+}
+controle_dates_jours(IMPORT_DB_JOURS, DB_JOURS)
 
 ##### IMPORT DB OLD ####
 
@@ -419,16 +447,15 @@ DB_BRASSINS <- IMPORT_BRASSINS  |>
   mutate(
     ID_BRASSIN         = gsub("\\.0","",ID_BRASSIN),
     BIERE_FINIE        = as.numeric(BIERE_FINIE),
-    DT_BRASSIN         = correct_date(DT_BRASSIN),
-    DT_CONDI           = correct_date(DT_CONDI),
-    DT_FIN             = correct_date(DT_FIN),
-    DT_DECLA           = correct_date(DT_DECLA),
+    DT_BRASSIN         = parse_date_souple(DT_BRASSIN),
+    DT_CONDI           = parse_date_souple(DT_CONDI),
+    DT_FIN             = parse_date_souple(DT_FIN),
+    DT_DECLA           = parse_date_souple(DT_DECLA),
+    # Les quatre dates sont déjà des Date : le second passage qui vivait ici
+    # rattrapait ce que correct_date() ne savait pas convertir, et n'a plus
+    # d'objet.
     DT_FIN             = if_else(is.na(DT_FIN),DT_DECLA,DT_FIN),
-    DT_FIN             = if_else(is.na(DT_FIN),ymd(today()),DT_FIN),
-    DT_BRASSIN         = ymd(format(DT_BRASSIN, "%Y-%m-%d")),
-    DT_CONDI           = ymd(format(DT_CONDI, "%Y-%m-%d")),
-    DT_FIN             = ymd(format(DT_FIN, "%Y-%m-%d")),
-    DT_DECLA           = ymd(format(DT_DECLA, "%Y-%m-%d")),
+    DT_FIN             = if_else(is.na(DT_FIN),today(),DT_FIN),
     VOLUME_BRASSIN     = VOLUME_BRASSIN * 100,
     VOLUME_BRASSIN_ADD = VOLUME_BRASSIN_ADD * 100,
     VOLUME_BRASSIN     = VOLUME_BRASSIN + VOLUME_BRASSIN_ADD
@@ -442,7 +469,7 @@ cli::cli_h3("Import de la DB PRODUITS")
 DB_PRODUITS <- IMPORT_LIGHTSPEED  |>
   filter(!is.na(PRODUCT)) |> 
   transmute(
-    DATE = ymd(format(DATE, "%Y-%m-%d")),
+    DATE = parse_date_souple(DATE),
     CATEGORIE = toupper(trimws(CATEGORY)),
     PRODUIT = PRODUCT,
     PRIX = PRICE,
@@ -477,7 +504,7 @@ DB_TICKET <- IMPORT_TICKET %>%
                               | (wday(TIMESTAMP,week_start = 1) == 5 & !MIDI))
   ) |> 
   transmute(
-    DATE          = ymd(format(DATE, "%Y-%m-%d")),
+    DATE          = parse_date_souple(DATE),
     TIMESTAMP     = as.character(TIMESTAMP),
     TIMESTAMP     = ifelse(nchar(TIMESTAMP) == 19,TIMESTAMP,
                            paste(substr(TIMESTAMP,1,10),"00:00:00")),
@@ -538,8 +565,8 @@ cli::cli_h3("Import de la DB PASSWORD")
 #   actif   : "non" coupe l'accès sans effacer la ligne (ni son historique).
 DB_PASSWORD <- IMPORT_PASS |>
   transmute(
-    DATE_DEBUT    = ymd(format(Date_debut, "%Y-%m-%d")),
-    DATE_FIN      = ymd(format(Date_fin, "%Y-%m-%d")),
+    DATE_DEBUT    = parse_date_souple(Date_debut),
+    DATE_FIN      = parse_date_souple(Date_fin),
     PASS          = trimws(as.character(pass)),
     NOM           = colonne_optionnelle(IMPORT_PASS, "nom",     NA_character_),
     ROLE          = colonne_optionnelle(IMPORT_PASS, "role",    "admin"),

@@ -24,7 +24,8 @@ piège qu'il a coûté. C'est là qu'il faut lire avant de modifier.
 | `helpers.R` | périodes, ratios, bandeaux d'alerte — et `ZONES_ALERTE`, qui évite un piège Shiny coûteux |
 | `theme.R` | formats d'affichage (`format_CA`, `euro_compta`), pastilles, et les jumelles de tri des tableaux |
 | `kpi.R` | les tuiles de synthèse |
-| `date.R`, `box.R`, `produits.R` | utilitaires transverses |
+| `date.R` | le calendrier de référence, et `parse_date_souple()` — LE parseur de dates du projet : tout ce qui entre par un classeur passe par lui |
+| `box.R`, `produits.R` | utilitaires transverses |
 
 ## La comptabilité
 

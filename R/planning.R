@@ -116,24 +116,9 @@ aplatit_colonne <- function(x) {
          FUN.VALUE = character(1))
 }
 
-# On lit le classeur en texte (cf. lit_planning_historique) : c'est le seul
-# moyen d'être indifférent au format d'affichage choisi côté Google. Reste à
-# reconnaître la date, qu'elle soit ISO — ce que nous écrivons — ou saisie à la
-# main au format belge. Un format inconnu donne NA, et la ligne est écartée
-# plutôt que datée n'importe comment.
-parse_date_souple <- function(x) {
-  if (inherits(x, "Date")) return(x)
-  if (inherits(x, "POSIXt")) return(as.Date(x))
-  if (is.numeric(x)) return(as.Date(x, origin = "1899-12-30"))  # série Sheets
-
-  txt <- trimws(as.character(x))
-  txt[txt == ""] <- NA_character_
-  d <- as.Date(txt, format = "%Y-%m-%d")
-  manquants <- is.na(d) & !is.na(txt)
-  if (any(manquants))
-    d[manquants] <- as.Date(txt[manquants], format = "%d/%m/%Y")
-  d
-}
+# parse_date_souple() a rejoint le socle, dans R/date.R : l'import des ventes
+# et des brassins en avait besoin lui aussi, et deux copies d'un parseur de
+# dates finissent par ne plus reconnaître les mêmes formats.
 
 # Fusion de l'historique et de l'import du jour.
 #

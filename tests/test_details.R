@@ -44,6 +44,7 @@ source("R/helpers.R",         encoding = "UTF-8", local = TRUE)
 source("R/theme.R",           encoding = "UTF-8", local = TRUE)
 source("R/kpi.R",             encoding = "UTF-8", local = TRUE)   # format_pct
 source("R/objectifs.R",       encoding = "UTF-8", local = TRUE)
+source("R/date.R",            encoding = "UTF-8", local = TRUE)
 source("R/planning.R",        encoding = "UTF-8", local = TRUE)
 source("R/sources_travail.R", encoding = "UTF-8", local = TRUE)
 source("R/details.R",         encoding = "UTF-8", local = TRUE)
