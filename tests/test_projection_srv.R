@@ -92,7 +92,8 @@ testServer(srv, {
   ok("les ventes de caisse arrivent jusqu'au bloc", nrow(proj_ventes()) > 20)
   ok("le pointage et le planning arrivent jusqu'au bloc",
      { s <- proj_sources()
-       !is.null(s$horeko) && !is.null(s$planning) && is.null(s$paie) })
+       !is.null(s$horeko) && !is.null(s$horeko_cout) &&
+         !is.null(s$planning) && is.null(s$paie) })
 
   # Ce que l'écran propose en s'ouvrant.
   d <- proj_defauts()
@@ -110,12 +111,12 @@ testServer(srv, {
 
   p <- projection()
   ok("chaque mois troué reçoit ses deux postes", nrow(p) == 6)
-  # LE point de ce lot : sur un mois CLOS on prend ce qui a été mesuré — les
-  # heures pointées — et le planning ne répond que pour le mois en cours,
-  # dont le pointage s'arrête hier.
+  # LE point de ce lot : sur un mois CLOS on prend ce qui a été mesuré — le
+  # pointage, valorisé au taux de chaque contrat — et le planning ne répond
+  # que pour le mois en cours, dont le pointage s'arrête hier.
   r <- p %>% filter(CLE == "remuneration")
-  ok("un mois clos est estimé sur les heures POINTÉES",
-     all(r$METHODE[r$PERIODE < EN_COURS] == "Heures pointées"))
+  ok("un mois clos est estimé sur le pointage VALORISÉ",
+     all(r$METHODE[r$PERIODE < EN_COURS] == "Pointage au taux du contrat"))
   ok("le mois en cours, lui, sur les heures planifiées",
      r$METHODE[r$PERIODE == EN_COURS] == "Heures planifiées")
   ok("et les deux tombent sur les heures du mois au taux médian",
@@ -166,6 +167,14 @@ testServer(srv, {
                               output$proj_bandeau))))
   ok("la fiabilité se rend",
      nzchar(as.character(output$proj_fiabilite$html %||% output$proj_fiabilite)))
+  ok("et chaque source de rémunération est mesurée pour elle-même",
+     { f <- controle_sources_remuneration(proj_reels(), proj_sources(),
+                                          proj_nref(), compta_exclus())
+       nrow(f) >= 2 && identical(f$CLE[1], "horeko_cout") })
+  ok("ce qui se rend dans l'écran",
+     nzchar(as.character(output$proj_sources_remu$html %||%
+                         output$proj_sources_remu)))
+
   # La cascade se choisit : le dernier mois projeté par défaut, n'importe
   # quel mois de la trajectoire ensuite.
   ok("la trajectoire ne propose que les mois qu'elle montre",

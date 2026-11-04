@@ -286,6 +286,77 @@ gen <- projette_generaux(mois_reference(POSTES, CIBLE, "GENERAUX", 6))
 ok("les frais généraux sont la médiane des mois de référence",
    abs(gen$VALEUR - GENERAUX) < 0.01)
 
+#### Le mix contractuel ####
+
+# LE point de ce lot. Un mois d'été à moitié étudiant coûte moins cher à
+# heures égales : le volume d'heures ne peut pas le voir, le pointage
+# VALORISÉ — chaque heure au taux de son contrat — le voit par construction.
+#
+# Le fixture est fait pour que les deux se départagent : les heures sont
+# CONSTANTES d'un mois à l'autre, seule la part d'étudiants bouge. Un modèle
+# bâti sur le volume n'a donc aucune information, et doit se tromper ; un
+# modèle bâti sur la valorisation doit tomber juste.
+MOIS_MIX <- seq(as.Date("2025-01-01"), by = "month", length.out = 12)
+H_MIX    <- 1000                      # autant d'heures tous les mois
+TAUX_CDI <- 22.02                     # l'onglet « Cout » du classeur Horeko
+TAUX_ETU <- 16.58
+PART_ETU <- rep(c(0, 0.8), 6)         # le mix, lui, change du simple au double
+COUT_MIX <- H_MIX * (TAUX_CDI * (1 - PART_ETU) + TAUX_ETU * PART_ETU)
+
+POSTES_MIX <- postes_exploitation(bind_rows(lapply(seq_along(MOIS_MIX), function(i)
+  tibble(ANNEE = year(MOIS_MIX[i]), MOIS = month(MOIS_MIX[i]),
+         COMPTE = c("700000", "620000"), LIBELLE = "x",
+         VALEUR = c(60000, COUT_MIX[i]), TYPE = "compte", AGREGE = TRUE))))
+
+# Le pointage, jour par jour : mêmes heures partout, coût au taux du contrat.
+POINTAGE_MIX <- bind_rows(lapply(seq_along(MOIS_MIX), function(i) {
+  j <- seq(MOIS_MIX[i], fin_periode(MOIS_MIX[i], "mois"), by = "day")
+  tibble(DATE = j, SECTEUR = "Service", HEURES = H_MIX / length(j),
+         COUT_TRAVAIL = COUT_MIX[i] / length(j))
+}))
+SRC_MIX <- sources_remuneration(POINTAGE_MIX)
+
+ok("le pointage valorisé est une source à part entière",
+   !is.null(SRC_MIX$horeko_cout) && nrow(SRC_MIX$horeko_cout) == 12)
+ok("et il passe devant le volume d'heures",
+   { r <- projette_remuneration(MOIS_MIX[12], SRC_MIX,
+            mois_reference(POSTES_MIX, MOIS_MIX[12], "REMUNERATION", 6))
+     r$METHODE == "Pointage au taux du contrat" })
+ok("il retrouve le compte 62 du mois, mix compris",
+   { r <- projette_remuneration(MOIS_MIX[12], SRC_MIX,
+            mois_reference(POSTES_MIX, MOIS_MIX[12], "REMUNERATION", 6))
+     abs(r$VALEUR - COUT_MIX[12]) < 0.01 })
+ok("là où le volume d'heures ne peut que reconduire une médiane",
+   { r <- projette_remuneration(MOIS_MIX[12], SRC_MIX["horeko"],
+            mois_reference(POSTES_MIX, MOIS_MIX[12], "REMUNERATION", 6))
+     r$METHODE == "Heures pointées" && abs(r$VALEUR - COUT_MIX[12]) > 1000 })
+
+# Et la mesure le dit, ce qui est tout l'objet : on tranche sur des chiffres.
+f_src <- controle_sources_remuneration(POSTES_MIX, SRC_MIX, n_ref = 6,
+                                       n_mois = 6)
+ok("chaque source disponible est mesurée, dans l'ordre de l'échelle",
+   identical(f_src$CLE, c("horeko_cout", "horeko")))
+ok("la valorisation tombe juste, le volume non",
+   { a <- f_src$ECART_MEDIAN[f_src$CLE == "horeko_cout"]
+     b <- f_src$ECART_MEDIAN[f_src$CLE == "horeko"]
+     a < 0.01 && b > 5 })
+ok("une source absente n'est pas mesurée",
+   !"paie" %in% controle_sources_remuneration(POSTES_MIX, SRC_MIX)$CLE)
+
+# Un contrat absent de la table des taux (« Flexi » qui n'y figure pas) laisse
+# un coût à NA. na.rm le compterait pour zéro euro et sous-estimerait le mois
+# en silence : la source doit se taire, et le volume d'heures répondre.
+POINTAGE_TROU <- POINTAGE_MIX %>%
+  mutate(COUT_TRAVAIL = if_else(DATE == MOIS_MIX[12], NA_real_, COUT_TRAVAIL))
+SRC_TROU <- sources_remuneration(POINTAGE_TROU)
+ok("un contrat sans taux horaire fait taire la valorisation sur CE mois",
+   !MOIS_MIX[12] %in% SRC_TROU$horeko_cout$PERIODE &&
+     MOIS_MIX[11] %in% SRC_TROU$horeko_cout$PERIODE)
+ok("et le volume d'heures prend le relais",
+   { r <- projette_remuneration(MOIS_MIX[12], SRC_TROU,
+            mois_reference(POSTES_MIX, MOIS_MIX[12], "REMUNERATION", 6))
+     r$METHODE == "Heures pointées" })
+
 #### L'orchestration ####
 
 proj <- projette_mois(POSTES, CIBLE, c("remuneration", "generaux"),

@@ -627,6 +627,21 @@ colnames(IMPORT_COUT) <- c("CONTRAT","COUT_HEURE")
 DB_HEURES <- DB_HEURES %>% left_join(IMPORT_COUT) %>% 
   mutate(COUT = COUT_HEURE * NB_HEURES)
 
+# Un contrat pointé mais absent de l'onglet « Cout » n'a pas de taux : son
+# coût reste NA, et DB_COUTS_TRAVAIL somme sans na.rm — c'est donc tout le
+# groupe du jour qui devient NA, et la valorisation par contrat se tait sur
+# des mois entiers. On le dit ici plutôt que de le découvrir à l'écran.
+sans_taux <- contrats_sans_taux(DB_HEURES)
+if (is.null(sans_taux)) {
+  cli::cli_alert_success(
+    "Horeko : les {length(unique(DB_HEURES$CONTRAT))} contrats pointés ont un taux")
+} else {
+  detail <- paste0(sans_taux$CONTRAT, " (", round(sans_taux$HEURES), " h)",
+                   collapse = ", ")
+  cli::cli_alert_warning(
+    "Horeko : {nrow(sans_taux)} contrat{?s} sans taux horaire - {detail}")
+}
+
 ##### IMPORT RESA ####
 
 cli::cli_h3("Import de la DB RESA")

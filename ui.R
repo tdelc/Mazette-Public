@@ -787,6 +787,7 @@ ui_compta_projection <- function() {
     card(
       full_screen = TRUE,
       card_header("Le modèle, éprouvé sur les mois connus"),
+      uiOutput("proj_sources_remu"),
       uiOutput("proj_fiabilite"),
       DTOutput("proj_controle"),
       div(class = "small text-muted mt-1",

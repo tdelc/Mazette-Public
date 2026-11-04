@@ -258,6 +258,35 @@ lit_onss <- function(ss) {
   lu
 }
 
+#### Les contrats, et leur taux ####
+
+#' Les contrats pointés qu'aucun taux horaire ne valorise.
+#'
+#' Horeko dit, heure par heure, sous quel contrat elle a été faite —
+#' étudiant, CDD, CDI, extra, stage — et l'onglet « Cout » du même classeur
+#' donne un taux à chacun. C'est ce couple qui fait le coût estimé, et c'est
+#' lui que la projection utilise pour peser le MIX d'un mois : à heures
+#' égales, un mois à moitié étudiant coûte moins cher.
+#'
+#' Le jour où un statut nouveau apparaît dans le pointage sans entrer dans la
+#' table des taux — un flexi-job, par exemple — son coût reste NA. Et comme
+#' DB_COUTS_TRAVAIL somme sans na.rm, c'est tout le groupe du jour qui devient
+#' NA : la valorisation se tait sur des mois entiers, sans un mot. D'où ce
+#' contrôle, appelé à l'import.
+#'
+#' @return une ligne par contrat sans taux, ou NULL si tout est valorisé.
+contrats_sans_taux <- function(db_heures) {
+  if (is.null(db_heures) || !is.data.frame(db_heures) || !nrow(db_heures) ||
+      !all(c("CONTRAT", "NB_HEURES", "COUT_HEURE") %in% names(db_heures)))
+    return(NULL)
+  d <- db_heures %>%
+    filter(is.na(COUT_HEURE), !is.na(NB_HEURES), NB_HEURES > 0) %>%
+    group_by(CONTRAT) %>%
+    summarise(HEURES = sum(NB_HEURES, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(HEURES))
+  if (!nrow(d)) NULL else d
+}
+
 #### Recalage de DB_COUTS_TRAVAIL ####
 
 # Libellés des trois sources, dans l'ordre de confiance décroissante sur les

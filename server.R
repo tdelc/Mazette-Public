@@ -1676,6 +1676,15 @@ server <- function(input, output, session) {
     resume_fiabilite(fiabilite_modele(proj_ctrl()))
   })
 
+  # Les sources de rémunération, mesurées une à une. C'est la seule façon de
+  # savoir si le pointage valorisé par contrat vaut mieux que le volume
+  # d'heures — l'ordre de l'échelle, lui, ne dit que ce qu'on en croit.
+  output$proj_sources_remu <- renderUI({
+    req(exists("DB_COMPTA"))
+    resume_sources_remu(controle_sources_remuneration(
+      proj_reels(), proj_sources(), proj_nref(), compta_exclus()))
+  })
+
   output$proj_controle <- renderDT({
     tbl <- table_controle_modele(proj_ctrl())
     if (ncol(tbl) == 1) return(datatable_simple(tbl))

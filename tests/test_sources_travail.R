@@ -116,3 +116,24 @@ ok("un secteur paye sans pointage est compte",
 ok("rien a signaler -> NULL", is.null(onss_non_rattache(couts, onss)))
 ok("le recalage ignore ce secteur plutot que d'inventer des jours",
    abs(sum(recale_couts_travail(couts, onss2)$HEURES) - 150) < 1e-9)
+
+# ---------- les contrats, et leur taux ----------
+# Horeko dit sous quel contrat chaque heure a ete faite, l'onglet « Cout » du
+# meme classeur donne un taux a chacun. Un statut nouveau qui n'entre pas dans
+# la table des taux laisse son cout a NA — et DB_COUTS_TRAVAIL sommant sans
+# na.rm, c'est tout le groupe du jour qui devient NA. La valorisation par
+# contrat se tairait alors sur des mois entiers, sans un mot.
+heures_c <- tibble(
+  DATE = as.Date("2026-09-01"), DEPARTEMENT = "Salle", CD_HEURE = "HEURE_SOIR",
+  CONTRAT = c("CDI", "Etudiant", "Flexi", "Flexi"),
+  NB_HEURES = c(100, 40, 12, 8),
+  COUT_HEURE = c(22.02, 16.58, NA, NA))
+st <- contrats_sans_taux(heures_c)
+ok("un contrat sans taux est repere, et ses heures comptees",
+   !is.null(st) && nrow(st) == 1 && st$CONTRAT == "Flexi" && st$HEURES == 20)
+ok("les contrats valorises ne sont pas signales", !"CDI" %in% st$CONTRAT)
+ok("tout valorise -> NULL",
+   is.null(contrats_sans_taux(heures_c %>% filter(!is.na(COUT_HEURE)))))
+ok("une table sans la colonne de taux ne fait pas tomber l'import",
+   is.null(contrats_sans_taux(heures_c %>% select(-COUT_HEURE))) &&
+     is.null(contrats_sans_taux(NULL)))

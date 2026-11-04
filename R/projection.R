@@ -211,9 +211,15 @@ heures_par_mois <- function(db_planning) {
 #   exactement ce qu'on cherche. Il ne manque que ce que la comptabilité y
 #   ajoute — provisions, pécules — et c'est un rapport stable, donc modélisable ;
 #
-#   le POINTAGE (DB_COUTS_TRAVAIL) mesure les heures réellement faites. Il
-#   ignore les charges patronales et le personnel non pointé, mais un coût
-#   horaire médian les rattrape ;
+#   le POINTAGE VALORISÉ (DB_COUTS_TRAVAIL, colonne de coût) mesure les mêmes
+#   heures, mais chacune au taux de SON contrat — étudiant, CDD, CDI, extra.
+#   Le mix contractuel du mois y est donc déjà pesé, ce qu'un total d'heures
+#   ne peut pas faire : un mois d'été à moitié étudiant coûte moins cher à
+#   heures égales, et c'est précisément ce qu'on veut voir ;
+#
+#   le POINTAGE EN HEURES, lui, ne connaît que le volume. Il reste utile
+#   quand la valorisation manque — un contrat absent de la table des taux
+#   suffit à la rendre inutilisable sur tout un mois ;
 #
 #   le PLANNING (DB_HEURES_PLANNING) annonce les heures qu'on s'apprête à
 #   poser. C'est une prévision, pas une mesure — mais c'est la seule source
@@ -230,11 +236,19 @@ heures_par_mois <- function(db_planning) {
 # toujours entre LA MÊME source et le compte 62 des mois de référence. Un
 # coût horaire calculé sur des heures pointées ne s'applique pas à des heures
 # planifiées, qui n'en sont pas le même compte.
+#
+# L'ordre dit ce qu'on CROIT de chaque source, pas ce qu'on a mesuré. Le
+# contrôle du modèle, lui, mesure : controle_sources_remuneration() donne
+# l'écart médian de chacune sur les mois connus, et l'écran les affiche côte
+# à côte. On n'automatise pas le choix pour autant — six mois d'historique
+# suffisent à faire gagner une source par hasard, et une source qui colle
+# mieux au passé n'est pas forcément la bonne pour le mois suivant.
 PROJ_SOURCES_REMU <- tibble::tribble(
-  ~CLE,       ~LIBELLE,            ~UNITE, ~QUOI,                ~MOIS_EN_COURS,
-  "paie",     "Coût de la paie",   "euro", "de coût employeur",  FALSE,
-  "horeko",   "Heures pointées",   "heure", "h pointées",        FALSE,
-  "planning", "Heures planifiées", "heure", "h planifiées",      TRUE)
+  ~CLE,          ~LIBELLE,                    ~UNITE,  ~QUOI,                ~RAPPORT,          ~MOIS_EN_COURS,
+  "paie",        "Coût de la paie",           "euro",  "de coût employeur",  "compta/paie",     FALSE,
+  "horeko_cout", "Pointage au taux du contrat", "euro", "de pointage valorisé", "compta/pointage", FALSE,
+  "horeko",      "Heures pointées",           "heure", "h pointées",         "",                FALSE,
+  "planning",    "Heures planifiées",         "heure", "h planifiées",       "",                TRUE)
 
 #' Les trois sources, mises à la même forme : PERIODE, VALEUR, et la
 #' couverture du mois.
@@ -245,7 +259,7 @@ PROJ_SOURCES_REMU <- tibble::tribble(
 #' aurait fait deux à maintenir.
 sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
                                  db_planning = NULL) {
-  src <- list(paie = NULL, horeko = NULL, planning = NULL)
+  src <- list(paie = NULL, horeko_cout = NULL, horeko = NULL, planning = NULL)
 
   utilisable <- !is.null(db_couts) && is.data.frame(db_couts) &&
     nrow(db_couts) > 0 && "DATE" %in% names(db_couts) &&
@@ -253,6 +267,27 @@ sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
   if (utilisable) {
     m <- sources_mensuelles(db_couts, db_onss)
     cv <- couverture_mois(db_couts$DATE)
+
+    # Le pointage VALORISÉ se somme ici, et pas depuis sources_mensuelles(),
+    # pour une raison qui compte : celle-ci somme avec na.rm = TRUE. Or un
+    # contrat absent de la table des taux (« Cout » du classeur Horeko)
+    # laisse un coût à NA — et na.rm le ferait disparaître, c'est-à-dire
+    # compter ces heures-là pour zéro euro. Le mois serait sous-estimé sans
+    # que rien ne le dise. Sans na.rm, le mois entier devient NA et la source
+    # se tait : la ligne suivante de l'échelle répond à sa place.
+    col_cout <- if ("COUT_HOREKO_LIGNE" %in% names(db_couts))
+      "COUT_HOREKO_LIGNE" else "COUT_TRAVAIL"
+    if (col_cout %in% names(db_couts)) {
+      c_h <- db_couts %>%
+        transmute(PERIODE = floor_date(as.Date(DATE), "month"),
+                  V = .data[[col_cout]]) %>%
+        filter(!is.na(PERIODE)) %>%
+        group_by(PERIODE) %>%
+        summarise(VALEUR = sum(V), .groups = "drop") %>%
+        filter(!is.na(VALEUR), VALEUR > 0)
+      if (nrow(c_h)) src$horeko_cout <- c_h %>% left_join(cv, by = "PERIODE")
+    }
+
     if (!is.null(m)) {
       h <- m %>% filter(SOURCE == "horeko", !is.na(HEURES), HEURES > 0) %>%
         transmute(PERIODE, VALEUR = HEURES)
@@ -427,7 +462,7 @@ projette_remuneration <- function(cible, sources, ref, aujourd_hui = today()) {
       ligne$DERNIER[1] < ligne$FIN[1]
     base <- if (s$UNITE == "euro")
       paste0(euro_exact(v), " ", s$QUOI, " x ", proj_facteur(r),
-             " (rapport médian compta/paie sur ", nrow(cal), " mois)")
+             " (rapport médian ", s$RAPPORT, " sur ", nrow(cal), " mois)")
     else
       paste0(round(v), " ", s$QUOI, " x ", proj_taux(r),
              " (coût horaire médian sur ", nrow(cal), " mois)")
@@ -661,6 +696,54 @@ controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
   bind_rows(res)
 }
 
+#' Ce que vaut CHAQUE source de rémunération, mesuré sur les mois connus.
+#'
+#' L'échelle des sources dit ce qu'on croit ; ceci dit ce qu'on observe. Pour
+#' chaque source prise SEULE, on rejoue les derniers mois complets comme s'ils
+#' étaient inconnus et on compare au compte 62 réel. Un mois où la source
+#' n'aurait pas répondu — pas de donnée, pas assez de références — ne compte
+#' pas : on mesure la source, pas le repli.
+#'
+#' C'est ce qui permet de trancher « le pointage valorisé par contrat
+#' vaut-il mieux que le volume d'heures ? » sur des chiffres plutôt que sur
+#' une conviction.
+controle_sources_remuneration <- function(postes, sources,
+                                          n_ref = PROJ_DEFAUT_REF,
+                                          exclus = NULL, n_mois = 6,
+                                          aujourd_hui = today()) {
+  vide <- tibble(CLE = character(), LIBELLE = character(), N = integer(),
+                 ECART_MEDIAN = numeric())
+  if (is.null(postes) || !nrow(postes) || is.null(sources) ||
+      !is.list(sources)) return(vide)
+  if (is.null(exclus)) exclus <- as.Date(character())
+
+  mois <- postes %>%
+    filter(!PERIODE %in% as.Date(exclus),
+           abs(REMUNERATION) > PROJ_SEUIL_PRESENT) %>%
+    arrange(desc(PERIODE)) %>% head(n_mois) %>% pull(PERIODE) %>% sort()
+  if (!length(mois)) return(vide)
+
+  res <- lapply(seq_len(nrow(PROJ_SOURCES_REMU)), function(i) {
+    s <- PROJ_SOURCES_REMU[i, ]
+    if (is.null(sources[[s$CLE]]) || !nrow(sources[[s$CLE]])) return(NULL)
+    ecarts <- vapply(mois, function(m) {
+      ref <- mois_reference(postes, m, "REMUNERATION", n_ref, exclus, m)
+      r <- projette_remuneration(m, sources[s$CLE], ref, aujourd_hui)
+      # La source n'a pas répondu : c'est le repli qui a parlé, et l'erreur
+      # du repli n'apprend rien sur elle.
+      if (!identical(r$METHODE, s$LIBELLE) || is.na(r$VALEUR))
+        return(NA_real_)
+      reel <- postes$REMUNERATION[postes$PERIODE == m][1]
+      if (!length(reel) || is.na(reel) || reel == 0) return(NA_real_)
+      100 * abs(r$VALEUR - reel) / abs(reel)
+    }, numeric(1))
+    if (all(is.na(ecarts))) return(NULL)
+    tibble(CLE = s$CLE, LIBELLE = s$LIBELLE, N = sum(!is.na(ecarts)),
+           ECART_MEDIAN = median(ecarts, na.rm = TRUE))
+  })
+  bind_rows(res)
+}
+
 #' L'écart médian absolu, par poste : la fiabilité en une ligne.
 fiabilite_modele <- function(ctrl) {
   if (is.null(ctrl) || !nrow(ctrl))
@@ -868,19 +951,46 @@ resume_fiabilite <- function(fiab) {
                "Le modèle n'a pas encore assez de mois complets pour se",
                " mesurer."))
   div(
-    class = "d-flex flex-wrap gap-2",
-    lapply(seq_len(nrow(fiab)), function(i) {
-      e <- fiab$ECART_MEDIAN[i]
-      coul <- couleur_seuil(e, 5, 15)
-      div(class = "small",
-          style = paste0("border-left:3px solid ", coul, ";",
-                         "padding:0.15rem 0.55rem;"),
-          tags$b(fiab$LIBELLE[i]), tags$br(),
-          span(style = paste0("color:", coul, ";font-weight:600"),
-               paste0("± ", format_pct(e))),
-          span(class = "text-muted",
-               paste0(" sur ", fiab$N[i], " mois")))
-    }))
+    div(class = "small text-muted mb-1", "Par poste :"),
+    div(class = "d-flex flex-wrap gap-2",
+        lapply(seq_len(nrow(fiab)), function(i) {
+          e <- fiab$ECART_MEDIAN[i]
+          coul <- couleur_seuil(e, 5, 15)
+          div(class = "small",
+              style = paste0("border-left:3px solid ", coul, ";",
+                             "padding:0.15rem 0.55rem;"),
+              tags$b(fiab$LIBELLE[i]), tags$br(),
+              span(style = paste0("color:", coul, ";font-weight:600"),
+                   paste0("± ", format_pct(e))),
+              span(class = "text-muted",
+                   paste0(" sur ", fiab$N[i], " mois")))
+        })))
+}
+
+#' Les sources de rémunération, côte à côte, avec ce qu'elles valent.
+#'
+#' Dans l'ordre de l'échelle : la première disponible est celle qui sert. La
+#' lire à côté de son écart mesuré, c'est pouvoir contester l'ordre.
+resume_sources_remu <- function(f) {
+  if (is.null(f) || !nrow(f)) return(NULL)
+  div(
+    class = "mb-2",
+    div(class = "small text-muted mb-1",
+        "Rémunérations : ce que vaut chaque source, mesuré sur les mois",
+        " connus. Celle du haut est celle qui sert."),
+    div(class = "d-flex flex-wrap gap-2",
+        lapply(seq_len(nrow(f)), function(i) {
+          coul <- couleur_seuil(f$ECART_MEDIAN[i], 5, 15)
+          div(class = "small",
+              style = paste0("border-left:3px solid ", coul, ";",
+                             "padding:0.15rem 0.55rem;"),
+              tags$b(f$LIBELLE[i]),
+              if (i == 1) span(class = "text-muted", " (retenue)"),
+              tags$br(),
+              span(style = paste0("color:", coul, ";font-weight:600"),
+                   paste0("± ", format_pct(f$ECART_MEDIAN[i]))),
+              span(class = "text-muted", paste0(" sur ", f$N[i], " mois")))
+        })))
 }
 
 #' Ce qui empêche le modèle de bien travailler, s'il y a lieu.
