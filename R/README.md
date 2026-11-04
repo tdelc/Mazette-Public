@@ -45,8 +45,11 @@ piège qu'il a coûté. C'est là qu'il faut lire avant de modifier.
 
 `accueil.R`, `maintenant.R`, `details.R`, `historique.R`, `annee.R`,
 `boissons.R`, `consommation.R`, `focaccia.R`, `pizzwanze.R`, `brassins.R`,
-`simulation.R`, `travail.R`, `planning.R`, `reservations.R`, `comparaison.R`,
-`objectifs.R`.
+`futs.R`, `simulation.R`, `travail.R`, `planning.R`, `reservations.R`,
+`comparaison.R`, `objectifs.R`.
+
+`futs.R` est le seul à porter un **modèle** et sa **vérification** : la fin de
+fût prévue, et le back-test qui la confronte aux fûts réellement terminés.
 
 Un fichier par volet, nommé comme son onglet. Il contient les calculs et les
 graphiques de ce volet, et rien d'autre : ce qui sert à deux volets remonte

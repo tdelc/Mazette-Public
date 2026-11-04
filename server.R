@@ -664,8 +664,69 @@ server <- function(input, output, session) {
     graph_evo_brassin_plotly(db_predict_bieres())
   })
 
+  # --- Ce que l'historique apprend : rendement et profil de semaine ---
+  # Calculés une fois pour la session : ils ne bougent qu'à l'import.
+  fut_fins <- reactive({ fins_observees(DB_BIERES) })
+  fut_profil <- reactive({ profil_semaine_bieres(DB_BIERES) })
+  fut_rendements <- reactive({ rendements_observes(fut_fins()) })
+
+  # Les deux modèles côte à côte, sur les fûts en cours. Tant que la
+  # vérification n'a pas tranché, on ne remplace rien : on montre les deux.
   output$bieres_predict_table <- renderDT({
-    datatable_simple(table_predictions_fin(db_predict_bieres()))
+    tbl <- table_fins_prevues(DB_BIERES, db_predict_bieres(), fut_profil(),
+                              fut_rendements())
+    if (ncol(tbl) <= 1) return(datatable_simple(tbl))
+    datatable(tbl, rownames = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(0, "asc")),
+                             columnDefs = defs_tri(tbl)))
+  })
+
+  output$fut_rendements <- renderPlotly({
+    graph_rendements(fut_fins(), fut_rendements())
+  })
+  output$fut_profil <- renderPlotly({ graph_profil_semaine(fut_profil()) })
+
+  # --- La vérification a posteriori ---
+  # Derrière un bouton, et pas au chargement : le modèle actuel coûte près
+  # d'un dixième de seconde par point de mesure, et il y en a des centaines.
+  fut_backtest <- eventReactive(input$fut_valider, {
+    withProgress(message = "Les modèles rejouent les fûts terminés…", {
+      backtest_futs(DB_BIERES, fins = fut_fins())
+    })
+  })
+  fut_resume <- reactive({ resume_backtest(fut_backtest()) })
+
+  output$fut_valid_kpi <- renderUI({
+    if (!isTRUE(input$fut_valider > 0))
+      return(div(class = "text-muted small p-2",
+                 "La vérification n'a pas encore été lancée."))
+    kpi_backtest(fut_resume(), fut_fins(), fut_rendements())
+  })
+
+  output$fut_valid_graph <- renderPlotly({
+    req(input$fut_valider)
+    graph_backtest(fut_resume())
+  })
+
+  output$fut_valid_resume <- renderDT({
+    req(input$fut_valider)
+    tbl <- table_resume_backtest(fut_resume())
+    if (ncol(tbl) <= 1) return(datatable_simple(tbl))
+    datatable(tbl, rownames = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(0, "asc")),
+                             columnDefs = defs_tri(tbl)))
+  })
+
+  output$fut_valid_pires <- renderDT({
+    req(input$fut_valider)
+    tbl <- table_pires_futs(pires_predictions(fut_backtest()))
+    if (ncol(tbl) <= 1) return(datatable_simple(tbl))
+    datatable(tbl, rownames = FALSE,
+              options = list(dom = "t", paging = FALSE, searching = FALSE,
+                             scrollX = TRUE, order = list(list(8, "desc")),
+                             columnDefs = defs_tri(tbl)))
   })
 
   # Sélecteur de brassin pour le rapport

@@ -1139,7 +1139,61 @@ ui_futs <- function() {
     ),
     card(
       card_header("Fin de fût prévue"),
-      DTOutput("bieres_predict_table")
+      DTOutput("bieres_predict_table"),
+      div(class = "small text-muted mt-1",
+          "Deux modèles côte à côte, le temps de savoir lequel tombe juste.",
+          " Les deux volumes restants diffèrent : l'un retranche 25 % de",
+          " perte par convention, l'autre le rendement mesuré sur les fûts",
+          " terminés. Les jauges et le graphe ci-dessus, eux, restent sur la",
+          " convention actuelle — d'où l'écart, et d'où un « fin non",
+          " prévisible » au-dessus d'une date ici.")
+    ),
+    # ---- La vérification a posteriori ----
+    # Un fût terminé dit la vérité : on sait quel jour il s'est vidé. Rejouer
+    # les modèles sur ces fûts-là est la seule façon de savoir ce que vaut une
+    # prédiction — et c'est ce qui manquait.
+    card(
+      full_screen = TRUE,
+      card_header("Ce que le modèle a appris de l'historique"),
+      layout_columns(
+        col_widths = breakpoints(sm = 12, lg = c(7, 5)),
+        div(h6("Rendement des fûts terminés", class = "section-sub"),
+            plotlyOutput("fut_rendements", height = "300px")),
+        div(h6("Poids des jours de la semaine", class = "section-sub"),
+            plotlyOutput("fut_profil", height = "300px"))
+      ),
+      div(class = "small text-muted mt-1",
+          "Le rendement est le volume vendu divisé par le volume brassé.",
+          " Un point ", tags$span(style = "color:#c0392b;font-weight:600",
+                                  "rouge"),
+          " sort de la fourchette plausible : fût retiré avant la fin, ou",
+          " volume brassé mal saisi. Ceux-là ne comptent pas dans la médiane.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Les modèles, vérifiés sur les fûts terminés"),
+      div(class = "d-flex align-items-center gap-2 mb-2",
+          actionButton("fut_valider", "Lancer la vérification",
+                       class = "btn btn-sm btn-outline-secondary",
+                       icon = icon("play")),
+          span(class = "small text-muted",
+               "Chaque fût terminé est rejoué comme s'il était en cours.",
+               " Quelques dizaines de secondes.")),
+      uiOutput("fut_valid_kpi"),
+      plotlyOutput("fut_valid_graph", height = "320px"),
+      DTOutput("fut_valid_resume"),
+      div(class = "small text-muted mt-1",
+          tags$b("Répond"), " compte d'abord : un modèle muet n'a pas",
+          " d'erreur, et une moyenne calculée sur les seuls cas où il a",
+          " répondu flatte celui qui se tait le plus souvent.")
+    ),
+    card(
+      full_screen = TRUE,
+      card_header("Les fûts les moins bien prédits"),
+      DTOutput("fut_valid_pires"),
+      div(class = "small text-muted mt-1",
+          "Un fût par ligne : son pire écart, et à quelle avance il s'est",
+          " produit.")
     ),
     card(
       full_screen = TRUE,
