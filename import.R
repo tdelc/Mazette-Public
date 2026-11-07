@@ -128,13 +128,26 @@ if (A_LIRE_ODOO) {
   # s'AJOUTE à une chaîne qui marchait sans elle. On le dit fort, et on laisse
   # DB_COMPTA tel quel plutôt que d'en produire une moitié.
   COMPTA_ODOO <- tryCatch({
-    ECRITURES_ODOO <- if (!is.null(IDS_ODOO)) {
+    # Le brut est gardé le temps d'un contrôle : normalise_ecritures() écarte
+    # les lignes sans date ni compte, et c'est en les COMPTANT qu'on verra un
+    # jour un format de date changer sous nos pieds.
+    BRUT_ODOO <- if (!is.null(IDS_ODOO)) {
       cli::cli_alert_info("Odoo : lecture par l'API ({IDS_ODOO$url})")
-      normalise_ecritures(lit_ecritures_odoo(IDS_ODOO))
+      lit_ecritures_odoo(IDS_ODOO)
     } else {
+      # Trois variables sur quatre : l'API ne se connecte pas, le fichier
+      # prend le relais, et la compta se met à dater du dernier export collé
+      # à la main. Cet avertissement vivait dans le `else` tout en bas —
+      # celui où il n'y a NI API NI fichier, donc jamais dans le cas où il
+      # sert. Il parle maintenant sur le chemin qu'il concerne.
+      if (length(manque_odoo()) && length(manque_odoo()) < length(ODOO_ENV))
+        cli::cli_alert_warning(paste(
+          "Odoo API : il manque {.envvar {ODOO_ENV[manque_odoo()]}} —",
+          "lecture par fichier, donc aussi fraîche que le dernier export"))
       drive_odoo <- drive_download(drive_get(id = ID_ODOO), overwrite = TRUE)
-      normalise_ecritures(lit_ecritures_fichier(drive_odoo$local_path))
+      lit_ecritures_fichier(drive_odoo$local_path)
     }
+    ECRITURES_ODOO <- normalise_ecritures(BRUT_ODOO)
     cli::cli_alert_info("Odoo : {nrow(ECRITURES_ODOO)} écritures lues")
 
     # Les écritures voyagent telles quelles jusqu'au dashboard, en plus de
@@ -150,7 +163,9 @@ if (A_LIRE_ODOO) {
     # Flèche simple : tryCatch() évalue son bloc dans l'environnement appelant,
     # et import.R est lui-même sourcé dans un environnement dédié (R/connect.R).
     # Un `<<-` sauterait par-dessus, et CONTROLE_ODOO manquerait au cache.
-    CONTROLE_ODOO <- controle_ecritures(ECRITURES_ODOO, cp, reprise = REPRISE_ODOO)
+    CONTROLE_ODOO <- controle_ecritures(ECRITURES_ODOO, cp,
+                                        reprise = REPRISE_ODOO,
+                                        n_brut = nrow(BRUT_ODOO))
     for (i in seq_len(nrow(CONTROLE_ODOO))) {
       msg <- paste0("Odoo — ", CONTROLE_ODOO$CONTROLE[i], " : ", CONTROLE_ODOO$DETAIL[i])
       if (CONTROLE_ODOO$VERDICT[i] == "ok") cli::cli_alert_success(msg)

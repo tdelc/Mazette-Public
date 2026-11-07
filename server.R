@@ -41,11 +41,29 @@ server <- function(input, output, session) {
     prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
   })
   
+  # LA comptabilité que lisent les volets : sans les mois à venir.
+  #
+  # Odoo porte des écritures datées jusqu'en juin 2027 — loyers, assurances,
+  # amortissements programmés. Elles sont justes, et elles n'ont rien à faire
+  # dans une analyse de ce qui s'est passé : un CA de juin 2027 dans une
+  # tendance, des charges que personne n'a payées dans une marge annuelle.
+  # La coupe se fait ICI, une fois, et tout ce qui lit la compta passe par
+  # elle (cf. compta_a_date dans R/exploitation.R).
+  #
+  # Une exception, et une seule : le grand livre de l'onglet Écritures, qui
+  # lit DB_ECRITURES. C'est le journal d'Odoo, il doit montrer ce qu'Odoo
+  # contient, mois à venir compris.
+  # Un réactif partagé serait plus court, mais il ferait dépendre chaque volet
+  # d'un objet défini loin de lui — et les blocs de ce fichier sont rejoués
+  # morceau par morceau par la suite de tests. On appelle donc la fonction là
+  # où la compta ENTRE dans chaque volet. test_compta_a_date.R vérifie qu'il
+  # n'existe aucun autre chemin.
+
   # Coûts matière : uniquement la comptabilité réelle, au mois. Aucune donnée
   # simulée — une période absente de DB_COMPTA reste vide, elle n'est pas
   # comblée. Le pilotage vaut mieux vide que faux.
   DB_COUTS_MATIERE <- reactive({
-    DB_COMPTA %>%
+    compta_a_date(DB_COMPTA) %>%
       filter(TYPE == "compte", AGREGE,
              CATEGORIE %in% c("ACHATS", "VARIATION_STOCK"),
              SECTION == "Coût des ventes et prestations") %>%
@@ -191,7 +209,7 @@ server <- function(input, output, session) {
     acc_reservations(RESA())
   })
   output$acc_compta <- renderUI({
-    acc_compta(if (exists("DB_COMPTA")) DB_COMPTA else NULL)
+    acc_compta(if (exists("DB_COMPTA")) compta_a_date(DB_COMPTA) else NULL)
   })
   output$acc_planning <- renderUI({
     if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
@@ -806,7 +824,9 @@ server <- function(input, output, session) {
   # d'écarter, donc sa case, donc l'écartement — une boucle.
   compta_brute <- reactive({
     req(exists("DB_COMPTA"))
-    DB_COMPTA
+    # « Brute » veut dire : sans écartement de mois. Les mois à VENIR, eux,
+    # ne passent pas — ils ne sont pas douteux, ils n'ont pas eu lieu.
+    compta_a_date(DB_COMPTA)
   })
 
   compta_improbable <- reactive({
@@ -1924,7 +1944,8 @@ server <- function(input, output, session) {
   comp_data <- reactive({
     req(input$comp_periodes)
     comparaison_periodes(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
-                         db_compta = if (exists("DB_COMPTA")) DB_COMPTA else NULL,
+                         db_compta = if (exists("DB_COMPTA"))
+                           compta_a_date(DB_COMPTA) else NULL,
                          unite = input$comp_unite,
                          periodes = input$comp_periodes)
   })

@@ -356,6 +356,17 @@ et des montants inventés.
 | Montant par secteur « Non ventilé »                   | Une analytique qui se dégrade sans prévenir.                         |
 | Un mois déjà clôturé qui change entre deux imports    | Une écriture passée rétroactivement.                                 |
 | Journaux et dates des écritures de clôture            | Voir ci-dessous.                                                     |
+| **Lignes lues** — brut moins normalisé                | Un format de date qui change : les lignes récentes tombent en silence. |
+| **Période couverte** — dernière écriture *passée*     | Une source qui ne livre plus. Mesurée sur le passé : depuis qu'Odoo porte des loyers de l'an prochain, `max(DATE)` ne dit plus rien de la fraîcheur. |
+| **Écritures à venir** — comptées, jamais en rouge     | Dit pourquoi le grand livre et l'Exploitation ne totalisent pas pareil. |
+
+**Les écritures datées du futur.** Odoo porte des loyers, assurances et
+amortissements programmés jusqu'en juin 2027. Ils sont justes et ils restent
+dans le grand livre ; `compta_a_date()` (`R/exploitation.R`) les retire en
+amont de tous les autres volets. Ce n'est pas un écartement — un mois écarté
+est un mois réel dont on doute, choisi à la main et réversible ; un mois à
+venir n'a pas eu lieu. `tests/test_compta_a_date.R` vérifie qu'aucun chemin de
+`server.R` n'atteint `DB_COMPTA` sans passer par la coupe.
 
 **Et dans l'application, pas seulement à l'import.** Les contrôles ci-dessus
 tournent au moment de l'import, où personne ne regarde forcément. Un export

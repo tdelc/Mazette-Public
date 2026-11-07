@@ -237,18 +237,82 @@ compta_mensuelle <- function(ecritures, secteurs = SECTEURS_ACHATS) {
 # Les garde-fous de l'import, en une table.
 #
 # Une table et jamais un stop() : un import qui s'arrête ne dit rien de ce qui
-# allait bien, et on perd l'occasion de voir les quatre autres anomalies.
-# VERDICT vaut "ok" ou "alerte" ; c'est la colonne qu'on lit en diagonale.
-controle_ecritures <- function(ecritures, compta = NULL, reprise = NULL) {
+# allait bien, et on perd l'occasion de voir les autres anomalies.
+# VERDICT vaut "ok", "attention" ou "alerte" ; c'est la colonne qu'on lit en
+# diagonale.
+
+# Au-delà de combien de jours sans nouvelle écriture la source est réputée
+# muette. Deux semaines : la saisie comptable a son rythme, et crier au loup
+# tous les lundis ferait fermer les yeux sur le jour où ça compte.
+FRAICHEUR_ODOO_JOURS <- 14
+
+controle_ecritures <- function(ecritures, compta = NULL, reprise = NULL,
+                               n_brut = NULL, aujourd_hui = today()) {
   if (is.null(ecritures) || !nrow(ecritures))
     return(tibble(CONTROLE = "Lecture", VERDICT = "alerte",
                   DETAIL = "aucune écriture lue", VALEUR = 0))
 
-  ligne <- function(nom, ok, detail, valeur = NA_real_)
-    tibble(CONTROLE = nom, VERDICT = if (isTRUE(ok)) "ok" else "alerte",
+  # `sinon` : tous les défauts ne sont pas des alertes. Une écriture datée de
+  # l'an prochain n'est pas une anomalie, c'est un fait qu'il faut dire.
+  ligne <- function(nom, ok, detail, valeur = NA_real_, sinon = "alerte")
+    tibble(CONTROLE = nom, VERDICT = if (isTRUE(ok)) "ok" else sinon,
            DETAIL = detail, VALEUR = valeur)
 
+  aujourd_hui <- as.Date(aujourd_hui)
   res <- list()
+
+  # 0. Ce que la lecture a jeté. normalise_ecritures() écarte les lignes sans
+  #    compte ni date — un reste de mise en page, d'ordinaire. Mais le jour où
+  #    le format de date change dans la source, ce sont les lignes RÉCENTES
+  #    qui tombent, et la compta s'arrête sans un mot. Ce contrôle était
+  #    promis par un commentaire et n'existait pas.
+  if (!is.null(n_brut) && !is.na(n_brut)) {
+    perdues <- max(0, as.integer(n_brut) - nrow(ecritures))
+    res[[length(res) + 1]] <- ligne(
+      "Lignes lues", perdues == 0,
+      if (perdues == 0)
+        paste0(nrow(ecritures), " lignes lues, aucune écartée.")
+      else paste0(perdues, " ligne(s) sur ", n_brut, " écartée(s) faute de",
+                  " date ou de compte : si elles sont récentes, c'est un",
+                  " format de date qui a changé, pas de la mise en page."),
+      perdues)
+  }
+
+  # 0 bis. Jusqu'où la source est à jour.
+  #
+  # Sur les écritures PASSÉES seulement : depuis qu'Odoo porte des loyers
+  # datés de l'an prochain, max(DATE) ne dit plus rien de la fraîcheur. Ce
+  # contrôle est né d'un import resté muet deux semaines — il tombait sur
+  # une autre erreur avant d'avoir rien sauvé, et rien ne disait que la
+  # comptabilité affichée datait du mois d'avant.
+  passees <- ecritures$DATE[ecritures$DATE <= aujourd_hui]
+  if (length(passees)) {
+    retard <- as.numeric(aujourd_hui - max(passees))
+    res[[length(res) + 1]] <- ligne(
+      "Période couverte", retard <= FRAICHEUR_ODOO_JOURS,
+      paste0("du ", format(min(ecritures$DATE), "%d/%m/%Y"), " au ",
+             format(max(passees), "%d/%m/%Y"), ", soit ",
+             if (retard <= 1) "hier ou aujourd'hui"
+             else paste0("il y a ", round(retard), " jours"),
+             if (retard > FRAICHEUR_ODOO_JOURS)
+               " — la source n'a plus rien livré depuis." else "."),
+      retard, sinon = "attention")
+  }
+
+  # 0 ter. Les écritures à venir. Elles sont justes — loyers, assurances,
+  #    amortissements programmés — et elles n'entrent dans aucun calcul :
+  #    compta_a_date() les retire en amont de tous les volets. Seul le grand
+  #    livre les montre. Le dire ici évite de chercher pourquoi l'onglet
+  #    Écritures et l'onglet Exploitation ne comptent pas la même chose.
+  a_venir <- ecritures$DATE > ceiling_date(aujourd_hui, "month") - 1
+  res[[length(res) + 1]] <- ligne(
+    "Écritures à venir", TRUE,
+    if (!any(a_venir)) "aucune écriture datée après le mois en cours."
+    else paste0(sum(a_venir), " ligne(s) datée(s) après le mois en cours,",
+                " jusqu'au ", format(max(ecritures$DATE), "%m/%Y"),
+                " : elles n'entrent dans aucun total, seul le grand livre",
+                " les montre."),
+    sum(a_venir))
 
   # 1. L'export est-il complet ? Un export tronqué déséquilibre le total.
   ecart <- sum(ecritures$DEBIT) - sum(ecritures$CREDIT)

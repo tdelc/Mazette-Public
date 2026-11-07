@@ -162,6 +162,54 @@ ok("une classe 6 a la date de reprise est signalee",
 ok("aucune ecriture -> alerte, pas une erreur",
    controle_ecritures(NULL)$VERDICT == "alerte")
 
+# ---------- 6 bis. ce que la lecture a jete, et jusqu'ou elle est a jour ----
+# Trois controles nes d'un import reste muet deux semaines : il tombait sur
+# une autre erreur avant d'avoir rien sauve, et RIEN ne disait que la compta
+# affichee datait du mois d'avant.
+AUJ <- as.Date("2026-11-07")
+recent <- e |> mutate(DATE = AUJ - 3)
+
+ok("les lignes ecartees a la lecture sont comptees",
+   { c5 <- controle_ecritures(e, cp, n_brut = nrow(e) + 4)
+     l <- c5[c5$CONTROLE == "Lignes lues", ]
+     l$VERDICT == "alerte" && l$VALEUR == 4 && grepl("format de date", l$DETAIL) })
+ok("et rien d'ecarte passe au vert",
+   { c5 <- controle_ecritures(e, cp, n_brut = nrow(e))
+     c5$VERDICT[c5$CONTROLE == "Lignes lues"] == "ok" })
+ok("sans le brut, le controle ne s'invente pas",
+   !"Lignes lues" %in% controle_ecritures(e, cp)$CONTROLE)
+
+ok("une source fraiche passe",
+   { c6 <- controle_ecritures(recent, cp, aujourd_hui = AUJ)
+     l <- c6[c6$CONTROLE == "Période couverte", ]
+     l$VERDICT == "ok" && l$VALEUR == 3 })
+ok("une source muette depuis trois semaines est signalee",
+   { c7 <- controle_ecritures(e |> mutate(DATE = AUJ - 21), cp, aujourd_hui = AUJ)
+     l <- c7[c7$CONTROLE == "Période couverte", ]
+     l$VERDICT == "attention" && grepl("plus rien livré", l$DETAIL) })
+# LE point : depuis qu'Odoo porte des loyers dates de l'an prochain, max(DATE)
+# ne dit plus rien de la fraicheur. La mesure se prend sur le PASSE.
+ok("une ecriture de l'an prochain ne fait pas passer la source pour fraiche",
+   { futur <- e |> slice(1) |> mutate(DATE = AUJ + 200)
+     c8 <- controle_ecritures(bind_rows(e |> mutate(DATE = AUJ - 21), futur),
+                              cp, aujourd_hui = AUJ)
+     c8$VERDICT[c8$CONTROLE == "Période couverte"] == "attention" })
+
+ok("les ecritures a venir sont comptees, sans crier",
+   { futur <- e |> slice(1:2) |> mutate(DATE = AUJ + 200)
+     c9 <- controle_ecritures(bind_rows(recent, futur), cp, aujourd_hui = AUJ)
+     l <- c9[c9$CONTROLE == "Écritures à venir", ]
+     l$VERDICT == "ok" && l$VALEUR == 2 && grepl("grand livre", l$DETAIL) })
+ok("et sans ecriture a venir, le controle le dit aussi",
+   { c10 <- controle_ecritures(recent, cp, aujourd_hui = AUJ)
+     grepl("^aucune", c10$DETAIL[c10$CONTROLE == "Écritures à venir"]) })
+# Le mois EN COURS n'est pas a venir : une ecriture du 30 novembre, le 7,
+# est une ecriture du mois courant.
+ok("la fin du mois en cours n'est pas « a venir »",
+   { fin_mois <- e |> slice(1) |> mutate(DATE = as.Date("2026-11-30"))
+     c11 <- controle_ecritures(bind_rows(recent, fin_mois), cp, aujourd_hui = AUJ)
+     c11$VALEUR[c11$CONTROLE == "Écritures à venir"] == 0 })
+
 # ---------- 7. la couture avec l'ancienne compta ----------
 anc <- tibble(ANNEE = 2026L, MOIS = 1:6, COMPTE = "700000", LIBELLE = "Ventes",
               VALEUR = 1000, TYPE = "compte", AGREGE = TRUE,
