@@ -41,8 +41,8 @@ name: Import quotidien
 
 on:
   schedule:
-    # 04h43 UTC = 05h43 en hiver, 06h43 en été, heure de Bruxelles.
-    - cron: "43 4 * * *"
+    # 06h43 UTC = 07h43 en hiver, 08h43 en été, heure de Bruxelles.
+    - cron: "43 6 * * *"
   workflow_dispatch:    # à la main depuis l'onglet Actions, ou par l'API
                         # (c'est ce que fait le bouton du dashboard)
 
