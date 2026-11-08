@@ -1,0 +1,111 @@
+# L'import des données, chaque matin, avant que quiconque ouvre le dashboard.
+#
+# -----------------------------------------------------------------------------
+# Pourquoi ici et pas ailleurs
+# -----------------------------------------------------------------------------
+# L'import lit une dizaine de classeurs Drive et interroge Odoo : quelques
+# minutes. Tant qu'il tournait au démarrage du dashboard, c'est la première
+# personne connectée du matin qui payait l'attente. Il fallait donc le lancer
+# ailleurs, et à heure fixe.
+#
+# Google Apps Script sait planifier, mais ne sait pas exécuter du R. Un PC
+# allumé en permanence le saurait, mais il faut l'allumer, le mettre à jour, et
+# s'apercevoir du jour où il s'est éteint. Un exécutant GitHub Actions, lui,
+# est déjà là : il a R, il a le dépôt, il lit les secrets, il tourne quinze
+# minutes puis disparaît, et il écrit à l'adresse que le dashboard interroge
+# déjà — le dossier Drive.
+#
+# -----------------------------------------------------------------------------
+# Deux mises en garde, à connaître avant de s'y fier
+# -----------------------------------------------------------------------------
+#  1. `schedule` est au mieux une intention : GitHub décale les exécutions
+#     planifiées de dix à quarante minutes aux heures chargées, et peut en
+#     sauter une. D'où l'heure creuse et la minute non ronde ci-dessous, et
+#     d'où la pastille de fraîcheur du dashboard, qui dit la date des données
+#     plutôt que de supposer qu'elles sont fraîches.
+#
+#  2. Sur un dépôt PUBLIC, GitHub désactive les workflows planifiés après
+#     60 jours sans commit (il prévient par courriel). Si le dépôt s'endort,
+#     cette planification s'arrête — et c'est encore la pastille qui le dira.
+#     Le déclenchement par Apps Script (cf. docs/automatisation.md) n'a pas ce
+#     défaut : `workflow_dispatch` ne s'endort jamais.
+#
+# -----------------------------------------------------------------------------
+# Les journaux de ce dépôt sont publics
+# -----------------------------------------------------------------------------
+# Rien de ce qui touche aux chiffres ne doit y monter. C'est pour ça que
+# l'import est appelé par import_quotidien.R, qui détourne sa trace vers un
+# fichier et ne publie qu'un résumé choisi. Et c'est pour ça qu'il n'y a ici
+# AUCUN upload-artifact : le .RData contient toute la comptabilité.
+name: Import quotidien
+
+on:
+  schedule:
+    # 04h43 UTC = 05h43 en hiver, 06h43 en été, heure de Bruxelles.
+    - cron: "43 4 * * *"
+  workflow_dispatch:    # à la main depuis l'onglet Actions, ou par l'API
+                        # (c'est ce que fait le bouton du dashboard)
+
+# Jamais deux imports à la fois : ils écriraient le même fichier sur Drive.
+concurrency:
+  group: import-quotidien
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: Rscript import_quotidien.R
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # Le socle complet, pas seulement ce que l'import utilise : global.R
+      # charge tout R/, et l'import doit tourner dans le même environnement
+      # que la production. Un import qui réussit ici et échoue là-bas serait
+      # pire qu'un import qui échoue aux deux endroits.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::shiny
+            any::bslib
+            any::shinyjs
+            any::shinyWidgets
+            any::shinybusy
+            any::dplyr
+            any::ggplot2
+            any::tidyr
+            any::purrr
+            any::stringr
+            any::tibble
+            any::lubridate
+            any::googledrive
+            any::googlesheets4
+            any::readxl
+            any::scales
+            any::plotly
+            any::forecast
+            any::DT
+            any::zoo
+            any::patchwork
+            any::cli
+            any::httr
+            any::jsonlite
+            any::calendar
+            any::janitor
+            any::htmlwidgets
+
+      - name: Lancer l'import
+        env:
+          LINK_JSON:      ${{ secrets.LINK_JSON }}
+          PATH_DRIVE:     ${{ secrets.PATH_DRIVE }}
+          ID_DRIVE_PATHS: ${{ secrets.ID_DRIVE_PATHS }}
+          ODOO_URL:       ${{ secrets.ODOO_URL }}
+          ODOO_DB:        ${{ secrets.ODOO_DB }}
+          ODOO_LOGIN:     ${{ secrets.ODOO_LOGIN }}
+          ODOO_CLE_API:   ${{ secrets.ODOO_CLE_API }}
+        run: Rscript import_quotidien.R

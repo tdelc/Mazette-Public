@@ -10,6 +10,7 @@ qui s'est passé**, **combien ça a rapporté**, et **qu'est-ce qu'on prévoit**
 global.R   charge les paquets, les couleurs, puis TOUT le contenu de R/
              ↓
 import.R   lit les sources (Google Sheets, Drive, Odoo) et construit les DB_*
+             (chaque nuit, sur GitHub Actions — plus au démarrage)
              ↓
 ui.R       une fonction ui_*() par onglet ; R/acces.R décide lesquels insérer
 server.R   une section par onglet, dans le même ordre que la barre
@@ -23,6 +24,12 @@ dans un `render*`.
 `R/connect.R` décide de ce qui survit entre deux sessions : `TABLES_DASHBOARD`
 est le contrat minimum, `TABLES_OPTIONNELLES` le sas par lequel une nouvelle
 source entre sans bloquer l'import de tout le reste.
+
+Au démarrage, le dashboard charge le **dernier** cache disponible, quelle que
+soit sa date : il s'ouvre en quelques secondes au lieu de quelques minutes. En
+échange, la date des données est affichée en permanence dans la barre, et un
+clic dessus permet de reprendre l'import de la nuit ou de tout relire — voir
+[`docs/automatisation.md`](docs/automatisation.md).
 
 ## Les onglets
 
@@ -76,12 +83,19 @@ Rscript essai_odoo_api.R          # vérifier la connexion Odoo, sans rien écri
   qui se passe côté serveur quand un onglet est interdit.
 - **[`docs/odoo.md`](docs/odoo.md)** — brancher la comptabilité Odoo : ce qu'il
   faut exporter, le contrat que `DB_COMPTA` doit respecter, et l'API.
+- **[`docs/automatisation.md`](docs/automatisation.md)** — l'import quotidien :
+  pourquoi il a quitté le démarrage du dashboard, où il tourne maintenant, ce
+  qu'il faut configurer, et les trois filets qui diront qu'il a cassé.
 
 ## Intégration continue
 
 `.github/workflows/tests.yml` lance la suite à chaque poussée et à chaque pull
 request. Elle prend une douzaine de secondes : une branche rouge se voit donc
 avant d'être mergée, sans avoir à penser à lancer les tests.
+
+`.github/workflows/import.yml` y lance aussi l'import, chaque matin avant
+l'ouverture. Les journaux de ce dépôt sont publics : le script n'y publie
+qu'un résumé choisi, et le `.RData` n'en sort jamais.
 
 ## Les branches
 
