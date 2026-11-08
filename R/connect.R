@@ -29,6 +29,11 @@ TABLES_OPTIONNELLES <- c(
   # comptes hors plan, matières non ventilées) ne se refont pas depuis le
   # .RData, et c'est pourtant là qu'on voudra les relire.
   "CONTROLE_ODOO",       # contrôle de lecture des écritures Odoo
+  # Le journal des décisions prises sur les mois douteux. Il vit dans un
+  # classeur, et c'est lui qui fait foi ; cette copie n'est là que pour que le
+  # dashboard s'ouvre sans rappeler Google à chaque démarrage.
+  "DB_VALIDATION_COMPTA", # décisions de validation des mois (cf. R/validation.R)
+
   # Les écritures au grain LIGNE, telles que lues. DB_COMPTA n'en garde que
   # l'agrégat mensuel par compte : ce qui suffit à tous les calculs, et à rien
   # d'autre. Ni la pièce, ni le partenaire, ni la date exacte n'y survivent —

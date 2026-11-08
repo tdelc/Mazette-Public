@@ -630,6 +630,12 @@ ui_compta_controle <- function() {
         actionButton("topo_tout_garder", "Tout réintégrer",
                      icon = icon("rotate-left"),
                      class = "btn btn-sm btn-outline-secondary"),
+        # Écarter est une décision de lecture, perdue à la fermeture. Trancher
+        # est un constat de vérification, qui part dans un classeur et survit
+        # à tout le monde (cf. R/validation.R).
+        actionButton("topo_valider", "Trancher un mois",
+                     icon = icon("clipboard-check"),
+                     class = "btn btn-sm btn-outline-success"),
         span(class = "small text-muted",
              "Clique une ligne pour l'écarter de l'analyse, ou la réintégrer.")
       ),
@@ -642,6 +648,10 @@ ui_compta_controle <- function() {
         " vieux, à lire plutôt qu'à écarter. ",
         tags$b("Comptes"), " : combien de comptes ont bougé ce mois-là, la",
         " cellule rougit sous la moitié de l'habitude.", tags$br(),
+        tags$b("Validé à la main"), " / ", tags$b("Écarté à la main"), " : un",
+        " mois sur lequel quelqu'un est allé voir. La colonne ", tags$i("Pourquoi"),
+        " dit qui, quand, et ce qui a été vérifié. La décision tombe d'elle-même",
+        " si les chiffres du mois changent ensuite.", tags$br(),
         "Les mois écartés disparaissent des autres onglets."
       )
     ),

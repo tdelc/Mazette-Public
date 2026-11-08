@@ -83,6 +83,9 @@ Rscript essai_odoo_api.R          # vérifier la connexion Odoo, sans rien écri
   qui se passe côté serveur quand un onglet est interdit.
 - **[`docs/odoo.md`](docs/odoo.md)** — brancher la comptabilité Odoo : ce qu'il
   faut exporter, le contrat que `DB_COMPTA` doit respecter, et l'API.
+- **[`docs/validation-mois.md`](docs/validation-mois.md)** — trancher un mois
+  douteux : le bouton, le classeur de décisions, et pourquoi une validation
+  cesse de s'appliquer quand les chiffres du mois changent.
 - **[`docs/automatisation.md`](docs/automatisation.md)** — l'import quotidien :
   pourquoi il a quitté le démarrage du dashboard, où il tourne maintenant, ce
   qu'il faut configurer, et les trois filets qui diront qu'il a cassé.

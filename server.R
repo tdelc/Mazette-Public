@@ -30,6 +30,21 @@ DONNEES <- connexion_ou_creation(envir = ENV_DONNEES)
 # est ce qui le leur apprend.
 VERSION_DONNEES <- reactiveVal(0L)
 
+# Le journal des décisions prises sur les mois douteux (cf. R/validation.R).
+# Partagé lui aussi : une validation faite dans une session doit verdir la
+# pastille dans les autres, sans attendre l'import du lendemain.
+VALIDATIONS <- reactiveVal(validations_chargees(ENV_DONNEES))
+
+# Ce qu'il y a à faire quand les tables ont été remplacées, d'où que vienne le
+# remplacement. Trois endroits appelaient les mêmes trois lignes ; un
+# quatrième en aurait oublié une, et ce sont des oublis silencieux — des
+# écrans qui montrent les anciens chiffres sans le dire.
+donnees_remplacees <- function(res) {
+  DONNEES <<- res
+  VALIDATIONS(validations_chargees(ENV_DONNEES))
+  VERSION_DONNEES(isolate(VERSION_DONNEES()) + 1L)
+}
+
 #### Serveur ####
 
 server <- function(input, output, session) {
@@ -247,8 +262,7 @@ server <- function(input, output, session) {
       # `<<-` : DONNEES vit dans ENV_DONNEES, hors de la fonction serveur, et
       # c'est bien là qu'il doit changer — pour cette session comme pour les
       # autres.
-      DONNEES <<- res
-      VERSION_DONNEES(VERSION_DONNEES() + 1L)
+      donnees_remplacees(res)
       session$reload()
     }
   })
@@ -292,8 +306,7 @@ server <- function(input, output, session) {
                                conditionMessage(attr(res, "condition"))),
                          type = "error", duration = 15)
       } else {
-        DONNEES <<- res
-        VERSION_DONNEES(VERSION_DONNEES() + 1L)
+        donnees_remplacees(res)
         session$reload()
       }
       return()
@@ -334,8 +347,7 @@ server <- function(input, output, session) {
       return(avance("import terminé, mais le fichier n'a pas pu être repris depuis Drive.",
                     fini = TRUE))
 
-    DONNEES <<- res
-    VERSION_DONNEES(VERSION_DONNEES() + 1L)
+    donnees_remplacees(res)
     avance(paste0("import terminé : données du ", date_fr(res$date),
                   ". Rechargez l'écran."), fini = TRUE)
   })
@@ -1017,7 +1029,9 @@ server <- function(input, output, session) {
   # c'est volontaire : s'il en dépendait, le mois qu'on vient d'écarter
   # sortirait du tableau, donc de la sélection, donc de l'écartement — et la
   # table se redessinerait à chaque clic en perdant le clic.
-  compta_topo <- reactive({ topo_mois(compta_brute(), compta_improbable()) })
+  compta_topo <- reactive({
+    topo_mois(compta_brute(), compta_improbable(), VALIDATIONS())
+  })
 
   output$topo_table <- renderDT({
     tbl <- table_topo(compta_topo())
@@ -1068,6 +1082,58 @@ server <- function(input, output, session) {
     DT::selectRows(DT::dataTableProxy("topo_table"), integer(0))
   })
 
+  #### Trancher un mois douteux ####
+
+  # Écarter un mois est une décision de LECTURE, locale à la session et perdue
+  # à la fermeture. Le trancher est autre chose : c'est le constat qu'on est
+  # allé voir, et il doit survivre à la session, au processus et à l'import.
+  # Il part donc dans un classeur (cf. R/validation.R).
+  observeEvent(input$topo_valider, {
+    showModal(dialogue_validation(compta_topo(), VALIDATIONS()))
+  })
+
+  output$valid_actuel <- renderUI({
+    apercu_decision(VALIDATIONS(), input$valid_mois)
+  })
+
+  observeEvent(input$valid_enregistrer, {
+    mois <- input$valid_mois
+    req(!is.null(mois), nzchar(mois))
+    dec <- input$valid_decision
+    com <- trimws(as.character(input$valid_commentaire))
+    if (is.na(com)) com <- ""
+
+    # Une décision sans motif ne vaut rien : dans six mois, « validé » sans un
+    # mot ne dira pas ce qui a été vérifié, et il faudra tout refaire.
+    if (!identical(dec, "revoque") && !nzchar(com)) {
+      showNotification(
+        "Dites en un mot ce que vous avez vérifié : c'est tout l'intérêt du journal.",
+        type = "warning", duration = 8)
+      return()
+    }
+
+    ligne <- ligne_validation(mois, dec, com, USER$nom, compta_topo())
+    ecrit <- try(ecrit_validation(ligne), silent = TRUE)
+
+    if (inherits(ecrit, "try-error")) {
+      # On ne touche à RIEN à l'écran. Une pastille verte sur une décision qui
+      # n'est pas dans le classeur disparaîtrait au prochain import, sans que
+      # personne puisse dire pourquoi.
+      showNotification(paste("Enregistrement impossible :",
+                             conditionMessage(attr(ecrit, "condition"))),
+                       type = "error", duration = 15)
+      return()
+    }
+
+    VALIDATIONS(bind_rows(VALIDATIONS(), ligne))
+    removeModal()
+    showNotification(
+      paste0(etiquette_periode(as.Date(mois), "mois"), " : ",
+             switch(dec, valide = "validé", rejete = "écarté",
+                    "décision annulée"), "."),
+      type = "message", duration = 6)
+  })
+
   output$topo_resume <- renderUI({
     resume_topo(compta_topo(), compta_exclus())
   })
@@ -1092,8 +1158,12 @@ server <- function(input, output, session) {
   # comparaisons d'aujourd'hui, et personne n'ira la chercher mois par mois.
   ctrl_alertes <- reactive({
     req(exists("DB_COMPTA"))
+    # Les mois VALIDÉS à la main sortent des alertes : c'est tout l'objet de
+    # la validation. Les mois REJETÉS y restent — leurs chiffres sont bien
+    # improbables, c'est confirmé, pas résolu, et ça doit continuer de se voir
+    # tant que la source n'est pas corrigée.
     alertes_integrite(compta(), postes_exploitation(compta()),
-                      compta_improbable())
+                      improb_hors_valides(compta_improbable(), compta_topo()))
   })
 
   output$ctrl_diagnostic  <- renderUI({ rendu_diagnostic(ctrl_alertes()) })
