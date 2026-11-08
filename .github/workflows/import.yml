@@ -57,6 +57,19 @@ jobs:
     timeout-minutes: 30
     name: Rscript import_quotidien.R
 
+    # Les secrets sont rangés dans un ENVIRONNEMENT GitHub nommé SECRET, et
+    # non dans les secrets du dépôt. Ce n'est pas la même portée : un secret
+    # d'environnement n'est lisible que par un job qui DÉCLARE cet
+    # environnement — sans cette ligne, `secrets.LINK_JSON` vaut la chaîne
+    # vide et l'import échoue sur « cannot open URL '' ». Le secret n'est pas
+    # introuvable : il est hors de portée, et rien ne le dit.
+    #
+    # C'est la portée la plus étroite des deux, donc la bonne sur un dépôt
+    # public : en limitant l'environnement à la branche main (Settings →
+    # Environments → SECRET → Deployment branches), aucun workflow poussé
+    # sur une autre branche ne peut lire ces valeurs.
+    environment: SECRET
+
     steps:
       - uses: actions/checkout@v4
 

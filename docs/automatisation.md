@@ -97,8 +97,8 @@ poussée. Il a R, il a le dépôt, il lit les secrets, il tourne un quart d'heur
 puis disparaît, et il écrit à l'adresse que le dashboard interroge déjà : le
 dossier Drive.
 
-D'où `.github/workflows/import.yml`, qui tourne chaque matin à 4h43 UTC et
-appelle `import_quotidien.R`.
+D'où `.github/workflows/import.yml`, qui tourne chaque matin à 6h43 UTC
+(7h43 à Bruxelles en hiver) et appelle `import_quotidien.R`.
 
 Le PC allumé en permanence reste une option valable, mais il n'achète rien de
 plus ici — et il ajoute une machine à surveiller.
@@ -107,13 +107,29 @@ plus ici — et il ajoute une machine à surveiller.
 
 ### Les secrets du dépôt
 
-*Settings → Secrets and variables → Actions → New repository secret.* Les
-mêmes valeurs que les variables d'environnement de l'hébergeur Shiny :
+Les mêmes valeurs que les variables d'environnement de l'hébergeur Shiny :
 
 ```
 LINK_JSON       ID_DRIVE_PATHS    ODOO_DB       ODOO_CLE_API
 PATH_DRIVE      ODOO_URL          ODOO_LOGIN
 ```
+
+Elles sont rangées dans un **environnement** GitHub nommé `SECRET`
+(*Settings → Environments*), en tant que *secrets* et jamais en tant que
+*variables* : une variable est stockée en clair et s'imprime telle quelle
+dans les journaux, qui sont publics ici.
+
+Un secret d'environnement n'est lisible que par un job qui **déclare** cet
+environnement — d'où la ligne `environment: SECRET` dans le workflow. Sans
+elle, `secrets.LINK_JSON` vaut la chaîne vide et l'import échoue sur
+« cannot open URL '' » : le secret n'est pas introuvable, il est hors de
+portée, et rien ne le dit.
+
+C'est la portée la plus étroite des deux (l'autre étant les *repository
+secrets*, lisibles par tous les workflows du dépôt), donc la bonne ici. Elle
+se resserre encore en limitant l'environnement à la seule branche `main` :
+*Settings → Environments → SECRET → Deployment branches*. Aucun workflow
+poussé sur une autre branche ne peut alors lire ces valeurs.
 
 ### Les variables de l'hébergeur Shiny
 
