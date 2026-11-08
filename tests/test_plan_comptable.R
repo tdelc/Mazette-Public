@@ -5,6 +5,7 @@ vecteur_mois_court <- c("janv.","févr.","mars","avr.","mai","juin",
                         "juil.","août","sept.","oct.","nov.","déc.")
 source("R/helpers.R",       encoding = "UTF-8", local = TRUE)
 source("R/exploitation.R",  encoding = "UTF-8", local = TRUE)   # etiquette_periode
+source("R/validation.R",   encoding = "UTF-8", local = TRUE)   # applique_validations
 source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 
 cpt <- function(compte, valeur, annee = 2026L, mois = 1L, libelle = "x")

@@ -35,7 +35,7 @@ event_register <- function(p, ...) p
 event_data <- function(...) NULL
 
 for (f in c("R/date.R", "R/helpers.R", "R/theme.R", "R/kpi.R", "R/plan_comptable.R",
-            "R/exploitation.R", "R/planning.R", "R/sources_travail.R",
+            "R/exploitation.R","R/validation.R", "R/planning.R", "R/sources_travail.R",
             "R/projection.R"))
   source(f, encoding = "UTF-8", local = TRUE)
 

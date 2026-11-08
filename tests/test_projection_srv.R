@@ -29,12 +29,17 @@ render_stub <- function(expr, env=parent.frame(), quoted=FALSE){
   f <- exprToFunction(expr, env, quoted); renderText({ f(); "" })}
 renderPlotly <- render_stub; renderDT <- render_stub
 for (f in c("R/date.R", "R/helpers.R","R/theme.R","R/kpi.R","R/plan_comptable.R",
-            "R/exploitation.R","R/analyse.R","R/ecritures.R","R/planning.R",
+            "R/exploitation.R","R/validation.R","R/analyse.R","R/ecritures.R","R/planning.R",
             "R/sources_travail.R","R/projection.R"))
   source(f, encoding="UTF-8", local = TRUE)
 
 # Le socle (d'ou viennent compta_brute() et compta_exclus()) et la Projection.
 # Extraits, pas recopies : une copie diverge.
+# L'etat partage entre toutes les sessions vit en TETE de server.R, hors des
+# blocs extraits ici : le journal des decisions prises sur les mois douteux
+# (cf. R/validation.R). On le double, comme plotly et DT.
+VALIDATIONS <- shiny::reactiveVal(NULL)
+
 src <- readLines("server.R", encoding = "UTF-8", warn = FALSE)
 bloc <- function(debut, fin) {
   i <- grep(debut, src); j <- grep(fin, src)

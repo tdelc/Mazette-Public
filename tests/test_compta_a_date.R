@@ -27,6 +27,7 @@ source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 source("R/exploitation.R", encoding = "UTF-8", local = TRUE)
 
 #### La coupe elle-même ####
+source("R/validation.R",   encoding = "UTF-8", local = TRUE)   # applique_validations
 
 AUJ <- as.Date("2026-11-07")
 db <- tibble(ANNEE = 2026L, MOIS = 6:12, COMPTE = "700000", LIBELLE = "Ventes",

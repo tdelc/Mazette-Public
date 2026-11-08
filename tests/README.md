@@ -58,6 +58,7 @@ seconde, partout, sans installer la moitié du CRAN.
 | `test_connect.R` | quel cache est chargé, et quand l'import se refait |
 | `test_fraicheur.R` | la date des données, et ce que la pastille en dit |
 | `test_import_distant.R` | le déclenchement de l'import sur GitHub Actions |
+| `test_validation.R` | trancher un mois douteux, et la révocation d'une décision périmée |
 
 Les assertions portent sur ce qui a **déjà été faux au moins une fois** : la
 duplication des lignes de caisse, le 6 % compté en boisson, `format_CA` qui

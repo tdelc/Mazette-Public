@@ -6,6 +6,7 @@
 | `acces.md` | les mots de passe, les profils, et ce qui se passe côté serveur quand un onglet est interdit |
 | `odoo.md` | brancher la comptabilité Odoo : quoi exporter, le contrat que `DB_COMPTA` doit respecter, et l'API |
 | `automatisation.md` | l'import de la nuit : pourquoi il ne tourne plus au démarrage, où il tourne maintenant, et ce qui dira qu'il a cassé |
+| `validation-mois.md` | trancher un mois douteux : le bouton, le classeur de décisions, et pourquoi une validation tombe quand les chiffres bougent |
 
 `index.html` est aussi la mémoire des **pièges** : les défauts qui n'ont été
 trouvés qu'au navigateur, ceux qu'aucun test ne pouvait voir, et la raison de
