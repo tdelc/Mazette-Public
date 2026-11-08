@@ -203,6 +203,15 @@ if (A_LIRE_ODOO) {
       "Odoo API : il manque {.envvar {ODOO_ENV[manque_odoo()]}}")
 }
 
+# Les décisions prises sur les mois douteux
+#
+# Un journal, pas un état : une ligne par décision, jamais de modification
+# (cf. R/validation.R). Le dashboard y ajoute une ligne quand quelqu'un
+# tranche un mois ; l'import le relit, c'est tout. Son absence ne coûte rien —
+# le topo retrouve simplement ses verdicts calculés.
+cli::cli_h3("Validations de mois")
+DB_VALIDATION_COMPTA <- lit_validations()
+
 # Import des réservations
 
 cli::cli_h3("Drive Réservations")

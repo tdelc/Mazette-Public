@@ -14,6 +14,7 @@ source("R/date.R",            encoding="UTF-8", local = TRUE)   # parse_date_sou
 source("R/planning.R",        encoding="UTF-8", local = TRUE)
 source("R/helpers.R",         encoding="UTF-8", local = TRUE)   # ratio_pct
 source("R/exploitation.R",    encoding="UTF-8", local = TRUE)   # postes_exploitation
+source("R/validation.R",   encoding = "UTF-8", local = TRUE)   # applique_validations
 source("R/odoo.R",            encoding="UTF-8", local = TRUE)
 
 FIXTURE <- "tests/fixtures/ecritures_odoo.tsv"

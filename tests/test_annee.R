@@ -42,6 +42,7 @@ source("R/theme.R",          encoding = "UTF-8", local = TRUE)
 source("R/kpi.R",            encoding = "UTF-8", local = TRUE)
 source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 source("R/exploitation.R",   encoding = "UTF-8", local = TRUE)
+source("R/validation.R",   encoding = "UTF-8", local = TRUE)   # applique_validations
 source("R/annee.R",          encoding = "UTF-8", local = TRUE)
 # APRES le source : R/annee.R definit lui aussi graph_ecart_cumule(),
 # et le sourcer apres la doublure l'ecraserait.

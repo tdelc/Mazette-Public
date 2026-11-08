@@ -30,6 +30,7 @@ source("R/helpers.R",        encoding="UTF-8", local = TRUE)
 source("R/theme.R",          encoding="UTF-8", local = TRUE)
 source("R/plan_comptable.R", encoding="UTF-8", local = TRUE)
 source("R/exploitation.R",   encoding="UTF-8", local = TRUE)   # COUL_POSTES
+source("R/validation.R",   encoding = "UTF-8", local = TRUE)   # applique_validations
 source("R/ecritures.R",      encoding="UTF-8", local = TRUE)
 
 ecr <- function(date, compte, libelle, debit = 0, credit = 0,

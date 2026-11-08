@@ -23,7 +23,7 @@ COUL_NEUTRE<-"#8d7b68"; COUL_BRUN<-"#732c02"
 vecteur_mois_court <- c("janv.","févr.","mars","avr.","mai","juin",
                         "juil.","août","sept.","oct.","nov.","déc.")
 for (f in c("R/helpers.R", "R/theme.R", "R/kpi.R", "R/plan_comptable.R",
-            "R/exploitation.R", "R/annee.R"))
+            "R/exploitation.R","R/validation.R", "R/annee.R"))
   source(f, encoding = "UTF-8", local = TRUE)
 
 # Une annee passee, ouverte tous les jours : le rang d'un jour est donc son
