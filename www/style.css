@@ -627,3 +627,18 @@ span.value-box-title { display: block; }
 }
 .lien-forage:hover { opacity: 1; color: inherit; }
 .lien-forage .fa-arrow-right-long { font-size: 0.75em; margin-left: 0.3em; }
+
+/* La date des donnees, a gauche du nom de la personne. Meme discretion que le
+   reste de la barre : la couleur, elle, vient du serveur (R/fraicheur.R), car
+   c'est elle qui porte le verdict. */
+.badge-fraicheur,
+.badge-fraicheur:visited {
+  font-size: 0.85rem;
+  margin-right: 0.8rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.badge-fraicheur:hover,
+.badge-fraicheur:focus-visible {
+  text-decoration: underline;
+}

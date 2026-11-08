@@ -2,11 +2,33 @@ options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))
 
 #### Chargement initial des données ####
 
-prefix         <- "R_new_env_"
-date_jour      <- format(now() - days(1), format = "%Y-%m-%d")
-drive_env_name <- paste0(prefix, date_jour, ".RData")
+# L'environnement où vivent les DB_*, nommé pour pouvoir y réécrire.
+#
+# C'est celui dans lequel server.R est évalué, donc celui que voient tous les
+# réactifs. Le bouton « mise à jour » remplace les tables ICI, une fois pour
+# toutes les sessions — les données sont chargées une fois par processus R, pas
+# une fois par personne connectée.
+ENV_DONNEES <- environment()
 
-connexion_ou_creation(drive_env_name, prefix, force_dl = FALSE)
+# Le dernier cache disponible, quelle que soit sa date (cf. R/connect.R).
+#
+# Avant, cette ligne réclamait le cache de la VEILLE et refaisait tout l'import
+# s'il n'y était pas : la première personne connectée du matin attendait
+# plusieurs minutes, et les suivantes non. Désormais l'import ne tourne plus
+# jamais au démarrage — il tourne chaque nuit, ailleurs
+# (.github/workflows/import.yml) — et le dashboard s'ouvre sur ce qu'il trouve.
+#
+# Ce qu'on doit en échange à la personne qui regarde : la date de ce qu'elle
+# voit, affichée en permanence, et le moyen de demander mieux. C'est la
+# pastille de la barre de navigation (cf. R/fraicheur.R).
+DONNEES <- connexion_ou_creation(envir = ENV_DONNEES)
+
+# Le compteur de versions des données. PARTAGÉ par toutes les sessions, à
+# dessein : quand une personne met les données à jour, les écrans déjà ouverts
+# affichent des réactifs calculés sur les tables d'AVANT, et rien ne les
+# invalidera tout seuls (DB_JOURS est un objet, pas un réactif). Ce compteur
+# est ce qui le leur apprend.
+VERSION_DONNEES <- reactiveVal(0L)
 
 #### Serveur ####
 
@@ -168,6 +190,164 @@ server <- function(input, output, session) {
   # page revient sur l'écran de connexion sans retoucher au .RData.
   observeEvent(input$deconnexion, {
     session$reload()
+  })
+
+  #### Fraîcheur des données et mise à jour ####
+
+  # La version des données sur laquelle CETTE session a été construite. Si le
+  # compteur partagé la dépasse, c'est qu'un import a eu lieu ailleurs : les
+  # réactifs de cet écran sont périmés, et la pastille le dit.
+  VERSION_VUE <- isolate(VERSION_DONNEES())
+
+  output$badge_fraicheur <- renderUI({
+    req(USER$logged)
+    badge_fraicheur(etat_fraicheur(DONNEES$date), DONNEES$date,
+                    a_recharger = VERSION_DONNEES() > VERSION_VUE)
+  })
+
+  # Qui peut refaire l'import complet ? Les associés seulement. Reprendre le
+  # dernier import ne coûte rien et reste ouvert à tous ; relire toutes les
+  # sources mobilise un exécutant pendant quelques minutes, et c'est un geste
+  # de correction, pas de consultation.
+  peut_importer <- reactive(identical(USER$role, "admin"))
+
+  observeEvent(input$ouvrir_fraicheur, {
+    if (VERSION_DONNEES() > VERSION_VUE) {
+      showModal(modalDialog(
+        title = "Nouvelles données",
+        p("Un import a été fait depuis l'ouverture de cet écran. Les chiffres ",
+          "affichés sont ceux d'avant : il faut recharger la page."),
+        p(class = "text-muted small", "Le mot de passe sera redemandé."),
+        footer = tagList(modalButton("Plus tard"),
+                         actionButton("recharger_ecran", "Recharger l'écran",
+                                      class = "btn-primary"))))
+    } else {
+      showModal(dialogue_fraicheur(etat_fraicheur(DONNEES$date), DONNEES$date,
+                                   peut_importer()))
+    }
+  })
+
+  observeEvent(input$recharger_ecran, session$reload())
+
+  # Reprendre le dernier import : un téléchargement, pas un import. Quelques
+  # secondes, pendant lesquelles le processus est bloqué — assumé, c'est le
+  # temps d'un fichier de quelques mégaoctets.
+  observeEvent(input$recharger_donnees, {
+    removeModal()
+    show_modal_spinner(
+      spin = "half-circle", color = COUL_BRUN,
+      text = "Reprise du dernier import…")
+    res <- try(recharge_donnees(envir = ENV_DONNEES), silent = TRUE)
+    remove_modal_spinner()
+
+    if (inherits(res, "try-error")) {
+      showNotification(paste("Reprise impossible :", conditionMessage(attr(res, "condition"))),
+                       type = "error", duration = 12)
+    } else {
+      # `<<-` : DONNEES vit dans ENV_DONNEES, hors de la fonction serveur, et
+      # c'est bien là qu'il doit changer — pour cette session comme pour les
+      # autres.
+      DONNEES <<- res
+      VERSION_DONNEES(VERSION_DONNEES() + 1L)
+      session$reload()
+    }
+  })
+
+  #### Refaire l'import complet ####
+
+  # Deux états, et deux seulement :
+  #   EN_COURS  un import tourne là-bas (c'est lui qui fait battre le suivi)
+  #   SUIVI     ce qu'on en montre
+  #
+  # Ils sont séparés parce qu'un observateur qui LIT la valeur qu'il ÉCRIT se
+  # réinvalide lui-même : le battement de quinze secondes deviendrait une
+  # boucle serrée sur l'API de GitHub. L'observateur ne lit donc que
+  # EN_COURS, qu'il n'écrit qu'une fois, pour s'arrêter.
+  EN_COURS <- reactiveVal(FALSE)
+  SUIVI    <- reactiveVal(NULL)
+  debut_import <- NULL
+
+  avance <- function(texte, fini = FALSE) {
+    SUIVI(texte)
+    if (fini) EN_COURS(FALSE)
+  }
+
+  observeEvent(input$import_complet, {
+    req(peut_importer())
+    removeModal()
+    conf <- config_import_distant()
+
+    if (is.null(conf)) {
+      # Pas de jeton : on est en développement, sur son propre R. L'import
+      # tourne ici et bloque tout le processus — ce qui ne dérange que soi.
+      # En production, GH_TOKEN_IMPORT est posé et ce chemin n'est jamais pris.
+      show_modal_spinner(
+        spin = "half-circle", color = COUL_BRUN,
+        text = "Import complet en cours (quelques minutes)…")
+      res <- try(connexion_ou_creation(force_import = TRUE, envir = ENV_DONNEES),
+                 silent = TRUE)
+      remove_modal_spinner()
+      if (inherits(res, "try-error")) {
+        showNotification(paste("Import impossible :",
+                               conditionMessage(attr(res, "condition"))),
+                         type = "error", duration = 15)
+      } else {
+        DONNEES <<- res
+        VERSION_DONNEES(VERSION_DONNEES() + 1L)
+        session$reload()
+      }
+      return()
+    }
+
+    lance <- declenche_import_distant(conf)
+    if (!lance$ok) {
+      showNotification(lance$message, type = "error", duration = 15)
+      return()
+    }
+    debut_import <<- Sys.time()
+    SUIVI("demande envoyée…")
+    EN_COURS(TRUE)
+    showModal(dialogue_suivi_import())
+  })
+
+  # Le battement qui suit l'exécution distante. Il s'arrête de lui-même, dans
+  # les deux cas où il doit s'arrêter : l'exécution est finie, ou le quart
+  # d'heure est passé. Un observateur qui interroge GitHub indéfiniment est un
+  # observateur qu'on a oublié d'arrêter.
+  observe({
+    req(EN_COURS())
+    invalidateLater(15000)
+
+    if (difftime(Sys.time(), debut_import, units = "mins") > 15)
+      return(avance("toujours rien après un quart d'heure : voir le journal sur GitHub.",
+                    fini = TRUE))
+
+    etat <- etat_import_distant()
+    if (!isTRUE(etat$ok))  return(avance(paste("suivi indisponible :", etat$message)))
+    if (!isTRUE(etat$fini)) return(avance(etat$message))
+    # Terminé mais pas réussi : surtout ne pas recharger un fichier qui n'a
+    # pas été écrit.
+    if (!isTRUE(etat$reussi)) return(avance(etat$message, fini = TRUE))
+
+    res <- try(recharge_donnees(envir = ENV_DONNEES), silent = TRUE)
+    if (inherits(res, "try-error"))
+      return(avance("import terminé, mais le fichier n'a pas pu être repris depuis Drive.",
+                    fini = TRUE))
+
+    DONNEES <<- res
+    VERSION_DONNEES(VERSION_DONNEES() + 1L)
+    avance(paste0("import terminé : données du ", date_fr(res$date),
+                  ". Rechargez l'écran."), fini = TRUE)
+  })
+
+  output$suivi_import <- renderUI({
+    texte <- SUIVI()
+    req(!is.null(texte))
+    tagList(
+      p(strong(texte)),
+      if (VERSION_DONNEES() > VERSION_VUE)
+        actionButton("recharger_ecran", "Recharger l'écran", class = "btn-primary")
+    )
   })
 
   #### Volet "Accueil" ####

@@ -314,7 +314,7 @@ html{scroll-behavior:smooth}
       <div class="tuile"><span class="k">Source de v&eacute;rit&eacute;</span>
         <span class="v">Des classeurs <strong>Google&nbsp;Drive</strong>, dont un fichier d&rsquo;index qui liste tous les autres.</span></div>
       <div class="tuile"><span class="k">Cache</span>
-        <span class="v"><code>outputs/R_new_env_&lt;date&gt;.RData</code>, reconstruit quand il manque.</span></div>
+        <span class="v"><code>outputs/R_new_env_&lt;date&gt;.RData</code>, reconstruit chaque nuit par GitHub&nbsp;Actions. Le dashboard charge le plus r&eacute;cent, quelle que soit sa date, et affiche celle-ci.</span></div>
       <div class="tuile"><span class="k">Authentification</span>
         <span class="v">Un mot de passe par personne, lu dans le classeur, qui ouvre un jeu d&rsquo;onglets.</span></div>
     </div>
@@ -324,9 +324,12 @@ html{scroll-behavior:smooth}
 <span class="cmt"># 2. Puis, depuis la racine du projet :</span>
 R -e 'shiny::runApp()'</code></pre>
     <p>
-      Au premier lancement sans cache local, l&rsquo;application va chercher le <code>.RData</code> sur
-      Drive&nbsp;; s&rsquo;il n&rsquo;y est pas non plus, elle reconstruit tout depuis les classeurs. Comptez
-      quelques minutes dans ce dernier cas.
+      L&rsquo;application charge le cache le plus r&eacute;cent qu&rsquo;elle trouve, en local ou sur Drive,
+      sans se soucier de sa date&nbsp;: quelques secondes. Elle ne reconstruit tout depuis les
+      classeurs que s&rsquo;il n&rsquo;existe aucun cache nulle part &mdash; comptez quelques minutes dans
+      ce seul cas. La date des donn&eacute;es est affich&eacute;e dans la barre de navigation, et un clic
+      dessus permet de reprendre l&rsquo;import de la nuit ou de tout relire
+      (cf. <code>docs/automatisation.md</code>).
     </p>
 
     <h3>Les cinq fichiers qui comptent</h3>
@@ -334,7 +337,7 @@ R -e 'shiny::runApp()'</code></pre>
       <thead><tr><th>Fichier</th><th>R&ocirc;le</th></tr></thead>
       <tbody>
         <tr><td><code>global.R</code></td><td>Charge les paquets, source tout <code>R/</code>, d&eacute;finit les constantes partag&eacute;es (couleurs, seuils, ingr&eacute;dients).</td></tr>
-        <tr><td><code>import.R</code></td><td>Reconstruit toutes les tables depuis Drive. Ne tourne que lorsqu&rsquo;aucun cache n&rsquo;est disponible.</td></tr>
+        <tr><td><code>import.R</code></td><td>Reconstruit toutes les tables depuis Drive. Lanc&eacute; chaque nuit par <code>import_quotidien.R</code> sur GitHub&nbsp;Actions, et par le bouton &laquo;&nbsp;refaire l&rsquo;import&nbsp;&raquo;&nbsp;; plus jamais au d&eacute;marrage, sauf si aucun cache n&rsquo;existe.</td></tr>
         <tr><td><code>server.R</code></td><td>Charge les donn&eacute;es au d&eacute;marrage, puis toute la logique r&eacute;active.</td></tr>
         <tr><td><code>ui.R</code></td><td>La coquille et les constructeurs d&rsquo;interface de chaque onglet.</td></tr>
         <tr><td><code>R/acces.R</code></td><td>Catalogue des onglets, profils d&rsquo;acc&egrave;s, et construction des onglets &agrave; la demande.</td></tr>
@@ -1073,9 +1076,10 @@ nav_insert("nav", panneau_onglet("tab_compta"), target = ..., session = session)
     <div class="note" data-profondeur="detail">
       <span class="l">Forcer une reconstruction</span>
       <p>
-        Passez <code>force_dl = TRUE</code> &agrave; l&rsquo;appel de <code>connexion_ou_creation()</code>, en t&ecirc;te
-        de <code>server.R</code>. C&rsquo;est le geste &agrave; faire apr&egrave;s avoir modifi&eacute; un classeur, si
-        vous ne voulez pas attendre le cache du lendemain.
+        Cliquez sur la date, dans la barre de navigation, puis sur &laquo;&nbsp;refaire l&rsquo;import&nbsp;&raquo;
+        (r&eacute;serv&eacute; aux associ&eacute;s). C&rsquo;est le geste &agrave; faire apr&egrave;s avoir modifi&eacute; un classeur, si
+        vous ne voulez pas attendre l&rsquo;import de la nuit. En ligne de commande&nbsp;:
+        <code>connexion_ou_creation(force_import = TRUE)</code>.
       </p>
     </div>
 
@@ -1644,6 +1648,14 @@ ID_DRIVE_PATHS=&lt;id du classeur qui contient l'onglet PATHS&gt;</code></pre>
           En production, ce sont les variables d&rsquo;environnement de l&rsquo;h&eacute;bergeur (sur Posit
           Connect&nbsp;: <em>Vars</em>, dans les r&eacute;glages du contenu).
         </p>
+        <p>
+          Une variable de plus, facultative, en production&nbsp;: <code>GH_TOKEN_IMPORT</code>,
+          un jeton GitHub &laquo;&nbsp;fine-grained&nbsp;&raquo; de port&eacute;e <em>Actions: write</em>
+          sur le seul d&eacute;p&ocirc;t. Elle donne au bouton &laquo;&nbsp;refaire l&rsquo;import&nbsp;&raquo; de quoi
+          d&eacute;clencher le workflow plut&ocirc;t que de bloquer le processus Shiny. Sans elle,
+          l&rsquo;import se fait sur place &mdash; ce qui convient en d&eacute;veloppement, jamais en
+          production (cf. <code>docs/automatisation.md</code>).
+        </p>
         <div class="note" data-profondeur="detail">
           <span class="l">Trois autres variables, sans effet aujourd&rsquo;hui</span>
           <p>
@@ -1690,7 +1702,7 @@ rsconnect::deployApp()</code></pre>
         <tr><td>Changer ce que voit un profil</td><td>Modifier <code>PROFILS</code> dans <code>R/acces.R</code>, puis red&eacute;ployer.</td></tr>
         <tr><td>Ajouter une ann&eacute;e d&rsquo;objectifs</td><td>Nouvel onglet dans le classeur, puis l&rsquo;ajouter &agrave; <code>vec_sheets</code> et &agrave; <code>DB_OBJECTIFS</code> dans <code>import.R</code>.</td></tr>
         <tr><td>Ajouter un onglet au dashboard</td><td>Une ligne dans <code>ONGLETS</code> (<code>R/acces.R</code>) et une fonction <code>ui_*()</code> dans <code>ui.R</code>.</td></tr>
-        <tr><td>Forcer un rafra&icirc;chissement</td><td><code>force_dl = TRUE</code> en t&ecirc;te de <code>server.R</code>, ou supprimer le <code>.RData</code> local et celui de Drive.</td></tr>
+        <tr><td>Forcer un rafra&icirc;chissement</td><td>Cliquer sur la date dans la barre, puis &laquo;&nbsp;refaire l&rsquo;import&nbsp;&raquo;. Ou, depuis l&rsquo;onglet Actions du d&eacute;p&ocirc;t&nbsp;: <em>Import quotidien &rarr; Run workflow</em>.</td></tr>
       </tbody>
     </table></div>
 
@@ -1702,7 +1714,8 @@ rsconnect::deployApp()</code></pre>
         <tr><td>Un s&eacute;lecteur de p&eacute;riode reste vide</td><td>Un <code>update*Input()</code> sans le garde-fou <code>ONGLETS_PRETS()</code> &mdash; cf. Pi&egrave;ges connus.</td></tr>
         <tr><td>L&rsquo;import &eacute;choue sur une table manquante</td><td>Un onglet du classeur a &eacute;t&eacute; renomm&eacute; ou vid&eacute;. Le message nomme la table attendue.</td></tr>
         <tr><td>Erreur d&rsquo;authentification Drive</td><td><code>LINK_JSON</code> injoignable, cl&eacute; r&eacute;voqu&eacute;e, ou fichier plus partag&eacute; avec le compte de service.</td></tr>
-        <tr><td>Les donn&eacute;es datent d&rsquo;hier</td><td>Comportement normal&nbsp;: le cache vise la veille. Forcer si besoin.</td></tr>
+        <tr><td>Les donn&eacute;es datent d&rsquo;hier</td><td>Comportement normal&nbsp;: l&rsquo;import de la nuit porte le dernier jour clos. La pastille est alors beige.</td></tr>
+        <tr><td>La pastille de date est ambre ou rouge</td><td>L&rsquo;import de la nuit n&rsquo;a pas tourn&eacute;&nbsp;: voir l&rsquo;onglet Actions du d&eacute;p&ocirc;t, et <code>docs/automatisation.md</code>. Les workflows planifi&eacute;s d&rsquo;un d&eacute;p&ocirc;t public sont d&eacute;sactiv&eacute;s apr&egrave;s 60&nbsp;jours sans commit.</td></tr>
         <tr><td>Le d&eacute;ploiement installe de mauvais paquets</td><td><code>manifest.json</code> obsol&egrave;te&nbsp;: r&eacute;g&eacute;n&eacute;rer avec <code>rsconnect::writeManifest()</code>.</td></tr>
       </tbody>
     </table></div>

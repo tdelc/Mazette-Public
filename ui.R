@@ -96,6 +96,9 @@ ui_app <- function() {
     # jamais le serveur, et ses sorties ne sont jamais calculées.
     panneau_onglet(ONGLET_ACCUEIL),
     nav_spacer(),
+    # La date des données, avant le nom de la personne : c'est la première
+    # chose à savoir en arrivant (cf. R/fraicheur.R).
+    nav_item(uiOutput("badge_fraicheur", inline = TRUE)),
     nav_item(uiOutput("badge_utilisateur", inline = TRUE)),
     nav_item(
       radioGroupButtons("unite_tva", label = NULL,

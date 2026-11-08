@@ -55,6 +55,9 @@ seconde, partout, sans installer la moitié du CRAN.
 | `test_details.R`, `test_planning.R`, `test_sources_travail.R` | les volets |
 | `test_zones_alerte.R` | que toute zone d'alerte est bien réveillée |
 | `test_ui_onglets.R` | que chaque onglet se construit encore |
+| `test_connect.R` | quel cache est chargé, et quand l'import se refait |
+| `test_fraicheur.R` | la date des données, et ce que la pastille en dit |
+| `test_import_distant.R` | le déclenchement de l'import sur GitHub Actions |
 
 Les assertions portent sur ce qui a **déjà été faux au moins une fois** : la
 duplication des lignes de caisse, le 6 % compté en boisson, `format_CA` qui
