@@ -214,6 +214,32 @@ ok("apres, il les compte, avec un effet negatif",
                                  marge = "apres")
      c1$EFFET[c1$COMPTE == "630000"] == -400 })
 
+# ---------- 3 ter. la reference « habituelle » boucle elle aussi ----------
+# La mediane d'une somme n'est pas la somme des medianes : si l'on medianait
+# la marge a part, la reference ne verifierait plus marge = produits -
+# charges et le pont perdrait jusqu'a 2 000 EUR sur ces quatre mois.
+mois4 <- bind_rows(
+  periode(100000, 0, 30000, 40000, 10000, 0, "2026-01-01"),
+  periode( 80000, 0, 30000, 30000, 15000, 0, "2026-02-01"),
+  periode(120000, 0, 30000, 50000, 12000, 0, "2026-03-01"),
+  periode(100000, 0, 30000, 40000, 10000, 0, "2026-04-01")) |>
+  mutate(AMORTISSEMENT = c(1000, 3000, 2000, 1500),
+         CHARGES  = CHARGES + AMORTISSEMENT,
+         MARGE    = MARGE - AMORTISSEMENT,
+         MARGE_PA = MARGE_AA - AMORTISSEMENT)
+rh <- reference_analyse(mois4, "2026-04-01", "habituelle")
+ok("habituelle : la marge de reference est recomposee des postes medians",
+   with(rh$ligne,
+        abs(MARGE_AA - (CA + AUTRES - MATIERES - REMUNERATION - GENERAUX +
+                        FINANCIER)) < 1e-9 &&
+        abs(MARGE_PA - (MARGE_AA - AMORTISSEMENT)) < 1e-9 &&
+        abs(MARGE - (PRODUITS - CHARGES)) < 1e-9))
+for (choix in c("avant", "apres")) {
+  ph <- pont_marge(mois4[4, ], rh$ligne, marge = choix)
+  ok(paste0("habituelle : le pont boucle a l'euro (", choix, " amortissements)"),
+     abs(ph$DEPART[1] + sum(ph$EFFET) - ph$ARRIVEE[1]) < 0.5)
+}
+
 # ---------- 4. le rabotage ----------
 # Comparer une periode incomplete a une periode complete fausse tout. On peut
 # donc raboter la reference a la meme taille.

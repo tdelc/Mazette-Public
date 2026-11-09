@@ -232,17 +232,21 @@ reference_analyse <- function(serie, periode, mode = "precedente",
     # moyenne, et sur une seule c'est la comparaison « précédente » déguisée.
     ref <- tail(passe, n_habituelle)
     if (nrow(ref) < 3) return(NULL)
-    if (!"MARGE_PA" %in% names(ref))
-      ref <- mutate(ref, MARGE_PA = MARGE_AA - AMORTISSEMENT)
-    # Médiane colonne par colonne. Les pourcentages sont RECALCULÉS à partir
-    # des médianes d'euros et non médianés directement : la médiane d'un
-    # rapport n'est pas le rapport des médianes, et afficher les deux côte à
-    # côte laisserait un tableau qui ne s'additionne pas.
+    # Médiane des POSTES seulement. Les totaux (produits, charges, marges)
+    # sont RECOMPOSÉS à partir des postes médians, et les pourcentages
+    # RECALCULÉS à partir des euros médians, pour la même raison : la médiane
+    # d'une somme n'est pas la somme des médianes, ni la médiane d'un rapport
+    # le rapport des médianes. Médianer la marge à part donnerait une
+    # référence où marge ≠ produits − charges, et un pont qui ne boucle plus.
     med <- ref %>%
-      summarise(across(c(CA, AUTRES, PRODUITS, MATIERES, REMUNERATION,
-                         GENERAUX, AMORTISSEMENT, FINANCIER, CHARGES,
-                         MARGE, MARGE_AA, MARGE_PA),
+      summarise(across(c(CA, AUTRES, MATIERES, REMUNERATION, GENERAUX,
+                         AMORTISSEMENT, FINANCIER),
                        ~stats::median(., na.rm = TRUE))) %>%
+      mutate(PRODUITS = CA + AUTRES,
+             CHARGES  = MATIERES + REMUNERATION + GENERAUX + AMORTISSEMENT,
+             MARGE    = PRODUITS - CHARGES,
+             MARGE_AA = PRODUITS - MATIERES - REMUNERATION - GENERAUX + FINANCIER,
+             MARGE_PA = MARGE_AA - AMORTISSEMENT) %>%
       mutate(PERIODE = max(ref$PERIODE), N_MOIS = NA_integer_,
              PCT_MATIERES = ratio_pct(MATIERES, CA),
              PCT_TRAVAIL  = ratio_pct(REMUNERATION, CA),
