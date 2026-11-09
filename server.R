@@ -1265,11 +1265,15 @@ server <- function(input, output, session) {
     filter(p, PERIODE == d)
   })
 
-  output$expl_kpi <- renderUI({ kpi_exploitation(expl_une(), expl_unite()) })
+  # Avant ou après amortissements : « avant » par défaut, comme partout.
+  expl_marge <- reactive(input$expl_marge %||% "avant")
+
+  output$expl_kpi <- renderUI({
+    kpi_exploitation(expl_une(), expl_unite(), expl_marge()) })
   output$expl_cascade <- renderPlotly({
-    graph_cascade_exploitation(expl_une(), expl_unite()) })
+    graph_cascade_exploitation(expl_une(), expl_unite(), expl_marge()) })
   output$expl_structure <- renderPlotly({
-    graph_structure_exploitation(expl_serie(), expl_unite()) })
+    graph_structure_exploitation(expl_serie(), expl_unite(), expl_marge()) })
   # La période choisie est-elle close et complète ? Un trimestre à un mois sur
   # trois se lit sinon comme un effondrement.
   output$expl_alerte_periode <- renderUI({
@@ -1277,7 +1281,7 @@ server <- function(input, output, session) {
   })
 
   output$expl_table <- renderDT({
-    tbl <- table_exploitation(expl_serie(), expl_unite())
+    tbl <- table_exploitation(expl_serie(), expl_unite(), expl_marge())
     # Les colonnes .f_* portent le repérage des écarts (cf. R/exploitation.R) :
     # masquées, elles ne servent qu'à colorer la cellule voisine.
     caches <- which(startsWith(names(tbl), ".f_")) - 1L
@@ -1306,6 +1310,7 @@ server <- function(input, output, session) {
   # agrege_exploitation() à la granularité choisie. Rien n'est recalculé ici,
   # sinon les deux sous-onglets finiraient par afficher deux marges.
   eca_unite <- reactive(input$eca_unite %||% "mois")
+  eca_marge <- reactive(input$eca_marge %||% "avant")
 
   # Deux séries, et la distinction porte tout le rabotage.
   #
@@ -1434,13 +1439,13 @@ server <- function(input, output, session) {
   output$eca_kpi <- renderUI({
     r <- eca_reference()
     kpi_analyse(eca_actuel(), if (is.null(r)) NULL else r$ligne,
-                eca_lib_ref(), eca_unite())
+                eca_lib_ref(), eca_unite(), eca_marge())
   })
 
   eca_pont <- reactive({
     r <- eca_reference()
     if (is.null(r)) return(NULL)
-    pont_marge(eca_actuel(), r$ligne)
+    pont_marge(eca_actuel(), r$ligne, eca_marge())
   })
 
   # Le libellé de la période analysée sert au graphe, au tableau de
@@ -1468,7 +1473,7 @@ server <- function(input, output, session) {
     # Le même gabarit que la série : sans lui, les contributions ne sommeraient
     # plus à l'écart affiché juste au-dessus.
     contributions_comptes(compta(), eca_periode(), eca_ref_periodes(),
-                          eca_unite(), eca_offsets())
+                          eca_unite(), eca_offsets(), eca_marge())
   })
 
   output$eca_contrib <- renderPlotly({ graph_contributions(eca_contrib()) })
@@ -1480,7 +1485,7 @@ server <- function(input, output, session) {
     r <- eca_reference()
     tbl <- table_comparaison(eca_actuel(), if (is.null(r)) NULL else r$ligne,
                              etiquette_periode(eca_periode(), eca_unite()),
-                             eca_lib_ref())
+                             eca_lib_ref(), eca_marge())
     if (!".sens" %in% names(tbl)) return(datatable_simple(tbl))
     # .sens colore l'écart sans être affichée : même mécanique que les
     # colonnes .f_* du tableau d'exploitation.
@@ -1503,6 +1508,20 @@ server <- function(input, output, session) {
   # au grain annuel, une année en cours se comparerait à des années entières
   # et la courbe plongerait pour une raison de calendrier.
   evo_unite <- reactive(input$evo_unite %||% "mois")
+  evo_marge <- reactive(input$evo_marge %||% "avant")
+
+  # La liste des indicateurs suit la marge : les libellés de « marge » et
+  # « marge en % » changent, et les amortissements n'y figurent qu'après.
+  # L'indicateur choisi est gardé quand il existe encore ; sinon (on quitte
+  # « amortissements » en revenant avant), on retombe sur la marge.
+  observe({
+    req(ONGLETS_PRETS())
+    reg <- indicateurs_analyse(evo_marge())
+    choisi <- isolate(input$evo_indic) %||% "marge"
+    updateSelectInput(session, "evo_indic",
+                      choices = setNames(reg$CLE, reg$LIBELLE),
+                      selected = if (choisi %in% reg$CLE) choisi else "marge")
+  })
 
   evo_offsets <- reactive({
     if (!isTRUE(input$evo_raboter %||% TRUE))
@@ -1521,16 +1540,16 @@ server <- function(input, output, session) {
   output$evo_vraisemblance <- renderUI({ bandeau_mois_ecartes(compta_exclus()) })
 
   output$evo_tendance <- renderPlotly({
-    graph_tendance(serie_indicateur(evo_serie(), input$evo_indic),
-                   input$evo_indic, evo_unite())
+    graph_tendance(serie_indicateur(evo_serie(), input$evo_indic, evo_marge()),
+                   input$evo_indic, evo_unite(), evo_marge())
   })
 
   # La saisonnalité travaille toujours au grain MENSUEL, quelle que soit la
   # granularité choisie : superposer des années agrégées à l'année ne
   # donnerait qu'un point par courbe.
   output$evo_saison <- renderPlotly({
-    graph_saisonnalite(saisonnalite(expl_postes(), input$evo_indic),
-                       input$evo_indic)
+    graph_saisonnalite(saisonnalite(expl_postes(), input$evo_indic, evo_marge()),
+                       input$evo_indic, evo_marge())
   })
 
   #### Volet "Compta / Gestion" — Comptabilité générale ####
