@@ -18,11 +18,11 @@
 # -----------------------------------------------------------------------------
 # Deux mises en garde, à connaître avant de s'y fier
 # -----------------------------------------------------------------------------
-#  1. `schedule` est au mieux une intention : GitHub décale les exécutions
-#     planifiées de dix à quarante minutes aux heures chargées, et peut en
-#     sauter une. D'où l'heure creuse et la minute non ronde ci-dessous, et
-#     d'où la pastille de fraîcheur du dashboard, qui dit la date des données
-#     plutôt que de supposer qu'elles sont fraîches.
+#  1. `schedule` est au mieux une intention : en novembre 2026, les exécutions
+#     planifiées à 6h43 UTC ont démarré à 15h et 17h UTC, avec huit à dix
+#     heures de retard. L'heure du matin est donc donnée par Apps Script, qui
+#     appelle `workflow_dispatch` (cf. docs/automatisation.md). Le `schedule`
+#     ci-dessous ne reste qu'en filet, au cas où Apps Script tomberait.
 #
 #  2. Sur un dépôt PUBLIC, GitHub désactive les workflows planifiés après
 #     60 jours sans commit (il prévient par courriel). Si le dépôt s'endort,
@@ -41,7 +41,9 @@ name: Import quotidien
 
 on:
   schedule:
-    # 06h43 UTC = 07h43 en hiver, 08h43 en été, heure de Bruxelles.
+    # Filet seulement : l'import du matin part d'Apps Script, à l'heure.
+    # Celui-ci passe quand GitHub le veut (souvent l'après-midi), ce qui est
+    # sans danger grâce au groupe `concurrency` ci-dessous.
     - cron: "43 6 * * *"
   workflow_dispatch:    # à la main depuis l'onglet Actions, ou par l'API
                         # (c'est ce que fait le bouton du dashboard)

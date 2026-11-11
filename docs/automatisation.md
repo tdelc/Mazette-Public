@@ -97,8 +97,9 @@ poussée. Il a R, il a le dépôt, il lit les secrets, il tourne un quart d'heur
 puis disparaît, et il écrit à l'adresse que le dashboard interroge déjà : le
 dossier Drive.
 
-D'où `.github/workflows/import.yml`, qui tourne chaque matin à 6h43 UTC
-(7h43 à Bruxelles en hiver) et appelle `import_quotidien.R`.
+D'où `.github/workflows/import.yml`, qui appelle `import_quotidien.R`.
+L'heure, elle, est donnée par Apps Script (voir plus bas) : la planification
+de GitHub s'est révélée en retard de plusieurs heures.
 
 Le PC allumé en permanence reste une option valable, mais il n'achète rien de
 plus ici — et il ajoute une machine à surveiller.
@@ -150,24 +151,73 @@ voie. Une fois poussé : *Actions → Import quotidien → Run workflow*. Le ré
 de l'exécution donne la liste des tables, leur nombre de lignes, la période
 couverte et le verdict de chaque contrôle d'import.
 
-## L'horloge d'Apps Script, si la planification de GitHub ne suffit pas
+## L'horloge d'Apps Script : la seule qui tienne l'heure
 
-Deux défauts connus de `schedule` :
+### Pourquoi `schedule` ne suffit pas
 
-1. GitHub décale les exécutions planifiées de dix à quarante minutes aux
-   heures chargées, et peut en sauter une.
-2. Sur un dépôt **public**, GitHub désactive les workflows planifiés après
-   60 jours sans commit (il prévient par courriel).
+On espérait un retard de dix à quarante minutes. Les premières exécutions
+planifiées ont démarré à **16h51 et 15h14 UTC** pour un cron réglé sur 6h43,
+soit huit à dix heures de retard. GitHub ne garantit aucune heure aux
+exécutions planifiées, et un petit dépôt passe après tous les autres. Changer
+la minute du cron n'y fait rien.
 
-Les deux disparaissent si c'est Apps Script qui donne l'heure :
-`workflow_dispatch` est ponctuel et ne s'endort jamais. Un déclencheur
-temporel quotidien sur cette fonction suffit :
+Un second défaut s'y ajoute : sur un dépôt **public**, GitHub désactive les
+workflows planifiés après 60 jours sans commit.
+
+`workflow_dispatch`, lui, part dans les secondes qui suivent l'appel et ne
+s'endort jamais. Il suffit donc que quelqu'un d'autre donne l'heure.
+
+### Pourquoi pas le déclencheur « tous les jours » d'Apps Script
+
+Il ne choisit qu'une **plage d'une heure** (« entre 7h et 8h »), et
+`nearMinute()` laisse encore ±15 minutes. Pour viser 7h40, on fait l'inverse :
+un déclencheur toutes les **cinq minutes**, qui ne fait rien tant que l'heure
+n'est pas venue, puis lance l'import une seule fois par jour. Précision : cinq
+minutes. Coût : quelques millisecondes par appel, très loin des quotas.
+
+L'import prend lui-même cinq à sept minutes (installation de R comprise). Pour
+des données prêtes à 7h40, on le lance donc à **7h30**.
+
+### Le script
+
+Dans [script.google.com](https://script.google.com), nouveau projet :
+
+1. **Paramètres du projet** → fuseau horaire `(GMT+01:00) Bruxelles`. Le
+   script raisonne en heure locale, et l'heure d'été est gérée d'office (le
+   cron de GitHub, en UTC, décalait d'une heure entre été et hiver).
+2. **Propriétés du script** → ajouter `GH_TOKEN` : un *fine-grained personal
+   access token* avec la portée **Actions: write** sur le seul dépôt
+   `tdelc/Mazette-Public`. Le même type de jeton que `GH_TOKEN_IMPORT`. Il ne
+   va **jamais** dans le code.
+3. Coller le code ci-dessous, puis exécuter **une fois** `installerDeclencheur`
+   à la main (Apps Script demande alors les autorisations).
 
 ```javascript
+const DEPOT  = 'tdelc/Mazette-Public';
+const HEURE  = 7;    // heure de Bruxelles à laquelle lancer l'import
+const MINUTE = 30;   // 7h30 : données prêtes vers 7h40
+
+// Appelée toutes les cinq minutes. Ne fait rien avant l'heure, ni deux fois
+// le même jour. Si l'appel échoue, rien n'est noté : l'essai suivant, cinq
+// minutes plus tard, recommence. Un ordinateur éteint ou une panne de GitHub
+// ne fait donc perdre qu'un délai, pas la journée.
+function verifierImport() {
+  const tz   = Session.getScriptTimeZone();
+  const now  = new Date();
+  const jour = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const min  = Number(Utilities.formatDate(now, tz, 'H')) * 60 +
+               Number(Utilities.formatDate(now, tz, 'm'));
+  const props = PropertiesService.getScriptProperties();
+  if (min < HEURE * 60 + MINUTE) return;
+  if (props.getProperty('DERNIER_IMPORT') === jour) return;
+  lancerImportMazette();
+  props.setProperty('DERNIER_IMPORT', jour);
+}
+
 function lancerImportMazette() {
-  const depot = 'tdelc/Mazette-Public';
-  UrlFetchApp.fetch(
-    'https://api.github.com/repos/' + depot + '/actions/workflows/import.yml/dispatches',
+  const r = UrlFetchApp.fetch(
+    'https://api.github.com/repos/' + DEPOT +
+      '/actions/workflows/import.yml/dispatches',
     {
       method: 'post',
       contentType: 'application/json',
@@ -176,14 +226,37 @@ function lancerImportMazette() {
           PropertiesService.getScriptProperties().getProperty('GH_TOKEN'),
         Accept: 'application/vnd.github+json'
       },
-      payload: JSON.stringify({ ref: 'main' })
+      payload: JSON.stringify({ ref: 'main' }),
+      muteHttpExceptions: true
     });
+  // 204 = accepté. Toute autre réponse lève une erreur : Apps Script envoie
+  // alors un courriel, et la journée n'est pas marquée comme faite.
+  if (r.getResponseCode() !== 204)
+    throw new Error('GitHub a répondu ' + r.getResponseCode() + ' : ' +
+                    r.getContentText());
+}
+
+// À exécuter une fois. Elle remplace les déclencheurs existants plutôt que
+// de les empiler : l'exécuter deux fois ne lance pas deux imports.
+function installerDeclencheur() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'verifierImport')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('verifierImport').timeBased().everyMinutes(5).create();
 }
 ```
 
-Le jeton va dans les *propriétés du script*, jamais dans le code. Si cette
-voie est retenue, on peut retirer le bloc `schedule:` du workflow et ne
-garder que `workflow_dispatch:`.
+Pour vérifier sans attendre le lendemain, exécutez `lancerImportMazette` à la
+main. Une nouvelle exécution « workflow_dispatch » doit apparaître dans
+*Actions → Import quotidien*.
+
+### Et le `schedule` du workflow ?
+
+On peut le garder en **filet** : s'il passe l'après-midi, il refait un import
+de plus. C'est sans danger, puisque `concurrency` empêche deux imports à la
+fois. Et si le déclencheur Apps Script tombait un jour, les données seraient
+au moins rafraîchies dans la journée. Une fois Apps Script éprouvé, on peut
+aussi le retirer et ne garder que `workflow_dispatch:`.
 
 ## Ce qui dira que ça a cassé
 
