@@ -122,6 +122,98 @@ ok("une cle inconnue retombe sur la marge, sans lever",
 ok("mais la version stricte rend NULL", is.null(indicateur_strict("n'importe quoi")))
 ok("chaque indicateur a un sens", all(INDICATEURS_ANALYSE$SENS %in% c(-1, 1)))
 
+# ---------- 3 bis. la marge apres amortissements ----------
+# L'option des barres laterales : l'amortissement devient une charge de plus.
+# Le pont doit boucler exactement comme avant, une ligne de plus.
+avec_amort <- function(l, am) l |>
+  mutate(AMORTISSEMENT = am, CHARGES = CHARGES + am, MARGE = MARGE - am,
+         MARGE_PA = MARGE_AA - am, PCT_MARGE_PA = ratio_pct(MARGE_PA, CA))
+REF_A <- avec_amort(REF, 3000); ACT_A <- avec_amort(ACT, 3600)
+pa <- pont_marge(ACT_A, REF_A, "apres")
+ok("apres amortissements, le pont a une ligne de plus", nrow(pa) == nrow(pt) + 1)
+ok("et cette ligne est l'amortissement, une charge",
+   "Amortissements" %in% pa$POSTE && pa$SIGNE[pa$POSTE == "Amortissements"] == -1)
+ok("il part et arrive sur la marge apres amortissements",
+   pa$DEPART[1] == REF_A$MARGE_PA && pa$ARRIVEE[1] == ACT_A$MARGE_PA)
+ok("et il boucle a l'euro",
+   abs(pa$DEPART[1] + sum(pa$EFFET) - pa$ARRIVEE[1]) < 0.01)
+ok("son effet volume se fait au taux de marge apres amortissements",
+   abs(pa$BASE[pa$NATURE == "volume"] - 100 * REF_A$MARGE_PA / REF_A$CA) < 0.01)
+ok("en brut aussi, il boucle",
+   { b <- pont_marge(ACT_A, avec_amort(sans_ca, 0), "apres")
+     all(b$NATURE == "brut") && "Amortissements" %in% b$POSTE &&
+       abs(b$DEPART[1] + sum(b$EFFET) - b$ARRIVEE[1]) < 0.01 })
+ok("sans colonne MARGE_PA, il la deduit de l'identite",
+   { q <- pont_marge(select(ACT_A, -MARGE_PA), select(REF_A, -MARGE_PA), "apres")
+     q$DEPART[1] == REF_A$MARGE_PA &&
+       abs(q$DEPART[1] + sum(q$EFFET) - q$ARRIVEE[1]) < 0.01 })
+ok("par defaut, rien ne change : la marge avant amortissements",
+   identical(pont_marge(ACT_A, REF_A)$POSTE, pt$POSTE) &&
+     pont_marge(ACT_A, REF_A)$DEPART[1] == REF_A$MARGE_AA)
+
+reg_a <- indicateurs_analyse("apres")
+ok("le registre apres amortissements garde les memes cles, plus une",
+   all(INDICATEURS_ANALYSE$CLE %in% reg_a$CLE) &&
+     setdiff(reg_a$CLE, INDICATEURS_ANALYSE$CLE) == "amortissements")
+ok("« marge » y designe MARGE_PA, et son % PCT_MARGE_PA",
+   indicateur_analyse("marge", "apres")$COLONNE == "MARGE_PA" &&
+     indicateur_analyse("pct_marge", "apres")$COLONNE == "PCT_MARGE_PA")
+ok("ses cles restent uniques", !any(duplicated(reg_a$CLE)))
+ok("et chaque colonne existe", all(reg_a$COLONNE %in% names(ACT_A)))
+ok("l'amortissement est une charge", indicateur_strict("amortissements", "apres")$SENS == -1)
+ok("mais il n'existe pas avant amortissements",
+   is.null(indicateur_strict("amortissements")))
+ok("le registre par defaut est inchange", identical(indicateurs_analyse(), INDICATEURS_ANALYSE))
+
+ok("la tendance trace la colonne demandee",
+   { st <- serie_indicateur(bind_rows(REF_A, ACT_A), "marge", "apres")
+     identical(st$VALEUR, c(REF_A$MARGE_PA, ACT_A$MARGE_PA)) })
+ok("la saisonnalite aussi",
+   { sa <- saisonnalite(bind_rows(REF_A, ACT_A), "amortissements", "apres")
+     identical(sa$VALEUR, c(3000, 3600)) })
+
+tc <- table_comparaison(ACT_A, REF_A, "sept. 2026", "sept. 2025", "apres")
+ok("le tableau de comparaison nomme la marge apres amortissements",
+   "Marge après amortissements" %in% tc$Poste && "Amortissements" %in% tc$Poste)
+ok("et seulement si on la demande",
+   { t0 <- table_comparaison(ACT_A, REF_A, "a", "b")
+     "Marge avant amortissements" %in% t0$Poste && !"Amortissements" %in% t0$Poste })
+ok("les tuiles d'ecart suivent la marge choisie",
+   { k <- texte_tag(kpi_analyse(ACT_A, REF_A, "sept. 2025", marge = "apres"))
+     grepl("après amort", k) &&
+       grepl(format_CA(ACT_A$MARGE_PA - REF_A$MARGE_PA, -1), k, fixed = TRUE) })
+ok("sans reference, la tuile de niveau aussi",
+   grepl("Marge après amortissements",
+         texte_tag(kpi_analyse(ACT_A, NULL, "x", marge = "apres"))))
+
+te <- table_exploitation(bind_rows(REF_A, ACT_A), marge = "apres")
+ok("le tableau d'exploitation montre l'amortissement et la marge apres",
+   all(c("Amort.", "Marge ap. amort.") %in% names(te)) &&
+     !"Marge av. amort." %in% names(te))
+ok("et par defaut il reste tel quel",
+   { t0 <- table_exploitation(bind_rows(REF_A, ACT_A))
+     "Marge av. amort." %in% names(t0) && !"Amort." %in% names(t0) })
+ok("la tuile d'exploitation suit la marge choisie",
+   { k <- texte_tag(kpi_exploitation(bind_rows(REF_A, ACT_A), marge = "apres"))
+     grepl("Marge après amortissements", k) &&
+       grepl(format_CA(ACT_A$MARGE_PA, -1), k, fixed = TRUE) })
+
+# Le forage par compte : avant amortissements, le pont ignore les comptes 63 ;
+# le forage ne doit pas les accuser. Apres, il le doit.
+db_am <- bind_rows(
+  tibble(ANNEE = 2026L, MOIS = 1L, COMPTE = c("700000", "630000"),
+         VALEUR = c(10000, 800)),
+  tibble(ANNEE = 2026L, MOIS = 2L, COMPTE = c("700000", "630000"),
+         VALEUR = c(11000, 1200))) |>
+  mutate(LIBELLE = "x", TYPE = "compte", AGREGE = TRUE)
+ok("avant amortissements, le forage ignore les comptes d'amortissement",
+   { c0 <- contributions_comptes(db_am, "2026-02-01", as.Date("2026-01-01"))
+     !"630000" %in% c0$COMPTE && "700000" %in% c0$COMPTE })
+ok("apres, il les compte, avec un effet negatif",
+   { c1 <- contributions_comptes(db_am, "2026-02-01", as.Date("2026-01-01"),
+                                 marge = "apres")
+     c1$EFFET[c1$COMPTE == "630000"] == -400 })
+
 # ---------- 4. le rabotage ----------
 # Comparer une periode incomplete a une periode complete fausse tout. On peut
 # donc raboter la reference a la meme taille.

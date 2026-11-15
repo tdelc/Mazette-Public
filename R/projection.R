@@ -586,12 +586,14 @@ recalcule_gestion <- function(p) {
     CHARGES       = MATIERES + REMUNERATION + GENERAUX + AMORTISSEMENT,
     MARGE         = PRODUITS - CHARGES,
     MARGE_AA      = PRODUITS - MATIERES - REMUNERATION - GENERAUX + FINANCIER,
+    MARGE_PA      = MARGE_AA - AMORTISSEMENT,
     PCT_MATIERES  = ratio_pct(MATIERES, CA),
     PCT_TRAVAIL   = ratio_pct(REMUNERATION, CA),
     PCT_PRIME     = ratio_pct(MATIERES + REMUNERATION, CA),
     PCT_GENERAUX  = ratio_pct(GENERAUX, CA),
     PCT_MARGE     = ratio_pct(MARGE, CA),
-    PCT_MARGE_AA  = ratio_pct(MARGE_AA, CA))
+    PCT_MARGE_AA  = ratio_pct(MARGE_AA, CA),
+    PCT_MARGE_PA  = ratio_pct(MARGE_PA, CA))
 }
 
 #' Le compte d'exploitation tel qu'il serait, projection appliquée.

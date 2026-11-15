@@ -37,6 +37,10 @@
 # Amortissements et MARGE (le résultat d'exploitation comptable) en sont
 # délibérément absents : ce volet raisonne en marge de gestion, et les mélanger
 # ferait deux marges à l'écran (cf. R/exploitation.R).
+#
+# C'est le registre PAR DÉFAUT, celui de la marge avant amortissements. Quand
+# la barre latérale demande la marge après amortissements,
+# indicateurs_analyse() en dérive une variante — voir juste en dessous.
 INDICATEURS_ANALYSE <- tibble::tribble(
   ~CLE,            ~LIBELLE,                      ~COLONNE,       ~UNITE, ~SENS,
   "ca",            "Chiffre d'affaires",          "CA",           "eur",      1,
@@ -53,12 +57,36 @@ INDICATEURS_ANALYSE <- tibble::tribble(
   "pct_marge",     "Marge en % du CA",            "PCT_MARGE_AA", "pct",      1
 )
 
+# Le registre pour une marge donnée (cf. marge_gestion(), R/exploitation.R).
+#
+# Les CLÉS ne changent pas d'une marge à l'autre — « marge » reste « marge » —
+# pour qu'un indicateur choisi survive au changement d'option : on regarde la
+# même chose, amortissements compris ou non. Seuls la colonne et le libellé
+# suivent. Après amortissements, l'amortissement devient en outre un poste à
+# part entière : le pont l'accuse, la tendance doit donc savoir le tracer
+# (même règle que ci-dessus, aucun coupable sans historique).
+indicateurs_analyse <- function(marge = "avant") {
+  m <- marge_gestion(marge)
+  if (!m$APRES) return(INDICATEURS_ANALYSE)
+  r <- INDICATEURS_ANALYSE
+  r$COLONNE[r$CLE == "marge"]     <- m$COLONNE
+  r$LIBELLE[r$CLE == "marge"]     <- m$LIBELLE
+  r$COLONNE[r$CLE == "pct_marge"] <- m$PCT
+  r$LIBELLE[r$CLE == "pct_marge"] <- "Marge après amort. en % du CA"
+  i <- match("generaux", r$CLE)
+  bind_rows(r[seq_len(i), ],
+            tibble(CLE = "amortissements", LIBELLE = "Amortissements",
+                   COLONNE = "AMORTISSEMENT", UNITE = "eur", SENS = -1),
+            r[-seq_len(i), ])
+}
+
 # Ligne du registre correspondant à une clé, avec repli sur la marge : un
 # select vidé par un changement de granularité ne doit pas faire tomber le volet.
-indicateur_analyse <- function(cle) {
-  i <- match(cle %||% "", INDICATEURS_ANALYSE$CLE)
-  if (is.na(i)) i <- match("marge", INDICATEURS_ANALYSE$CLE)
-  as.list(INDICATEURS_ANALYSE[i, ])
+indicateur_analyse <- function(cle, marge = "avant") {
+  reg <- indicateurs_analyse(marge)
+  i <- match(cle %||% "", reg$CLE)
+  if (is.na(i)) i <- match("marge", reg$CLE)
+  as.list(reg[i, ])
 }
 
 # La même chose, mais SANS repli.
@@ -68,9 +96,10 @@ indicateur_analyse <- function(cle) {
 # tuile intitulée « Écart frais généraux » qui afficherait la marge, sans rien
 # signaler, est pire qu'une tuile en erreur. Les deux usages ne veulent pas la
 # même chose, donc deux fonctions.
-indicateur_strict <- function(cle) {
-  i <- match(cle %||% "", INDICATEURS_ANALYSE$CLE)
-  if (is.na(i)) NULL else as.list(INDICATEURS_ANALYSE[i, ])
+indicateur_strict <- function(cle, marge = "avant") {
+  reg <- indicateurs_analyse(marge)
+  i <- match(cle %||% "", reg$CLE)
+  if (is.na(i)) NULL else as.list(reg[i, ])
 }
 
 # Formatage d'une valeur selon l'unité de son indicateur.
@@ -203,6 +232,8 @@ reference_analyse <- function(serie, periode, mode = "precedente",
     # moyenne, et sur une seule c'est la comparaison « précédente » déguisée.
     ref <- tail(passe, n_habituelle)
     if (nrow(ref) < 3) return(NULL)
+    if (!"MARGE_PA" %in% names(ref))
+      ref <- mutate(ref, MARGE_PA = MARGE_AA - AMORTISSEMENT)
     # Médiane colonne par colonne. Les pourcentages sont RECALCULÉS à partir
     # des médianes d'euros et non médianés directement : la médiane d'un
     # rapport n'est pas le rapport des médianes, et afficher les deux côte à
@@ -210,7 +241,7 @@ reference_analyse <- function(serie, periode, mode = "precedente",
     med <- ref %>%
       summarise(across(c(CA, AUTRES, PRODUITS, MATIERES, REMUNERATION,
                          GENERAUX, AMORTISSEMENT, FINANCIER, CHARGES,
-                         MARGE, MARGE_AA),
+                         MARGE, MARGE_AA, MARGE_PA),
                        ~stats::median(., na.rm = TRUE))) %>%
       mutate(PERIODE = max(ref$PERIODE), N_MOIS = NA_integer_,
              PCT_MATIERES = ratio_pct(MATIERES, CA),
@@ -218,7 +249,8 @@ reference_analyse <- function(serie, periode, mode = "precedente",
              PCT_PRIME    = ratio_pct(MATIERES + REMUNERATION, CA),
              PCT_GENERAUX = ratio_pct(GENERAUX, CA),
              PCT_MARGE    = ratio_pct(MARGE, CA),
-             PCT_MARGE_AA = ratio_pct(MARGE_AA, CA))
+             PCT_MARGE_AA = ratio_pct(MARGE_AA, CA),
+             PCT_MARGE_PA = ratio_pct(MARGE_PA, CA))
     return(list(ligne = med,
                 libelle = paste0("médiane des ", nrow(ref), " périodes précédentes"),
                 mode = mode))
@@ -318,17 +350,36 @@ reference_analyse <- function(serie, periode, mode = "precedente",
 # L'invariant qui rend la table vérifiable, et qu'un test rejoue sur le TEXTE
 # affiché : ECART = REEL - ATTENDU sur toutes les lignes, puis
 # EFFET = SIGNE x ECART, sauf la ligne volume où EFFET = ECART x BASE / 100.
-pont_marge <- function(actuel, reference) {
+#
+# ---------------------------------------------------------------------------
+# Après amortissements
+# ---------------------------------------------------------------------------
+# Avec `marge = "apres"`, l'amortissement entre comme un poste de plus, une
+# charge (signe −1), et le taux de marge de référence devient
+# MARGE_PA / CA = 1 + a − m − r − g − am + f. La preuve ci-dessus vaut mot pour
+# mot : un poste de plus dans la somme, toujours aucun reste.
+pont_marge <- function(actuel, reference, marge = "avant") {
   if (is.null(actuel) || !nrow(actuel) || is.null(reference) || !nrow(reference))
     return(NULL)
+  m <- marge_gestion(marge)
   a <- as.list(actuel[1, ]); r <- as.list(reference[1, ])
+  # La marge de chaque côté : la colonne si elle est là, sinon l'identité
+  # (MARGE_PA = MARGE_AA − AMORTISSEMENT), pour qu'une ligne construite à la
+  # main sans elle donne quand même un pont qui boucle.
+  la_marge <- function(l) {
+    v <- l[[m$COLONNE]]
+    if (is.null(v)) v <- l$MARGE_AA - if (m$APRES) l$AMORTISSEMENT else 0
+    as.numeric(v)
+  }
+  m_ref <- la_marge(r); m_act <- la_marge(a)
 
   if (is.na(r$CA) || r$CA <= 0) {
     postes <- c("Chiffre d'affaires", "Autres produits", "Matières premières",
-                "Rémunérations", "Frais généraux", "Résultat financier")
+                "Rémunérations", "Frais généraux",
+                if (m$APRES) "Amortissements", "Résultat financier")
     champs <- c("CA", "AUTRES", "MATIERES", "REMUNERATION", "GENERAUX",
-                "FINANCIER")
-    signe  <- c(1, 1, -1, -1, -1, 1)
+                if (m$APRES) "AMORTISSEMENT", "FINANCIER")
+    signe  <- c(1, 1, -1, -1, -1, if (m$APRES) -1, 1)
     ref <- vapply(champs, function(x) as.numeric(r[[x]]), 0)
     act <- vapply(champs, function(x) as.numeric(a[[x]]), 0)
     return(tibble(
@@ -337,19 +388,21 @@ pont_marge <- function(actuel, reference) {
       BASE = NA_real_, SIGNE = signe,
       TAUX_REF = NA_real_, TAUX_ACT = NA_real_,
       EFFET = signe * (act - ref),
-      DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = FALSE))
+      DEPART = m_ref, ARRIVEE = m_act, VOLUME_SEPARE = FALSE))
   }
 
   # Le taux de marge de la référence : sa marge divisée par son CA. C'est
   # exactement 1 + a - m - r - g + f, mais sous une forme qu'on peut refaire
   # de tête — et c'est la forme qu'affiche le tableau de décomposition.
-  s0_pct <- 100 * r$MARGE_AA / r$CA
+  s0_pct <- 100 * m_ref / r$CA
   taux <- function(champ, l) 100 * l[[champ]] / l$CA
 
-  champs <- c("AUTRES", "MATIERES", "REMUNERATION", "GENERAUX", "FINANCIER")
+  champs <- c("AUTRES", "MATIERES", "REMUNERATION", "GENERAUX",
+              if (m$APRES) "AMORTISSEMENT", "FINANCIER")
   postes <- c("Autres produits", "Matières premières", "Rémunérations",
-              "Frais généraux", "Résultat financier")
-  signe  <- c(1, -1, -1, -1, 1)
+              "Frais généraux", if (m$APRES) "Amortissements",
+              "Résultat financier")
+  signe  <- c(1, -1, -1, -1, if (m$APRES) -1, 1)
   t_ref  <- vapply(champs, taux, 0, l = r)
   t_act  <- vapply(champs, taux, 0, l = a)
 
@@ -370,7 +423,7 @@ pont_marge <- function(actuel, reference) {
            BASE = NA_real_, SIGNE = signe,
            TAUX_REF = t_ref, TAUX_ACT = t_act,
            EFFET = signe * (reel - attendu))) %>%
-    mutate(DEPART = r$MARGE_AA, ARRIVEE = a$MARGE_AA, VOLUME_SEPARE = TRUE)
+    mutate(DEPART = m_ref, ARRIVEE = m_act, VOLUME_SEPARE = TRUE)
 }
 
 # euro_exact() et euro_signe() vivaient ici ; elles sont passées dans
@@ -623,11 +676,16 @@ explication_pont <- function(pont, lib_actuel = "la période",
 # hausse a un effet négatif. C'est la seule convention qui permette de trier
 # les comptes « bonnes nouvelles » et « mauvaises nouvelles » dans la même
 # colonne.
+#
+# Les comptes d'amortissement n'y entrent que si la marge regardée les compte
+# (`marge = "apres"`) : avant amortissements, le pont ne les connaît pas, et
+# le forage ne doit pas accuser un compte que le pont ignore.
 contributions_comptes <- function(db, periode, ref_periodes, unite = "mois",
-                                  offsets = NULL) {
+                                  offsets = NULL, marge = "avant") {
   if (is.null(db) || !nrow(db)) return(NULL)
   d <- classe_comptes(db)
   if (is.null(d) || !nrow(d)) return(NULL)
+  if (!marge_gestion(marge)$APRES) d <- filter(d, POSTE != "Amortissements")
 
   # Le rabotage s'applique AVANT la consolidation, sur les mois eux-mêmes —
   # sinon il n'y aurait plus de mois à retirer. Il doit suivre exactement celui
@@ -724,8 +782,8 @@ table_contributions <- function(contrib, n = 25) {
 # comme le tableau du volet Exploitation (cf. flag_ecart) : les deux écrans
 # doivent signaler les mêmes périodes, sinon l'un des deux ment. Reprendre ici
 # une moyenne et un écart-type donnerait un graphe qui contredit son tableau.
-serie_indicateur <- function(serie, cle) {
-  ind <- indicateur_analyse(cle)
+serie_indicateur <- function(serie, cle, marge = "avant") {
+  ind <- indicateur_analyse(cle, marge)
   if (is.null(serie) || !nrow(serie) || !ind$COLONNE %in% names(serie))
     return(NULL)
   v <- serie[[ind$COLONNE]]
@@ -741,8 +799,8 @@ serie_indicateur <- function(serie, cle) {
               FLAG = flag_ecart(v, sens = ind$SENS))
 }
 
-graph_tendance <- function(st, cle, unite = "mois") {
-  ind <- indicateur_analyse(cle)
+graph_tendance <- function(st, cle, unite = "mois", marge = "avant") {
+  ind <- indicateur_analyse(cle, marge)
   if (is.null(st) || !nrow(st))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas de série à tracer")))
@@ -804,8 +862,8 @@ graph_tendance <- function(st, cle, unite = "mois") {
 #
 # Travaille toujours sur les postes MENSUELS, quelle que soit la granularité
 # choisie ailleurs : une saisonnalité par année n'aurait qu'un point par courbe.
-saisonnalite <- function(postes_mensuels, cle) {
-  ind <- indicateur_analyse(cle)
+saisonnalite <- function(postes_mensuels, cle, marge = "avant") {
+  ind <- indicateur_analyse(cle, marge)
   if (is.null(postes_mensuels) || !nrow(postes_mensuels) ||
       !ind$COLONNE %in% names(postes_mensuels)) return(NULL)
   postes_mensuels %>%
@@ -815,8 +873,8 @@ saisonnalite <- function(postes_mensuels, cle) {
     arrange(ANNEE, MOIS)
 }
 
-graph_saisonnalite <- function(sais, cle) {
-  ind <- indicateur_analyse(cle)
+graph_saisonnalite <- function(sais, cle, marge = "avant") {
+  ind <- indicateur_analyse(cle, marge)
   if (is.null(sais) || !nrow(sais))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas assez d'historique mensuel")))
@@ -868,7 +926,9 @@ graph_saisonnalite <- function(sais, cle) {
 # cent de pour cent : passer de 30 % à 33 %, c'est « +3 pt », pas « +10 % ».
 # La confusion entre les deux est l'erreur de lecture la plus courante sur ce
 # genre de tableau, et elle se règle à l'affichage.
-table_comparaison <- function(actuel, reference, lib_actuel, lib_ref) {
+table_comparaison <- function(actuel, reference, lib_actuel, lib_ref,
+                              marge = "avant") {
+  m <- marge_gestion(marge)
   if (is.null(actuel) || !nrow(actuel))
     return(tibble(Info = "Aucune période sélectionnée."))
   if (is.null(reference) || !nrow(reference))
@@ -902,9 +962,11 @@ table_comparaison <- function(actuel, reference, lib_actuel, lib_ref) {
     ligne("Rémunérations en % du CA",     "PCT_TRAVAIL",   "pct", -1),
     ligne("Frais généraux",               "GENERAUX",      "eur", -1),
     ligne("Frais généraux en % du CA",    "PCT_GENERAUX",  "pct", -1),
+    if (m$APRES)
+      ligne("Amortissements",             "AMORTISSEMENT", "eur", -1),
     ligne("Résultat financier",           "FINANCIER",     "eur",  1),
-    ligne("Marge avant amortissements",   "MARGE_AA",      "eur",  1),
-    ligne("Marge en % du CA",             "PCT_MARGE_AA",  "pct",  1)
+    ligne(m$LIBELLE,                      m$COLONNE,       "eur",  1),
+    ligne("Marge en % du CA",             m$PCT,           "pct",  1)
   ) %>% rename(!!paste0("Période\n", lib_actuel) := `Période`,
                !!paste0("Référence\n", lib_ref)  := `Référence`)
 }
@@ -916,19 +978,21 @@ table_comparaison <- function(actuel, reference, lib_actuel, lib_ref) {
 # Les tuiles se désignent par leur CLÉ dans INDICATEURS_ANALYSE (ci-dessus) :
 # c'est la seule liste à consulter pour en ajouter une, et elle est la même que
 # celle du sélecteur d'indicateur.
-kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
+kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois",
+                        marge = "avant") {
   if (is.null(actuel) || !nrow(actuel))
     return(div(class = "text-muted small p-2", "Aucune période sélectionnée."))
   a <- actuel[1, ]
+  m <- marge_gestion(marge)
 
   if (is.null(reference) || !nrow(reference))
     return(div(
       class = "kpi-grid",
       kpi_tile(format_CA(a$CA, -1), paste("CA —", etiquette_periode(a$PERIODE, unite)),
                COUL_BRUN, "euro-sign", sous_titre = "pas de référence"),
-      kpi_tile(format_CA(a$MARGE_AA, -1), "Marge avant amortissements",
-               if (a$MARGE_AA >= 0) COUL_VERT else COUL_ROUGE, "piggy-bank",
-               sous_titre = format_pct(a$PCT_MARGE_AA))))
+      kpi_tile(format_CA(a[[m$COLONNE]], -1), m$LIBELLE,
+               if (a[[m$COLONNE]] >= 0) COUL_VERT else COUL_ROUGE, "piggy-bank",
+               sous_titre = format_pct(a[[m$PCT]]))))
   r <- reference[1, ]
 
   # Une tuile d'écart, désignée par sa CLÉ dans INDICATEURS_ANALYSE — jamais
@@ -946,7 +1010,7 @@ kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
   # et l'unité comme le SENS viennent du registre au lieu d'être recopiés —
   # écrire +1 pour une charge était l'autre faute silencieuse possible.
   tuile_ecart <- function(cle, lib, icone) {
-    ind <- indicateur_strict(cle)
+    ind <- indicateur_strict(cle, marge)
     if (is.null(ind) || !ind$COLONNE %in% names(a) || !ind$COLONNE %in% names(r))
       return(tuile_indisponible(cle, lib, icone))
 
@@ -978,7 +1042,8 @@ kpi_analyse <- function(actuel, reference, lib_ref, unite = "mois") {
     # kpi_tile(etiquette_periode(a$PERIODE, unite), "Période analysée",
     #          COUL_BRUN, "calendar-day", sous_titre = paste("comparée à", lib_ref)),
     tuile_ecart("ca",           "Écart de chiffre d'affaires", "euro-sign"),
-    tuile_ecart("marge",        "Écart de marge",              "piggy-bank"),
+    tuile_ecart("marge",        if (m$APRES) "Écart de marge après amort."
+                                else "Écart de marge",         "piggy-bank"),
     tuile_ecart("pct_marge",    "Écart de taux de marge",      "percent"),
     tuile_ecart("pct_matieres", "Écart taux matières",         "cart-shopping"),
     tuile_ecart("pct_travail",  "Écart taux rémunérations",    "users"),
