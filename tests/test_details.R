@@ -95,6 +95,12 @@ ok("les jours fermes sont ecartes a la maille jour",
 ok("la serie est triee", !is.unsorted(s$PERIODE))
 ok("base vide -> NULL", is.null(serie_detail(KPI[0,], OBJ, min(jours), max(jours))))
 
+# Les deux axes de repartition_detail() coupent le MEME CA : leurs totaux en
+# euros doivent coincider (jour/soir etait recale sur le TVAC, cf. import.R).
+rp <- repartition_detail(KPI, as.Date("2026-09-01"), "mois")
+ok("les deux axes de la repartition ont le meme total",
+   { t <- tapply(rp$CA, rp$AXE, sum); isTRUE(all.equal(t[["Nature"]], t[["Moment"]])) })
+
 # ---------- 3. la composition ----------
 cm <- composition_detail(KPI, OBJ, NULL, as.Date("2026-09-01"), "mois")
 ok("un mois se compose de ses semaines", nrow(cm) >= 4)

@@ -753,13 +753,9 @@ DB_KPI_SIMPLE <- DB_JOURS %>%
 
 # Règle de trois : chaque répartition retombe sur le CA de DB_JOURS.
 
-DB_KPI_SIMPLE <- DB_KPI_SIMPLE %>%
-  mutate(ratio = CA_HTVA/(Boisson + Nourriture),
-         Boisson = Boisson*ratio,Nourriture = Nourriture*ratio) %>%
-  mutate(ratio = CA_HTVA/(`Week-end` + Semaine),
-         `Week-end` = `Week-end`*ratio,Semaine = Semaine*ratio) %>%
-  mutate(ratio = CA_TVAC/(Jour + Soir),
-         Jour = Jour*ratio,Soir = Soir*ratio)
+# Toutes sur CA_HTVA : cf. recaler_repartitions() (R/donnees.R).
+
+DB_KPI_SIMPLE <- recaler_repartitions(DB_KPI_SIMPLE)
 
 ##### DB_OBJECTIFS #####
 cli::cli_h3("Table DB_OBJECTIFS")
