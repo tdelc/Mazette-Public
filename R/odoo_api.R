@@ -56,7 +56,7 @@ ODOO_ENV <- c(url   = "ODOO_URL",      # https://mazette.odoo.com
 #' une connexion » : elles donnent une erreur d'authentification dont la cause
 #' est la variable manquante, et qu'on cherchera ailleurs.
 identifiants_odoo <- function(env = ODOO_ENV) {
-  v <- vapply(env, Sys.getenv, "")
+  v <- lit_env_odoo(env)
   if (any(!nzchar(v))) return(NULL)
   # L'URL est écrite à la main : une barre finale en trop donnerait
   # « https://x//jsonrpc », qu'Odoo sert en 404 sans rien expliquer.
@@ -66,7 +66,23 @@ identifiants_odoo <- function(env = ODOO_ENV) {
 
 #' Ce qui manque, pour le dire sans jamais afficher la clé.
 manque_odoo <- function(env = ODOO_ENV) {
-  names(env)[!nzchar(vapply(env, Sys.getenv, ""))]
+  names(env)[!nzchar(lit_env_odoo(env))]
+}
+
+# Les quatre valeurs, nettoyées de ce qu'un copier-coller y laisse.
+#
+# Une valeur saisie dans l'interface d'un hébergeur ou d'un gestionnaire de
+# secrets garde ce qu'on y a collé : un espace, un retour à la ligne final,
+# des guillemets recopiés d'un .Renviron (ODOO_DB="mazette"). Sur le PC, le
+# .Renviron les retire ; en ligne, ils partent tels quels. Pour Odoo,
+# « mazette » et « mazette\n » sont deux bases différentes, et la seconde
+# n'existe pas — l'erreur qui revient alors parle de PostgreSQL et de socket,
+# sans rien qui mène au nom de la base (cf. odoo_connexion()).
+lit_env_odoo <- function(env = ODOO_ENV) {
+  v <- trimws(vapply(env, Sys.getenv, ""))
+  v <- sub('^"(.*)"$', "\\1", v)
+  v <- sub("^'(.*)'$", "\\1", v)
+  trimws(v)
 }
 
 #### Le transport ####
@@ -137,9 +153,26 @@ odoo_version <- function(url, poste = odoo_poste) {
 #' Odoo rend `false` — pas une erreur — quand les identifiants sont mauvais.
 #' Le laisser passer donnerait un uid FALSE, un execute_kw refusé, et un
 #' message parlant d'un droit d'accès. On tranche ici.
+#'
+#' Une base INCONNUE du serveur ne donne pas `false` : sur un serveur qui
+#' héberge plusieurs bases, Odoo tente d'ouvrir une base PostgreSQL de ce nom,
+#' échoue, et renvoie l'erreur brute de psycopg2 (« connection to server on
+#' socket ... failed »). Rien n'y mentionne le nom de la base, alors que c'est
+#' presque toujours lui le coupable. On le dit donc ici, en clair.
 odoo_connexion <- function(ids, poste = odoo_poste) {
-  uid <- odoo_appel(ids$url, "common", "authenticate",
-                    list(ids$base, ids$login, ids$cle, OBJET_VIDE), poste)
+  uid <- tryCatch(
+    odoo_appel(ids$url, "common", "authenticate",
+               list(ids$base, ids$login, ids$cle, OBJET_VIDE), poste),
+    error = function(e) {
+      m <- conditionMessage(e)
+      if (grepl("psycopg2|PGSQL|OperationalError|does not exist", m))
+        stop("Le serveur Odoo ne trouve pas la base « ", ids$base, " » (",
+             nchar(ids$base), " caractères). Vérifie ODOO_DB sur la machine ",
+             "qui lance l'import : même valeur exacte que sur le PC où ",
+             "l'import marche, sans espace, guillemet ni retour à la ligne. ",
+             "Réponse d'Odoo : ", m, call. = FALSE)
+      stop(e)
+    })
   if (is.null(uid) || isFALSE(uid) || !is.numeric(uid))
     stop("Odoo a refusé les identifiants (base « ", ids$base, " », compte « ",
          ids$login, " »). Vérifie le nom de la base et la clé API.")
