@@ -1,16 +1,6 @@
-#### Paramètre de la journée
-
-date_actuelle        <- Sys.Date()
-premier_jour_semaine <- date_actuelle - as.POSIXlt(date_actuelle)$wday + 1
-jours_semaine        <- seq(from = premier_jour_semaine, by = "days", length.out = 7)
-vecteur_jours_LOCAL  <- weekdays(jours_semaine)
-
 #### Authentification Google ####
 
-link_json <- Sys.getenv("LINK_JSON")
-path_drive <- Sys.getenv("PATH_DRIVE")
-
-download.file(link_json, destfile = "connect.json")
+download.file(Sys.getenv("LINK_JSON"), destfile = "connect.json")
 drive_auth(path = "connect.json")
 
 #### Récupération des liens drive ####
@@ -41,11 +31,14 @@ IMPORT_BIERES_CORRESPONDANCE <- read_excel(path_mazette,sheet = "CORRESPONDANCE 
 # réfèrent ne puissent pas diverger.
 SHEET_PASS <- "IMPORT PASS NEW"
 
+# Un onglet d'objectifs par année ; « IMPORT OBJECTIFS » tout court est 2024.
+SHEETS_OBJECTIFS <- c("IMPORT OBJECTIFS", "IMPORT OBJECTIFS 2022",
+                      "IMPORT OBJECTIFS 2023", "IMPORT OBJECTIFS 2025",
+                      "IMPORT OBJECTIFS 2026")
+
 vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
-                "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
-                "IMPORT OBJECTIFS 2022","IMPORT OBJECTIFS 2023",
-                "IMPORT OBJECTIFS 2026", SHEET_PASS)
+                SHEETS_OBJECTIFS, SHEET_PASS)
 
 read_mazette <- function(sheet_name) suppressWarnings(
   read_excel(path_mazette, sheet = sheet_name, .name_repair = "unique_quiet"))
@@ -58,11 +51,6 @@ IMPORT_BRASSINS      <- DB_sheets$`IMPORT BRASSINS`
 IMPORT_LIGHTSPEED    <- DB_sheets$`IMPORT LIGHTSPEED`
 IMPORT_TICKET        <- DB_sheets$`IMPORT TICKET`
 IMPORT_CAISSE        <- DB_sheets$`IMPORT CAISSE`
-IMPORT_OBJECTIF_2024 <- DB_sheets$`IMPORT OBJECTIFS`
-IMPORT_OBJECTIF_2022 <- DB_sheets$`IMPORT OBJECTIFS 2022`
-IMPORT_OBJECTIF_2023 <- DB_sheets$`IMPORT OBJECTIFS 2023`
-IMPORT_OBJECTIF_2025 <- DB_sheets$`IMPORT OBJECTIFS 2025`
-IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
 # [[ ]] et non $ : `$` sur une liste fait de l'appariement PARTIEL, en silence.
 # DB_sheets$"IMPORT PASS" trouvait donc "IMPORT PASS NEW" par préfixe — ça
 # marchait, mais par chance : un second onglet commençant pareil ("IMPORT PASS
@@ -547,11 +535,8 @@ DB_TICKET <- IMPORT_TICKET %>%
 
 cli::cli_h3("Import de la DB OBJECTIFS")
 
-DB_OBJECTIFS <- transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS`) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2025`)) %>%
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2026`)) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2023`)) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2022`)) |> 
+DB_OBJECTIFS <- bind_rows(lapply(DB_sheets[SHEETS_OBJECTIFS],
+                                 transmute_objectifs)) |> 
   select(ANNEE,MOIS,DATE_DEBUT,DATE_FIN,CA_TVAC,CA_HTVA,
          CA_HTVA_NOURRITURE_6,CA_HTVA_NOURRITURE_12,CA_HTVA_BOISSON_21) |> 
   mutate(DATE_DEBUT = ymd(as.character(DATE_DEBUT)),
@@ -852,13 +837,6 @@ if (nrow(hydrate$DB_TICKET) != nrow(DB_TICKET))
 
 DB_TICKETS_HEURES <- hydrate$TICKETS_HEURES
 rm(hydrate)
-
-# Synthèse par catégorie
-DB_CATEGORIES_JOURS <- DB_TICKETS_HEURES %>%
-  group_by(DATE,CD_HEURE,CATEGORIE) %>%
-  summarise(CA_HTVA = sum(CA_HTVA),QUANTITE = sum(QUANTITE),.groups = "drop") |> 
-  complete(DATE, CD_HEURE, CATEGORIE,
-           fill = list(CA_HTVA = 0, QUANTITE = 0))
 
 ##### DB_KPI ####
 cli::cli_h3("Table DB_KPI")

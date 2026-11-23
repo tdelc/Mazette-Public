@@ -145,8 +145,8 @@ server <- function(input, output, session) {
     # Les onglets autorisés sont insérés à la suite de l'accueil, dans l'ordre
     # du catalogue. Ceux qui manquent ne sont pas masqués : ils n'ont jamais
     # été envoyés au navigateur, et leurs sorties ne seront jamais calculées.
-    precedent <- ONGLET_ACCUEIL
-    for (cle in setdiff(acces$ONGLETS, ONGLET_ACCUEIL)) {
+    precedent <- ONGLET_DEPART
+    for (cle in setdiff(acces$ONGLETS, ONGLET_DEPART)) {
       nav_insert("nav", panneau_onglet(cle), target = precedent,
                  position = "after", session = session)
       precedent <- cle
@@ -362,68 +362,6 @@ server <- function(input, output, session) {
     )
   })
 
-  #### Volet "Accueil" ####
-
-  # Bandeau : CA de la veille, de la semaine et du mois, chacun face à son
-  # objectif. Suit le sélecteur HTVA/TVAC.
-  output$accueil_kpi <- renderUI({
-    kpi_accueil(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, input$unite_tva)
-  })
-
-  # La grille des cartes : seulement celles dont l'onglet est autorisé. Une
-  # carte qui renverrait vers un onglet absent de la barre n'a pas de sens.
-  output$accueil_cartes <- renderUI({
-    req(USER$logged)
-    grille_cartes_accueil(USER$onglets)
-  })
-
-  # Une carte par onglet. Celles qui portent des euros suivent la TVA ; les
-  # autres (fûts, réservations) sont en volumes et n'en dépendent pas.
-  output$acc_maintenant <- renderUI({
-    acc_maintenant(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille)
-  })
-  output$acc_annee <- renderUI({
-    acc_annee(UPD_KPI_SIMPLE(), date_veille)
-  })
-  output$acc_futs <- renderUI({
-    acc_futs(DB_BIERES, tryCatch(db_predict_bieres(), error = function(e) NULL))
-  })
-  output$acc_bieres <- renderUI({
-    acc_bieres(DB_TICKET, DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_focaccias <- renderUI({
-    acc_focaccias(DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_pizzwanze <- renderUI({
-    acc_pizzwanze(DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_reservations <- renderUI({
-    acc_reservations(RESA())
-  })
-  output$acc_compta <- renderUI({
-    acc_compta(if (exists("DB_COMPTA")) compta_a_date(DB_COMPTA) else NULL)
-  })
-  output$acc_planning <- renderUI({
-    if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
-    acc_planning(PLAN_RESUME())
-  })
-
-  # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
-  # Bouton et onglet cible viennent tous deux de CARTES_ACCUEIL (R/acces.R) :
-  # ajouter une carte, c'est ajouter une ligne, et il n'y a plus deux listes à
-  # tenir d'accord (l'ancienne visait « tab_bieres », qui n'existe pas).
-  for (i in seq_len(nrow(CARTES_ACCUEIL))) {
-    # local() fige l'indice : sans lui, les huit observeEvent partageraient la
-    # dernière valeur de la boucle et renverraient tous vers le même onglet.
-    local({
-      bouton <- CARTES_ACCUEIL$BOUTON[i]
-      cible  <- CARTES_ACCUEIL$CLE[i]
-      observeEvent(input[[bouton]], {
-        nav_select("nav", cible, session = session)
-      }, ignoreInit = TRUE)
-    })
-  }
-
   #### Volet "Maintenant" — Indicateurs clés ####
   ca_periode <- function(db, d1, d2) {
     db %>% filter(DATE >= d1, DATE <= d2) %>% summarise(s = sum(ventes, na.rm = TRUE)) %>% pull(s)
@@ -444,24 +382,8 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Maintenant" — Veille ####
-  output$titre_veille <- renderText({
-    "Semaine en cours"
-  })
-  
   output$title_vb_veille <- renderUI({
     titre_avec_tva("CA de la veille", input$unite_tva)
-  })
-
-  output$box_veille <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, 0,
-                    format_date = "%d/%m", unite_tva = input$unite_tva)
-  })
-
-  output$top_veille <- renderDT({
-    datatable_simple(
-      top_produits_periode(DB_PRODUITS, date_veille, date_veille, n = 10, 
-                           unite_tva = input$unite_tva)
-    )
   })
 
   #### Volet "Maintenant" — Semaine en cours ####
@@ -2775,10 +2697,6 @@ server <- function(input, output, session) {
     })
   }
   
-  # La navigation des cartes d'accueil est branchée plus haut, à partir de
-  # CARTES_ACCUEIL : le second jeu d'observateurs qui vivait ici faisait
-  # double emploi.
-
   # EN DERNIER, parce que toutes les sorties doivent exister : sans ceci, les
   # bandeaux d'alerte ne s'affichent JAMAIS. Masqués tant qu'ils sont vides,
   # Shiny les suspend ; suspendus, ils ne se calculent pas ; jamais calculés,

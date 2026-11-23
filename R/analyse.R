@@ -461,14 +461,6 @@ libelle_reel_pont <- function(pont) {
   euro_exact(pont$REEL)
 }
 
-# L'opération qui mène de l'écart à l'effet. Vide pour une ligne de poste :
-# l'écart EST l'effet, au signe près, et une colonne « × 1 » n'apprendrait rien.
-libelle_base_pont <- function(pont, lib_ref = "la référence") {
-  ifelse(pont$NATURE == "volume",
-         paste0("× ", format_pct(pont$BASE), " de marge"),
-  ifelse(pont$SIGNE < 0, "charge : signe opposé", "produit : même signe"))
-}
-
 # La phrase de lecture d'une ligne : celle qu'on se dirait à voix haute en
 # refaisant le calcul. C'est elle qui fait comprendre le pont la première fois.
 lecture_pont <- function(pont, lib_actuel = "la période",
@@ -611,7 +603,6 @@ table_pont_marge <- function(pont, lib_actuel = "la période",
     `Attendu`   = libelle_attendu_pont(pont),
     `Réel`      = libelle_reel_pont(pont),
     `Écart`     = euro_signe(pont$ECART),
-    # `Opération` = libelle_base_pont(pont, lib_ref),
     `Effet sur la marge` = euro_signe(pont$EFFET),
     Lecture     = lecture_pont(pont, lib_actuel, lib_ref))
 

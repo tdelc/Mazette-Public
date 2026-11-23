@@ -728,27 +728,3 @@ table_planning_avenir <- function(proj) {
                                      paste0(ifelse(ECART_CA >= 0, "+", ""),
                                             format_CA(ECART_CA, -1))))
 }
-
-# Carte d'accueil : les heures posées, et si elles couvrent l'objectif.
-acc_planning <- function(res) {
-  if (is.null(res)) return(corps_vide("Pas de planning à venir."))
-
-  detail <- paste0(
-    if (is.na(res$ECART_H_PCT)) "" else
-      paste0(if (res$ECART_H_PCT >= 0) "+" else "", round(res$ECART_H_PCT),
-             " % vs l'habitude · "),
-    res$COUVERTS, " couverts réservés")
-
-  if (is.na(res$ECART_CA))
-    return(corps_accueil(paste0(round(res$H_VARIABLE), " h"),
-                         paste0("de service sur ", res$jours, " jours à venir"),
-                         COUL_NEUTRE, detail))
-
-  corps_accueil(
-    paste0(round(res$H_VARIABLE), " h"),
-    paste0("de service sur ", res$jours, " jours à venir"),
-    if (res$ECART_CA >= 0) COUL_VERT else COUL_ROUGE,
-    paste0(detail, " · ",
-           if (res$ECART_CA >= 0) "objectif couvert" else
-             paste0("manque ", format_CA(-res$ECART_CA, -1))))
-}

@@ -29,10 +29,8 @@
 #
 # Certains exports retiennent la convention inverse (stock final − stock
 # initial). Si c'est le cas du tien, passe cette constante à -1 : c'est le seul
-# endroit à changer. `diagnostic_signe_stock()` plus bas tranche sur pièces.
+# endroit à changer.
 SIGNE_VARIATION_STOCK <- 1
-
-GRANULARITES_COUTS <- c("mois", "semaine")
 
 # Premier jour de la période contenant `d`, selon la granularité.
 # Vectorisées toutes les deux : elles sont appelées dans des mutate() où
@@ -123,33 +121,6 @@ normalise_couts_matiere <- function(df, granularite = c("mois", "semaine"),
     arrange(PERIODE, SECTEUR)
 }
 
-#' Lignes utilisables pour une granularité d'analyse donnée.
-#'
-#' Règle : une vue hebdomadaire n'accepte que des lignes hebdomadaires. Une vue
-#' mensuelle ou annuelle accepte les deux, mais si un mois dispose de lignes
-#' hebdomadaires, elles priment et la ligne mensuelle est écartée — sans quoi
-#' on compterait deux fois le même mois.
-couts_matiere_effectifs <- function(db, unite = c("semaine", "mois", "annee")) {
-  unite <- match.arg(unite)
-  if (!nrow(db)) return(db)
-
-  if (unite == "semaine") return(filter(db, GRANULARITE == "semaine"))
-
-  hebdo <- filter(db, GRANULARITE == "semaine")
-  mensuel <- filter(db, GRANULARITE == "mois")
-
-  if (nrow(hebdo)) {
-    mois_couverts <- hebdo %>%
-      mutate(MOIS = floor_date(PERIODE, "month")) %>%
-      distinct(MOIS, SECTEUR)
-    mensuel <- mensuel %>%
-      mutate(MOIS = floor_date(PERIODE, "month")) %>%
-      anti_join(mois_couverts, by = c("MOIS", "SECTEUR")) %>%
-      select(-MOIS)
-  }
-  bind_rows(hebdo, mensuel) %>% arrange(PERIODE, SECTEUR)
-}
-
 #' Étale les coûts d'une période sur ses jours d'ouverture.
 #'
 #' Sert au volet « détail par jour », qui a besoin d'un montant journalier.
@@ -171,31 +142,4 @@ couts_matiere_par_jour <- function(db, db_date, jusqu_a = today()) {
     select(DATE, PERIODE, GRANULARITE, SECTEUR,
            COUT_MATIERE, ACHATS, VARIATION_STOCK, STOCK_CONNU, SIMU) %>%
     arrange(DATE, SECTEUR)
-}
-
-#' Départage les deux conventions de signe sur pièces.
-#'
-#' Calcule le food cost des secteurs métier sous chacune des deux conventions et
-#' le compare au CA réel. Un food cost de restauration se situe entre 25 et 35 %
-#' du CA HTVA : la convention qui sort de cette fourchette est la mauvaise.
-diagnostic_signe_stock <- function(db_couts, db_kpi) {
-  ca <- db_kpi %>%
-    mutate(MOIS = floor_date(DATE, "month")) %>%
-    group_by(MOIS) %>%
-    summarise(CA = sum(ventes, na.rm = TRUE), .groups = "drop") %>%
-    filter(CA > 0)
-
-  db_couts %>%
-    filter(SECTEUR != "Support") %>%
-    mutate(MOIS = floor_date(PERIODE, "month")) %>%
-    group_by(MOIS) %>%
-    summarise(ACHATS = sum(ACHATS, na.rm = TRUE),
-              STOCK  = sum(VARIATION_STOCK, na.rm = TRUE), .groups = "drop") %>%
-    inner_join(ca, by = "MOIS") %>%
-    summarise(
-      mois          = n(),
-      `food +` = paste0(round(100 * sum(ACHATS + STOCK) / sum(CA), 1), " %"),
-      `food -` = paste0(round(100 * sum(ACHATS - STOCK) / sum(CA), 1), " %"),
-      `achats seuls` = paste0(round(100 * sum(ACHATS) / sum(CA), 1), " %")
-    )
 }

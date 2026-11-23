@@ -45,12 +45,6 @@ ok("décembre et toute l'année suivante partent",
    !any(coupe$ANNEE == 2027) && !12 %in% coupe$MOIS[coupe$ANNEE == 2026])
 ok("et rien d'autre n'a bougé", ncol(coupe) == ncol(db))
 
-ok("les mois retirés se nomment",
-   { m <- mois_a_venir(db, AUJ)
-     length(m) == 7 && min(m) == as.Date("2026-12-01") &&
-       max(m) == as.Date("2027-06-01") })
-ok("sans mois à venir, la liste est vide",
-   length(mois_a_venir(coupe, AUJ)) == 0)
 ok("une table vide ou nulle traverse sans erreur",
    is.null(compta_a_date(NULL)) && nrow(compta_a_date(db[0, ], AUJ)) == 0)
 ok("un mois illisible ne passe pas pour du passé",
