@@ -1,8 +1,5 @@
-# Volet « Maintenant » : la page d'atterrissage de tous les jours.
-#
-# La veille, la semaine en cours, l'avancement du mois, les produits qui
-# bougent. Tout y est à J-1 : la caisse du jour n'est close qu'au soir, et un
-# chiffre partiel affiché comme un chiffre final se lit comme une chute.
+# Volet « Maintenant » : la veille, la semaine en cours, l'avancement du mois.
+# Tout y est à J-1 : la caisse du jour n'est close qu'au soir.
 
 # Top produits (CA HTVA) sur une période [date_debut, date_fin]
 top_produits_periode <- function(db_produits, date_debut, date_fin, n = 10,
@@ -66,7 +63,7 @@ progression_mois <- function(db_kpi, db_obj, mois = floor_date(today(), "month")
            objectif = replace_na(objectif, 0),
            cum_reel = cumsum(ventes),
            cum_obj  = cumsum(objectif),
-           # on n'affiche pas le cumulé réalisé pour les jours pas encore passés
+           # Pas de cumul réalisé pour les jours à venir.
            cum_reel = ifelse(DATE >= today(), NA, cum_reel))
 }
 
@@ -88,12 +85,8 @@ graph_progression_mois <- function(prog, mois = floor_date(today(), "month")) {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Récapitulatif compact des dernières semaines : une ligne par semaine, une
-# colonne par jour, le CA coloré selon l'atteinte de son objectif. Remplace
-# une pile de cartes qui occupait beaucoup de place pour la seule valeur du
-# jour. Le détail (date complète, objectif, pourcentage) est en infobulle.
-# L'unité se pose sur l'en-tête « Total » : le tableau compte une quarantaine
-# de montants, une pastille par cellule serait illisible.
+# Les dernières semaines : une ligne par semaine, une colonne par jour, le CA
+# coloré selon l'atteinte de son objectif ; le détail est en infobulle.
 tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5,
                              unite_tva = "HTVA") {
   fin <- floor_date(as.Date(fin_semaine), "week", week_start = 1)
@@ -120,7 +113,7 @@ tableau_semaines <- function(db_kpi, db_obj, fin_semaine, n_semaines = 5,
     coul <- couleur_objectif(ca, obj)
     tags$td(
       class = classe,
-      # 1f = ~12 % d'opacité : un fond teinté qui reste lisible
+      # 1f = ~12 % d'opacité.
       style = paste0("color:", coul, ";background:", coul, "1f;"),
       title = paste0(date, " — ", label_objectif(ca, obj)),
       format_CA(ca, -1)

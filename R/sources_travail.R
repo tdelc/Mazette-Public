@@ -1,52 +1,20 @@
-# Trois sources pour les heures et le coût du travail, et comment les réconcilier.
+# Trois sources pour les heures et le coût du travail, et leur réconciliation.
 #
-# ---------------------------------------------------------------------------
-# Ce que chacune sait, et ce qu'elle ne sait pas
-# ---------------------------------------------------------------------------
+#   HOREKO (DB_COUTS_TRAVAIL)  le pointage, seul grain jour × secteur × créneau.
+#                              Coût estimé : heures × taux horaire du contrat.
+#   COMPTABILITÉ (comptes 62)  le coût réel, mais un total mensuel sans
+#                              ventilation ni heures.
+#   PAIE / ONSS (DB_ONSS)      coût employeur réel et heures travaillées, par
+#                              secteur et par mois ; rien au jour.
 #
-#   HOREKO (DB_COUTS_TRAVAIL)
-#     Le pointage. Seule source au grain JOUR x SECTEUR x CRÉNEAU — donc la
-#     seule qui sache dire « samedi soir ». Son coût est une ESTIMATION : un
-#     taux horaire par type de contrat, multiplié par les heures. Il ignore
-#     les pécules, les provisions, les charges patronales réelles.
+# Règle : la paie fait autorité sur le total du mois et du secteur ; Horeko
+# ne sert qu'à répartir ce total sur les jours et les créneaux, au prorata des
+# heures pointées et sans jamais franchir un secteur. On ne redresse PAS par
+# la comptabilité : son écart (pécules, provisions, personnel non pointé) n'a
+# aucune raison de suivre les heures.
 #
-#   COMPTABILITÉ (comptes 62)
-#     Le coût VRAI, au centime, mais un total mensuel sans aucune ventilation.
-#     Elle ne connaît pas les heures du tout.
-#
-#   PAIE / ONSS (DB_ONSS) — la nouvelle
-#     Le coût employeur réel ET les heures réellement travaillées, ventilés
-#     par secteur, au grain MOIS x TRAVAILLEUR. Elle ne descend pas au jour,
-#     donc elle ne sait rien des créneaux.
-#
-# Aucune ne domine les autres sur tous les axes, d'où la réconciliation plutôt
-# qu'un choix. Mais sur les deux axes qui comptent — combien d'heures, combien
-# d'euros — la paie est la meilleure des trois : elle mesure, là où Horeko
-# estime et où la comptabilité ne ventile pas.
-#
-# ---------------------------------------------------------------------------
-# La règle de réconciliation
-# ---------------------------------------------------------------------------
-# La paie fait autorité sur le TOTAL du mois et du secteur. Horeko ne sert
-# plus qu'à RÉPARTIR ce total sur les jours et les créneaux.
-#
-# C'est bien une règle de trois, et il faut dire pourquoi elle est légitime ici
-# alors qu'elle avait été retirée de l'ancien redressement par la comptabilité
-# (cf. import.R). La différence est nette :
-#
-#   - redresser le coût Horeko par le total COMPTABLE répartissait un écart qui
-#     n'a aucune raison de suivre les heures : pécules, provisions et personnel
-#     non pointé ne se rangent pas au prorata des heures pointées. On déplaçait
-#     du coût d'un secteur vers un autre sans fondement ;
-#
-#   - recaler les heures d'un secteur sur le total de la PAIE répartit l'écart
-#     entre DEUX MESURES DE LA MÊME GRANDEUR — les heures faites dans ce
-#     secteur, ce mois-là. On ne sait pas quel jour l'écart est né ; le prorata
-#     des heures pointées est alors la seule hypothèse neutre, et elle ne
-#     traverse jamais la frontière d'un secteur.
-#
-# Les valeurs Horeko d'origine sont conservées colonne à colonne : rien n'est
-# écrasé, et le sous-onglet « Sources » affiche les trois côte à côte.
+# Les valeurs Horeko d'origine sont conservées ; le sous-onglet « Sources »
+# affiche les trois côte à côte.
 
 #### Contrat de DB_ONSS ####
 
@@ -59,29 +27,20 @@
 #   N_FICHES    <int>   nombre de fiches de paie concernées
 ONSS_COLONNES <- c("ANNEE", "MOIS", "SECTEUR", "HEURES", "COUT")
 
-# Table optionnelle : tant que l'import ne la produit pas, le volet doit le
-# dire plutôt que planter.
+# Table optionnelle : le volet doit pouvoir s'en passer.
 onss_valide <- function(db) {
   !is.null(db) && is.data.frame(db) &&
     all(ONSS_COLONNES %in% names(db)) && nrow(db) > 0
 }
 
-# Secteur des lignes de paie qu'on ne peut rattacher à aucun secteur : un mois
-# d'absence, un solde de congés, une fiche sans ventilation d'heures.
-#
-# On les GARDE, sous ce libellé, plutôt que de les jeter : sans elles le total
-# de DB_ONSS ne retomberait pas sur le total de la paie, et le sous-onglet
-# Sources comparerait un sous-ensemble à un tout — l'erreur exacte qu'il est
-# censé rendre visible.
+# Lignes de paie sans secteur (absence, solde de congés, fiche sans heures).
+# Gardées sous ce libellé pour que le total retombe sur celui de la paie.
 SECTEUR_NON_VENTILE <- "Non ventilé"
 
 #### Lecture du fichier de paie ####
 
-# Colonnes d'heures par secteur, et le libellé de secteur qu'elles portent.
-#
-# Nommées une à une plutôt que détectées par un préfixe : « Heures » et
-# « Heures réellement travaillées » commencent aussi par « Heures » et ne sont
-# pas des secteurs. Un startsWith() les aurait embarquées.
+# Colonnes d'heures par secteur, nommées une à une : « Heures » et « Heures
+# réellement travaillées » ne sont pas des secteurs.
 COLONNES_SECTEURS_ONSS <- c(
   "Heures Service"              = "Service",
   "Heures Transfo alimentaire"  = "Transfo alimentaire",
@@ -98,40 +57,21 @@ COLONNES_ONSS <- c(
   HEURES_REEL = "Heures réellement travaillées"
 )
 
-# Nombre écrit à l'européenne, quand la lecture du classeur rend du texte.
+# Nombre écrit à l'européenne, quand le classeur rend du texte.
 #
-# googlesheets4 rend des nombres quand les cellules en portent, et du texte dès
-# qu'une colonne mélange les types. Il faut donc savoir lire les deux, et le
-# piège est le séparateur :
+#   1. une virgule est présente : décimale ; les points sont des milliers
+#      (« 1.121,97 » -> 1121.97) ;
+#   2. sinon, des points qui découpent des groupes de trois chiffres sont des
+#      milliers (« 2.683 » -> 2683) ;
+#   3. sinon le point est la décimale (« 1121.97 »).
 #
-#   « 1.121,97 »  point = milliers, virgule = décimale  -> 1121.97
-#   « 1121.97 »   point = décimale                       -> 1121.97
-#
-# Retirer les points sans condition casserait le second cas (112197). Trois
-# règles, dans cet ordre :
-#
-#   1. une VIRGULE est présente -> elle est la décimale, les points sont des
-#      milliers. « 1.121,97 » -> 1121.97. C'est le cas courant de ce fichier,
-#      où tous les montants portent leurs deux décimales.
-#
-#   2. pas de virgule, mais les points découpent des GROUPES DE TROIS chiffres
-#      -> ce sont des séparateurs de milliers. « 2.683 » -> 2683,
-#      « 1.234.567 » -> 1234567.
-#
-#   3. sinon le point est la décimale. « 1121.97 » -> 1121.97, « 77.00 » -> 77.
-#
-# La règle 2 tranche une vraie ambiguïté : « 2.683 » peut s'écrire pour 2683
-# (milliers à l'européenne) comme pour 2,683 (décimale à l'anglaise). Dans un
-# fichier de paie, un montant à trois décimales n'existe pas et un millier est
-# partout : on choisit donc 2683. L'ambiguïté est irréductible — aucune
-# heuristique ne la lèvera — mais elle ne se présente que si le classeur cesse
-# d'afficher ses décimales, ce que le contrôle de lecture verrait par ailleurs.
+# La règle 2 tranche une ambiguïté : dans un fichier de paie, un montant à
+# trois décimales n'existe pas.
 nombre_europeen <- function(x) {
   if (is.numeric(x)) return(x)
   txt <- trimws(as.character(x))
   txt[txt %in% c("", "-", "NA")] <- NA_character_
-  # Espaces de milliers (insécables compris) et symboles de devise d'abord :
-  # ils brouilleraient la reconnaissance des groupes de trois.
+  # Espaces (insécables compris) et devise d'abord.
   txt <- gsub("[[:space:]  €]", "", txt)
 
   avec_virgule <- grepl(",", txt, fixed = TRUE)
@@ -152,15 +92,9 @@ colonne_onss <- function(import, nom) {
   nombre_europeen(import[[nom]])
 }
 
-# DB_ONSS à partir du fichier de paie brut.
-#
-# Le coût employeur est porté par la FICHE (un travailleur, un mois) et non par
-# le secteur. On le ventile au prorata des heures que cette fiche a faites dans
-# chaque secteur : c'est le même travailleur, donc le même coût horaire, donc
-# le prorata est exact et non une approximation.
-#
-# Une fiche sans aucune heure sectorielle garde tout son coût, sous
-# SECTEUR_NON_VENTILE : le total du mois reste celui de la paie.
+# DB_ONSS à partir du fichier de paie brut. Le coût d'une fiche (un
+# travailleur, un mois) est ventilé au prorata de ses heures par secteur ; une
+# fiche sans heure sectorielle garde son coût sous SECTEUR_NON_VENTILE.
 construit_onss <- function(import) {
   if (is.null(import) || !is.data.frame(import) || !nrow(import)) return(NULL)
 
@@ -187,8 +121,6 @@ construit_onss <- function(import) {
       SECTEUR = if_else(is.na(SECTEUR) | H_FICHE <= 0,
                         SECTEUR_NON_VENTILE, SECTEUR),
       HEURES  = replace_na(HEURES, 0),
-      # Prorata du coût de la fiche sur ses secteurs. Une fiche sans heures
-      # ventilables porte son coût en entier sur la ligne « Non ventilé ».
       COUT    = if_else(H_FICHE > 0, COUT * HEURES / H_FICHE, COUT))
 
   res <- d %>%
@@ -202,12 +134,9 @@ construit_onss <- function(import) {
   if (!nrow(res)) NULL else res
 }
 
-# Contrôle de lecture du fichier de paie.
-#
-# À regarder après chaque import : si la somme des colonnes sectorielles ne
-# retombe pas sur « Heures réellement travaillées », c'est qu'un secteur a
-# changé de nom dans le fichier et que ses heures sont passées à la trappe.
-# Un écart silencieux ici se lirait plus tard comme une baisse d'activité.
+# Contrôle de lecture du fichier de paie : si la somme des colonnes
+# sectorielles ne retombe pas sur « Heures réellement travaillées », un
+# secteur a changé de nom dans le fichier.
 controle_onss <- function(import) {
   if (is.null(import) || !is.data.frame(import) || !nrow(import)) return(NULL)
 
@@ -228,18 +157,11 @@ controle_onss <- function(import) {
     COLONNES_ATTENDUES = length(COLONNES_SECTEURS_ONSS))
 }
 
-# Nom de l'onglet du classeur de paie. Nommé plutôt que « le premier onglet » :
-# un classeur dont on lit le premier onglet finit un jour par lire autre chose.
-# La lecture se rabat sur le premier onglet si celui-ci est absent, parce qu'un
-# classeur fraîchement partagé porte souvent encore « Feuille 1 ».
+# Onglet du classeur de paie ; à défaut, le premier.
 SHEET_ONSS <- "PAIE"
 
-# Lecture du classeur de paie.
-#
-# Tout est lu en TEXTE puis reconverti par nombre_europeen() : c'est le seul
-# moyen d'être indifférent au format d'affichage choisi côté Google. Une
-# colonne de montants mélangeant nombres et cellules vides revient sinon en
-# liste, et le premier calcul tombe.
+# Lecture du classeur de paie, tout en texte puis reconverti par
+# nombre_europeen() : indifférent au format d'affichage du Sheet.
 lit_onss <- function(ss) {
   if (!requireNamespace("googlesheets4", quietly = TRUE)) {
     cli::cli_alert_warning("googlesheets4 absent : fichier de paie ignoré")
@@ -262,17 +184,9 @@ lit_onss <- function(ss) {
 
 #' Les contrats pointés qu'aucun taux horaire ne valorise.
 #'
-#' Horeko dit, heure par heure, sous quel contrat elle a été faite —
-#' étudiant, CDD, CDI, extra, stage — et l'onglet « Cout » du même classeur
-#' donne un taux à chacun. C'est ce couple qui fait le coût estimé, et c'est
-#' lui que la projection utilise pour peser le MIX d'un mois : à heures
-#' égales, un mois à moitié étudiant coûte moins cher.
-#'
-#' Le jour où un statut nouveau apparaît dans le pointage sans entrer dans la
-#' table des taux — un flexi-job, par exemple — son coût reste NA. Et comme
-#' DB_COUTS_TRAVAIL somme sans na.rm, c'est tout le groupe du jour qui devient
-#' NA : la valorisation se tait sur des mois entiers, sans un mot. D'où ce
-#' contrôle, appelé à l'import.
+#' Le coût Horeko vaut heures × taux du contrat (onglet « Cout » du classeur).
+#' Un contrat nouveau, absent de la table des taux, donne un coût NA, qui rend
+#' NA tout le groupe du jour. Ce contrôle, appelé à l'import, le signale.
 #'
 #' @return une ligne par contrat sans taux, ou NULL si tout est valorisé.
 contrats_sans_taux <- function(db_heures) {
@@ -289,9 +203,7 @@ contrats_sans_taux <- function(db_heures) {
 
 #### Recalage de DB_COUTS_TRAVAIL ####
 
-# Libellés des trois sources, dans l'ordre de confiance décroissante sur les
-# heures. Un registre plutôt que des chaînes recopiées : les couleurs, les
-# légendes et les colonnes de tableau en dépendent toutes.
+# Libellés des trois sources, par confiance décroissante sur les heures.
 SOURCES_TRAVAIL <- tibble::tribble(
   ~CLE,       ~LIBELLE,          ~HEURES, ~COUT,  ~COULEUR,
   "paie",     "Paie (ONSS)",     TRUE,    TRUE,   "#732c02",
@@ -301,13 +213,9 @@ SOURCES_TRAVAIL <- tibble::tribble(
 
 # DB_COUTS_TRAVAIL recalé sur la paie.
 #
-# En sortie, HEURES et COUT_TRAVAIL portent les valeurs RETENUES — celles que
-# tout le dashboard consomme. Les valeurs Horeko d'origine restent disponibles
-# sous HEURES_HOREKO et COUT_HOREKO_LIGNE, et SOURCE_HEURES dit, ligne à ligne,
-# laquelle a servi.
-#
-# Sans DB_ONSS, la fonction est un passe-plat qui ajoute seulement ces colonnes :
-# le volet Sources doit pouvoir se dessiner avant que la paie n'arrive.
+# HEURES et COUT_TRAVAIL portent les valeurs retenues ; les valeurs Horeko
+# restent sous HEURES_HOREKO et COUT_HOREKO_LIGNE, et SOURCE_HEURES dit
+# laquelle a servi. Sans DB_ONSS, la fonction ajoute seulement ces colonnes.
 recale_couts_travail <- function(db_couts, db_onss = NULL) {
   if (is.null(db_couts) || !nrow(db_couts)) return(db_couts)
 
@@ -334,9 +242,7 @@ recale_couts_travail <- function(db_couts, db_onss = NULL) {
     ungroup() %>%
     left_join(onss, by = c("ANNEE", "MOIS", "SECTEUR")) %>%
     mutate(
-      # La part de la ligne dans son mois-secteur : c'est elle qui porte la
-      # répartition, et elle vient d'Horeko — la seule source qui descende au
-      # jour et au créneau.
+      # La part de la ligne dans son mois-secteur, selon Horeko.
       PART = if_else(H_MOIS_HOREKO > 0, HEURES_HOREKO / H_MOIS_HOREKO, NA_real_),
       recale = !is.na(HEURES_ONSS_MOIS) & !is.na(PART),
       SOURCE_HEURES = if_else(recale, "Paie", "Horeko"),
@@ -347,13 +253,8 @@ recale_couts_travail <- function(db_couts, db_onss = NULL) {
     select(-H_MOIS_HOREKO, -PART, -recale)
 }
 
-# Heures de la paie qu'aucune ligne Horeko ne peut porter.
-#
-# Un secteur présent dans la paie mais absent du pointage ce mois-là n'a aucun
-# jour auquel se rattacher : ses heures sont perdues pour le grain journalier,
-# et le recalage ne peut rien y faire. Plutôt que de les laisser disparaître en
-# silence, on les compte ici — le volet Sources les affiche, et c'est ce qui
-# transforme une perte invisible en écart lisible.
+# Heures de la paie qu'aucune ligne Horeko ne peut porter : un secteur payé
+# mais non pointé ce mois-là. Comptées ici pour être affichées.
 onss_non_rattache <- function(db_couts, db_onss) {
   if (!onss_valide(db_onss)) return(NULL)
 
@@ -375,16 +276,8 @@ onss_non_rattache <- function(db_couts, db_onss) {
 
 #### Volet « Sources » ####
 
-# Heures et coût par mois et par source, en format long.
-#
-# C'est la table unique dont vivent tous les rendus du volet. Une colonne par
-# source aurait imposé de la remodeler à chaque graphe ; en long, la source est
-# une variable comme une autre, et ajouter une quatrième source un jour ne
-# touchera que SOURCES_TRAVAIL.
-#
-# HEURES vaut NA pour la comptabilité, qui n'en connaît aucune. NA et non zéro :
-# « la compta ne mesure pas les heures » et « la compta mesure zéro heure » ne
-# se lisent pas pareil, et un zéro tracerait une courbe au ras de l'axe.
+# Heures et coût par mois et par source, en format long : la table dont
+# vivent tous les rendus du volet. HEURES vaut NA pour la comptabilité.
 sources_mensuelles <- function(db_couts, db_onss = NULL) {
   if (is.null(db_couts) || !nrow(db_couts)) return(NULL)
 
@@ -429,11 +322,7 @@ sources_mensuelles <- function(db_couts, db_onss = NULL) {
   if (!nrow(res)) NULL else res
 }
 
-# La même chose au grain secteur, pour les deux sources qui ventilent.
-#
-# La comptabilité en est absente par construction : elle n'a pas de secteur.
-# L'afficher avec un secteur « Total » la ferait figurer au même rang que les
-# autres, ce qui est exactement le malentendu que ce volet doit dissiper.
+# La même chose au grain secteur, sans la comptabilité, qui n'en a pas.
 sources_par_secteur <- function(db_couts, db_onss = NULL) {
   if (is.null(db_couts) || !nrow(db_couts)) return(NULL)
 
@@ -462,12 +351,8 @@ sources_par_secteur <- function(db_couts, db_onss = NULL) {
   bind_rows(paie, horeko) %>% arrange(PERIODE, SECTEUR, SOURCE)
 }
 
-# Une ligne par mois, une colonne par (source x grandeur), plus les écarts.
-#
-# C'est LA table que le volet doit produire : « par mois, le nombre d'heures et
-# le coût selon chaque source ». Les écarts sont donnés en euros ET en pour
-# cent, parce qu'un écart de 3 000 € ne se juge pas sans savoir s'il porte sur
-# 20 000 € ou sur 200 000 €.
+# Une ligne par mois, une colonne par (source × grandeur), et les écarts en
+# euros et en pour cent.
 table_sources <- function(src) {
   if (is.null(src) || !nrow(src))
     return(tibble(Info = "Aucune source de coût du travail disponible."))
@@ -483,9 +368,7 @@ table_sources <- function(src) {
   c_paie <- col("COUT_paie");    c_hor <- col("COUT_horeko")
   c_cpt  <- col("COUT_compta")
 
-  # trimws : format_CA aligne les largeurs sur le plus long élément du vecteur,
-  # ce qui produit « +  270€ » à côté de « +2.070€ ». Utile dans une console,
-  # parasite dans une cellule de tableau.
+  # trimws : format_CA aligne les largeurs avec des espaces.
   eur <- function(x) ifelse(is.na(x), "—", trimws(format_CA(x, -1)))
   ecart <- function(a, b) ifelse(is.na(a) | is.na(b), "—",
                                  paste0(ifelse(a - b >= 0, "+", ""), eur(a - b)))
@@ -509,8 +392,7 @@ table_sources <- function(src) {
   ) %>% arrange(desc(row_number()))
 }
 
-# Écart d'heures, en heures et en pour cent : la même exigence que pour les
-# euros, dans l'unité qui convient.
+# Écart d'heures, en heures et en pour cent.
 ecart_heures <- function(a, b) {
   ifelse(is.na(a) | is.na(b), "—",
          paste0(ifelse(a - b >= 0, "+", ""), round(a - b, 1), " h",
@@ -528,10 +410,6 @@ couleur_source <- function(cle) {
 }
 
 # Les heures mois par mois, une courbe par source qui en mesure.
-#
-# Des courbes et non des barres groupées : on cherche à voir si les deux
-# sources RACONTENT LA MÊME HISTOIRE dans le temps. Deux courbes qui se suivent
-# se lisent d'un coup d'œil ; vingt-quatre barres côte à côte, non.
 graph_sources_heures <- function(src, unite = "mois") {
   mesurent <- SOURCES_TRAVAIL$CLE[SOURCES_TRAVAIL$HEURES]
   d <- if (is.null(src)) NULL else src %>% filter(as.character(SOURCE) %in% mesurent)
@@ -563,9 +441,7 @@ graph_sources_heures <- function(src, unite = "mois") {
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Le coût mois par mois, une courbe par source. Les trois y figurent : c'est le
-# seul endroit du dashboard où la comptabilité, Horeko et la paie se comparent
-# sur la même grandeur et le même axe.
+# Le coût mois par mois, une courbe par source.
 graph_sources_cout <- function(src, unite = "mois") {
   if (is.null(src) || !nrow(src))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -594,12 +470,9 @@ graph_sources_cout <- function(src, unite = "mois") {
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# L'écart de coût entre la paie et les deux autres, en part de la paie.
-#
-# Le graphe qui compte vraiment : un écart CONSTANT est une différence de
-# périmètre, et on peut vivre avec. Un écart qui DÉRIVE est un problème de
-# données. Les niveaux absolus des deux courbes précédentes ne permettent pas
-# de faire cette distinction à l'œil ; le rapporter à la paie, oui.
+# L'écart de coût entre la paie et les deux autres, en part de la paie. Un
+# écart constant est une différence de périmètre ; un écart qui dérive, un
+# problème de données.
 graph_ecart_sources <- function(src, unite = "mois") {
   if (is.null(src) || !nrow(src))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -645,11 +518,8 @@ graph_ecart_sources <- function(src, unite = "mois") {
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Les heures par secteur, paie contre Horeko, sur toute la fenêtre.
-#
-# Le seul écran qui montre où les deux sources divergent VRAIMENT : un total
-# mensuel identique peut cacher deux ventilations opposées, et c'est
-# précisément la ventilation qu'on est venu chercher dans la paie.
+# Les heures par secteur, paie contre Horeko : un même total peut cacher deux
+# ventilations opposées.
 graph_sources_secteurs <- function(sect) {
   if (is.null(sect) || !nrow(sect))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -709,8 +579,7 @@ kpi_sources <- function(src) {
       if (unite == "eur") paste0(if (e >= 0) "+" else "", format_CA(e, -1))
       else paste0(if (e >= 0) "+" else "", round(e), " h"),
       lib,
-      # Un écart n'est ni bon ni mauvais : c'est sa TAILLE qui alerte. Au-delà
-      # de 10 % on ne parle plus de périmètre, on parle de données.
+      # Au-delà de 10 %, ce n'est plus du périmètre.
       if (is.na(pct)) COUL_NEUTRE
       else if (abs(pct) <= 10) COUL_VERT
       else if (abs(pct) <= 25) COUL_AMBRE else COUL_ROUGE,
@@ -737,12 +606,8 @@ kpi_sources <- function(src) {
   )
 }
 
-# Bandeau de contrôle de la lecture du fichier de paie.
-#
-# Il ne se déclenche que sur un problème STRUCTUREL — une colonne de secteur
-# introuvable, ou des heures sectorielles qui ne retombent pas sur les heures
-# réellement travaillées. Les deux se produisent quand le fichier change de
-# nom de colonne, et les deux font disparaître des heures sans erreur.
+# Bandeau de contrôle de la lecture du fichier de paie : colonne de secteur
+# introuvable, ou heures sectorielles qui ne retombent pas sur le total.
 alerte_onss <- function(ctrl) {
   if (is.null(ctrl) || !nrow(ctrl)) return(NULL)
 

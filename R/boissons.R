@@ -136,7 +136,7 @@ kpi_boissons_tiles <- function(comp, formats, horaire = NULL, unite_tva = NULL,
     tuile_evolution(ca, ca_m1, titre_avec_tva(paste("CA",categorie), unite_tva), "euro-sign",
                     function(x) format_CA(x, -1)),
     tuile_ecart(nb, nb_m1, "Boissons différentes", "list-ul"),
-    kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", CONSO_BRUN,
+    kpi_tile(paste0(round(tanker, 2)), "Équivalent tanker (500 L)", COUL_BRUN,
              "boxes-stacked", sous_titre = paste0(round(litres / 7), " L / jour")),
     kpi_tile(if (is.null(pic)) "—" else as.character(pic$HEURE),
              "Pic de consommation", "#8d7b68", "clock",
@@ -161,7 +161,7 @@ graph_top_boissons <- function(comp, n = 12) {
              hovertemplate = ~paste0(BOISSON, " (S-1)<br>", round(LITRES_M1),
                                      " L<extra></extra>")) %>%
     add_bars(y = ~BOISSON, x = ~LITRES, orientation = "h", name = "Semaine",
-             marker = list(color = CONSO_BRUN),
+             marker = list(color = COUL_BRUN),
              hovertemplate = ~paste0(BOISSON, "<br>", round(LITRES), " L — ",
                                      VERRES, " verres<extra></extra>")) %>%
     layout(barmode = "group", xaxis = list(title = "Litres"),
@@ -179,15 +179,14 @@ graph_tendance_boissons <- function(evo, semaine = NULL) {
   bieres <- levels(droplevels(evo$BOISSON))
   pal <- setNames(
     grDevices::colorRampPalette(
-      c(CONSO_BRUN, CONSO_AMBRE, "#5B7B5A", "#2980b9", "#9b59b6"))(length(bieres)),
+      c(COUL_BRUN, COUL_AMBRE, "#5B7B5A", "#2980b9", "#9b59b6"))(length(bieres)),
     bieres)
   
   p <- plot_ly()
   for (b in bieres) {
     sub <- evo %>% filter(BOISSON == b) %>% arrange(SEMAINE)
-    # Le hover lit la COLONNE BOISSON, pas la variable de boucle `b` : dans une
-    # formule (~), l'expression est évaluée après la boucle, si bien que toutes
-    # les traces afficheraient le nom de la dernière bière.
+    # Le survol lit la colonne BOISSON et non `b` : la formule est évaluée après
+    # la boucle.
     p <- p %>% add_lines(
       data = sub, x = ~SEMAINE, y = ~LITRES, name = b, legendgroup = b,
       line = list(color = pal[[b]], width = 2.5),
@@ -213,9 +212,8 @@ graph_heatmap_boissons <- function(jh) {
   if (is.null(jh) || nrow(jh) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
-  # pivot_wider ordonne les colonnes par ordre d'APPARITION dans les données
-  # (18h, 19h, ... puis 11h). On complète la grille puis on resélectionne les
-  # colonnes dans l'ordre des niveaux du facteur (heure de service).
+  # pivot_wider ordonne les colonnes par ordre d'apparition : on remet celles
+  # des heures de service dans l'ordre.
   jh <- jh %>%
     mutate(HEURE = droplevels(HEURE)) %>%
     complete(JOUR, HEURE, fill = list(LITRES = 0))
@@ -227,7 +225,7 @@ graph_heatmap_boissons <- function(jh) {
   z <- as.matrix(mat[, heures, drop = FALSE])
   
   plot_ly(x = heures, y = as.character(mat$JOUR), z = z, type = "heatmap",
-          colorscale = list(c(0, "#f2efe6"), c(1, CONSO_BRUN)),
+          colorscale = list(c(0, "#f2efe6"), c(1, COUL_BRUN)),
           hovertemplate = "%{y} — %{x}<br>%{z:.0f} L<extra></extra>") %>%
     layout(xaxis = list(title = "", side = "top"),
            yaxis = list(title = "", autorange = "reversed"),
@@ -239,8 +237,8 @@ graph_evo_conso_boissons <- function(evo, semaine = NULL) {
   if (is.null(evo) || nrow(evo) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
   
-  couleurs <- if (is.null(semaine)) CONSO_BRUN
-  else ifelse(evo$SEMAINE == as.Date(semaine), CONSO_AMBRE, CONSO_BRUN)
+  couleurs <- if (is.null(semaine)) COUL_BRUN
+  else ifelse(evo$SEMAINE == as.Date(semaine), COUL_AMBRE, COUL_BRUN)
   
   plot_ly(evo) %>%
     add_bars(x = ~SEMAINE, y = ~LITRES, name = "Litres",
@@ -266,7 +264,7 @@ graph_formats_boissons <- function(formats) {
     mutate(FORMAT = factor(FORMAT, levels = FORMAT))
   plot_ly(dat) %>%
     add_bars(y = ~FORMAT, x = ~VERRES, orientation = "h",
-             marker = list(color = CONSO_AMBRE),
+             marker = list(color = COUL_AMBRE),
              hovertemplate = ~paste0(FORMAT, "<br>", VERRES, " verres — ",
                                      round(LITRES), " L<extra></extra>")) %>%
     layout(xaxis = list(title = "Verres servis"), yaxis = list(title = ""),
@@ -279,8 +277,7 @@ table_conso_boissons <- function(comp, unite_tva = NULL) {
   
   col_name <- paste("CA",unite_tva)
   
-  # Totaux calculés hors du transmute : une condition scalaire dans un
-  # `ifelse` renverrait une valeur unique, recyclée sur toutes les lignes.
+  # Totaux calculés à part : un ifelse() à condition scalaire serait recyclé.
   total    <- sum(comp$LITRES, na.rm = TRUE)
   total_m1 <- sum(comp$LITRES_M1, na.rm = TRUE)
   

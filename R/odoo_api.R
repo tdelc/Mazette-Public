@@ -1,65 +1,25 @@
-# Odoo par l'API : la même lecture, par un autre tuyau.
+# Odoo par l'API JSON-RPC : la même lecture qu'un export, par un autre tuyau.
 #
-# ---------------------------------------------------------------------------
-# Ce que ce fichier remplace — et rien d'autre
-# ---------------------------------------------------------------------------
-# R/odoo.R annonce son découpage ainsi :
+# lit_ecritures_odoo() rend exactement ce que rend lit_ecritures_fichier() :
+# un tableau brut aux colonnes de l'export (ODOO_COLONNES). Normalisation,
+# agrégation, contrôles et couture sont donc communs aux deux sources.
 #
-#   lit_ecritures_fichier()  lecture brute          <- SEULE à changer avec l'API
-#   normalise_ecritures()    typage, code de compte, journal
-#   compta_mensuelle()       agrégation -> DB_COMPTA
-#   controle_ecritures()     les garde-fous
-#   coud_compta()            la jonction avec l'ancienne source
-#
-# Ce fichier tient cette promesse. Il fournit lit_ecritures_odoo(), qui rend
-# EXACTEMENT la même chose que lit_ecritures_fichier() : un tableau brut dont
-# les colonnes portent les libellés de l'export Odoo (ODOO_COLONNES). Tout ce
-# qui suit — normalisation, agrégation, contrôles, couture, tests — ne bouge
-# pas d'une ligne, et les deux sources restent comparables parce qu'elles
-# traversent le même code.
-#
-# Le jour où l'API et le fichier donnent deux chiffres différents, ce ne sera
-# donc pas la faute de deux chaînes de calcul divergentes : il n'y en a qu'une.
-#
-# ---------------------------------------------------------------------------
-# JSON-RPC, et pas XML-RPC
-# ---------------------------------------------------------------------------
-# Odoo expose les deux. XML-RPC n'a pas de client R maintenu ; JSON-RPC se fait
-# avec httr et jsonlite, tous deux DÉJÀ dans manifest.json. Aucune dépendance
-# nouvelle, donc aucun risque sur le déploiement.
-#
-# ---------------------------------------------------------------------------
-# Un avertissement honnête
-# ---------------------------------------------------------------------------
-# Ce fichier a été écrit sans pouvoir consulter la documentation d'Odoo (le
-# réseau de l'environnement la refuse). Le protocole décrit ici est celui que
-# je connais ; il n'a PAS été rejoué contre une instance réelle.
-#
-# C'est pour ça que essai_odoo_api.R existe. Il ne se contente pas d'appeler :
-# il vérifie, un par un, chacun des points sur lesquels je peux m'être trompé
-# — le nom du service, celui de la méthode, l'existence de chaque champ
-# demandé — et il nomme celui qui cloche. Une erreur de protocole doit se lire
-# en une ligne, pas se deviner dans un 500.
+# JSON-RPC plutôt que XML-RPC : httr et jsonlite suffisent. essai_odoo_api.R
+# vérifie le protocole point par point contre l'instance.
 
 #### Identifiants ####
 
-# Les secrets voyagent par l'environnement, comme LINK_JSON et PATH_DRIVE.
-# Jamais dans le dépôt : Mazette-Public est public.
+# Les identifiants passent par l'environnement, jamais par le dépôt (public).
 ODOO_ENV <- c(url   = "ODOO_URL",      # https://mazette.odoo.com
               base  = "ODOO_DB",       # le nom de la base
               login = "ODOO_LOGIN",    # l'adresse e-mail du compte
               cle   = "ODOO_CLE_API")  # Préférences -> Sécurité -> Clés API
 
-#' Les identifiants, ou NULL s'ils ne sont pas tous là.
-#'
-#' Tout ou rien, à dessein. Trois variables sur quatre ne donnent pas « presque
-#' une connexion » : elles donnent une erreur d'authentification dont la cause
-#' est la variable manquante, et qu'on cherchera ailleurs.
+#' Les identifiants, ou NULL s'ils ne sont pas tous là : tout ou rien.
 identifiants_odoo <- function(env = ODOO_ENV) {
   v <- lit_env_odoo(env)
   if (any(!nzchar(v))) return(NULL)
-  # L'URL est écrite à la main : une barre finale en trop donnerait
-  # « https://x//jsonrpc », qu'Odoo sert en 404 sans rien expliquer.
+  # Une barre finale en trop donnerait « https://x//jsonrpc » (404).
   v[["url"]] <- sub("/+$", "", v[["url"]])
   as.list(v)
 }
@@ -69,15 +29,9 @@ manque_odoo <- function(env = ODOO_ENV) {
   names(env)[!nzchar(lit_env_odoo(env))]
 }
 
-# Les quatre valeurs, nettoyées de ce qu'un copier-coller y laisse.
-#
-# Une valeur saisie dans l'interface d'un hébergeur ou d'un gestionnaire de
-# secrets garde ce qu'on y a collé : un espace, un retour à la ligne final,
-# des guillemets recopiés d'un .Renviron (ODOO_DB="mazette"). Sur le PC, le
-# .Renviron les retire ; en ligne, ils partent tels quels. Pour Odoo,
-# « mazette » et « mazette\n » sont deux bases différentes, et la seconde
-# n'existe pas — l'erreur qui revient alors parle de PostgreSQL et de socket,
-# sans rien qui mène au nom de la base (cf. odoo_connexion()).
+# Les quatre valeurs, nettoyées de ce qu'un copier-coller y laisse dans
+# l'interface d'un hébergeur : espaces, retour à la ligne, guillemets. Pour
+# Odoo, « mazette » et « mazette\n » sont deux bases différentes.
 lit_env_odoo <- function(env = ODOO_ENV) {
   v <- trimws(vapply(env, Sys.getenv, ""))
   v <- sub('^"(.*)"$', "\\1", v)
@@ -87,35 +41,27 @@ lit_env_odoo <- function(env = ODOO_ENV) {
 
 #### Le transport ####
 
-# L'unique endroit qui parle au réseau. Isolé exprès : les tests substituent
-# leur propre `poste`, et toute la couche au-dessus se teste sans Odoo, sans
-# jeton, et sans sortir de la machine.
+# L'unique endroit qui parle au réseau ; les tests substituent leur `poste`.
 odoo_poste <- function(url, corps_json) {
   rep <- httr::POST(paste0(url, "/jsonrpc"),
                     body = corps_json,
                     httr::content_type_json(),
                     httr::timeout(120))
-  # Odoo répond 200 même pour une erreur applicative, et 404 pour une URL
-  # fausse. On distingue les deux : un 404 n'a pas de corps JSON à lire.
+  # Odoo répond 200 pour une erreur applicative, 404 pour une URL fausse.
   if (httr::status_code(rep) >= 400)
     stop("Odoo a répondu HTTP ", httr::status_code(rep),
          " sur ", url, "/jsonrpc")
   httr::content(rep, "text", encoding = "UTF-8")
 }
 
-# jsonlite rend `[]` pour une liste vide, là où Odoo attend `{}`. La nuance
-# n'est pas décorative : execute_kw refuse un kwargs en tableau.
+# jsonlite rend `[]` pour une liste vide ; execute_kw exige `{}`.
 OBJET_VIDE <- structure(list(), names = character(0))
 
 #' Un appel JSON-RPC, et la lecture de sa réponse.
 #'
-#' auto_unbox = TRUE : sans lui, chaque chaîne partirait en tableau d'un
-#' élément et le domaine deviendrait illisible pour Odoo.
-#' simplifyVector = FALSE à la lecture : search_read rend des champs
-#' relationnels sous forme [id, "libellé"] et FALSE quand ils sont vides.
-#' Laisser jsonlite « simplifier » ça produit des colonnes de types mélangés,
-#' silencieusement. On lit donc la structure telle quelle, et on la range à la
-#' main (champ_texte / champ_nombre).
+#' auto_unbox = TRUE : sinon chaque chaîne partirait en tableau.
+#' simplifyVector = FALSE : les champs relationnels arrivent en [id, "libellé"]
+#' ou FALSE ; on les range à la main (champ_texte / champ_nombre).
 odoo_appel <- function(url, service, methode, args, poste = odoo_poste) {
   corps <- list(jsonrpc = "2.0", method = "call",
                 params = list(service = service, method = methode,
@@ -124,8 +70,7 @@ odoo_appel <- function(url, service, methode, args, poste = odoo_poste) {
   res <- jsonlite::fromJSON(brut, simplifyVector = FALSE)
 
   if (!is.null(res$error)) {
-    # Pas de %||% : il vient de shiny, et ce fichier doit pouvoir se lire et
-    # se tester sans charger le dashboard.
+    # Pas de %||% : ce fichier doit se tester sans shiny.
     premier <- function(...) {
       for (v in list(...)) if (!is.null(v) && nzchar(as.character(v)[1]))
         return(as.character(v)[1])
@@ -140,25 +85,17 @@ odoo_appel <- function(url, service, methode, args, poste = odoo_poste) {
   res$result
 }
 
-#' La version du serveur. Le seul appel qui ne demande pas d'authentification.
-#'
-#' C'est donc le bon premier test : s'il échoue, le problème est l'URL ou le
-#' réseau, pas la clé. Distinguer les deux fait gagner une heure.
+#' La version du serveur, sans authentification : s'il échoue, c'est l'URL
+#' ou le réseau, pas la clé.
 odoo_version <- function(url, poste = odoo_poste) {
   odoo_appel(url, "common", "version", list(), poste)
 }
 
 #' L'uid, ou une erreur qui dit ce qui ne va pas.
 #'
-#' Odoo rend `false` — pas une erreur — quand les identifiants sont mauvais.
-#' Le laisser passer donnerait un uid FALSE, un execute_kw refusé, et un
-#' message parlant d'un droit d'accès. On tranche ici.
-#'
-#' Une base INCONNUE du serveur ne donne pas `false` : sur un serveur qui
-#' héberge plusieurs bases, Odoo tente d'ouvrir une base PostgreSQL de ce nom,
-#' échoue, et renvoie l'erreur brute de psycopg2 (« connection to server on
-#' socket ... failed »). Rien n'y mentionne le nom de la base, alors que c'est
-#' presque toujours lui le coupable. On le dit donc ici, en clair.
+#' De mauvais identifiants rendent `false`, pas une erreur. Une base inconnue
+#' d'un serveur multi-bases rend une erreur brute de psycopg2 (« connection to
+#' server on socket ... failed ») : on la traduit en nommant la base.
 odoo_connexion <- function(ids, poste = odoo_poste) {
   uid <- tryCatch(
     odoo_appel(ids$url, "common", "authenticate",
@@ -189,12 +126,8 @@ odoo_execute <- function(ids, uid, modele, methode, args = list(),
 
 #### Lire des lignes ####
 
-# Les champs demandés à account.move.line, et ce qu'ils deviennent.
-#
-# Les noms de GAUCHE sont ceux d'Odoo, ceux de DROITE les libellés de l'export
-# de la vue liste — donc ODOO_COLONNES. C'est tout le tour de passe-passe :
-# l'API rend le même tableau que le fichier, et normalise_ecritures() ne sait
-# pas lequel des deux elle lit.
+# Champs demandés à account.move.line (à gauche) et libellés de l'export
+# correspondants (à droite) : l'API rend le même tableau que le fichier.
 CHAMPS_ODOO <- c(date       = "Date",
                  move_name  = "Numéro",
                  account_id = "Compte",
@@ -204,9 +137,8 @@ CHAMPS_ODOO <- c(date       = "Date",
                  credit     = "Crédit",
                  balance    = "Solde")
 
-# « Comptabilisé » : les brouillons ne sont pas de la comptabilité. Même filtre
-# qu'au §2.2 de docs/odoo.md pour l'export manuel — les deux chemins doivent
-# voir le même périmètre, sinon les comparer ne prouve rien.
+# « Comptabilisé » seulement : les brouillons ne sont pas de la comptabilité.
+# Même filtre que pour l'export manuel (cf. docs/maintenance.md).
 DOMAINE_ODOO <- function(depuis = NULL) {
   d <- list(list("parent_state", "=", "posted"))
   if (!is.null(depuis))
@@ -215,8 +147,6 @@ DOMAINE_ODOO <- function(depuis = NULL) {
 }
 
 # Un champ relationnel arrive en [id, "libellé"], un champ vide en FALSE.
-# « 600100 Achats de boissons » est exactement ce que la colonne « Compte » de
-# l'export contient, donc ce que normalise_ecritures() sait déjà découper.
 champ_texte <- function(x) {
   if (is.null(x) || isFALSE(x)) return(NA_character_)
   if (is.list(x)) return(if (length(x) >= 2) as.character(x[[2]])
@@ -224,17 +154,13 @@ champ_texte <- function(x) {
   as.character(x)
 }
 
-# FALSE veut dire « vide » ; en comptabilité un montant vide est un zéro, pas
-# un inconnu. Un NA ici remonterait jusqu'à une VALEUR manquante.
+# FALSE veut dire vide : un montant vide est un zéro.
 champ_nombre <- function(x) {
   if (is.null(x) || isFALSE(x)) return(0)
   as.numeric(x)
 }
 
 #' Range la réponse de search_read en tableau, colonne par colonne.
-#'
-#' Explicite plutôt que simplifié : jsonlite ferait un data.frame aux colonnes
-#' de type imprévisible dès qu'un champ relationnel est vide sur une ligne.
 range_lignes <- function(lignes, champs = CHAMPS_ODOO) {
   if (!length(lignes)) return(NULL)
 
@@ -252,17 +178,10 @@ range_lignes <- function(lignes, champs = CHAMPS_ODOO) {
   tibble::as_tibble(out)
 }
 
-#' search_read paginé.
-#'
-#' Odoo plafonne une réponse, et une instance en ligne coupe avant nous. On
-#' pagine donc toujours, même pour « tout prendre », et on ORDONNE par id :
-#' sans ordre explicite, deux pages successives peuvent se recouvrir ou
-#' s'omettre, et on ne le verrait pas — le total aurait l'air plausible.
-#' @param exige_complet TRUE : atteindre `max_pages` est une ERREUR, parce que
-#'   le résultat serait tronqué sans que rien ne le dise. FALSE : la limite est
-#'   voulue (on lit un échantillon), et on rend ce qu'on a. Les deux cas se
-#'   ressemblent de l'extérieur et ne doivent surtout pas se confondre : l'un
-#'   est un garde-fou, l'autre une demande.
+#' search_read paginé, ordonné par id (sans ordre, deux pages peuvent se
+#' recouvrir).
+#' @param exige_complet TRUE : atteindre `max_pages` est une erreur (résultat
+#'   tronqué). FALSE : la limite est voulue (échantillon).
 odoo_search_read <- function(ids, uid, modele, domaine, champs,
                              taille = 2000, max_pages = 500,
                              poste = odoo_poste, trace = NULL,
@@ -291,16 +210,11 @@ odoo_search_read <- function(ids, uid, modele, domaine, champs,
   unlist(pages, recursive = FALSE)
 }
 
-#' LA fonction : les écritures d'Odoo, dans la forme de l'export fichier.
+#' Les écritures d'Odoo, dans la forme de l'export fichier. NULL sans
+#' identifiants : l'import continue sans Odoo.
 #'
-#' Rend NULL quand les identifiants ne sont pas là, comme
-#' lit_ecritures_fichier() rend NULL sur un chemin absent : l'import doit
-#' pouvoir continuer sans Odoo, pas tomber.
-#'
-#' @param depuis date minimale, ou NULL pour tout l'historique. Par défaut
-#'   NULL : docs/odoo.md §3 tranche pour un rechargement complet à chaque
-#'   import, parce qu'une écriture passée rétroactivement sur un mois ancien
-#'   échapperait à tout filtre incrémental — et en comptabilité, ça arrive.
+#' @param depuis date minimale, ou NULL (défaut) pour tout l'historique : une
+#'   écriture passée rétroactivement échapperait à un filtre incrémental.
 lit_ecritures_odoo <- function(ids = identifiants_odoo(), depuis = NULL,
                                taille = 2000, poste = odoo_poste,
                                trace = NULL) {
@@ -314,11 +228,8 @@ lit_ecritures_odoo <- function(ids = identifiants_odoo(), depuis = NULL,
 
 #### Vérifier le protocole contre l'instance ####
 
-#' Les champs demandés existent-ils vraiment sur ce modèle ?
-#'
-#' Un nom de champ faux ne rend pas une colonne vide : il fait échouer tout
-#' l'appel. Le demander à fields_get AVANT de lire 40 000 lignes transforme un
-#' échec opaque en une phrase — « move_name n'existe pas sur ce modèle ».
+#' Les champs demandés existent-ils sur ce modèle ? Un nom faux fait échouer
+#' tout l'appel ; fields_get permet de le nommer.
 champs_absents <- function(ids, uid, modele = "account.move.line",
                            champs = names(CHAMPS_ODOO), poste = odoo_poste) {
   connus <- odoo_execute(ids, uid, modele, "fields_get",
@@ -327,11 +238,8 @@ champs_absents <- function(ids, uid, modele = "account.move.line",
   setdiff(champs, names(connus))
 }
 
-#' Combien de lignes le domaine désigne, avant d'en lire une seule.
-#'
-#' Sert de garde-fou de volume et de point de comparaison : si search_count
-#' dit 41 230 et qu'on en range 41 230, la pagination n'a rien perdu. C'est le
-#' seul contrôle qui attrape une page manquante au milieu.
+#' Combien de lignes le domaine désigne : comparé au nombre rangé, il
+#' attrape une page manquante.
 compte_ecritures <- function(ids, uid, depuis = NULL, poste = odoo_poste) {
   odoo_execute(ids, uid, "account.move.line", "search_count",
                args = list(DOMAINE_ODOO(depuis)), poste = poste)

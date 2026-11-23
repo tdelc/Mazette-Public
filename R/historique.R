@@ -1,10 +1,7 @@
-# Volet « Historique » : la série longue du chiffre d'affaires.
-#
-# Par semaine, par mois ou par année, sur tout ce que la caisse a enregistré.
-# C'est le seul volet qui ne compare rien : il montre, et c'est tout.
+# Volet « Historique » : la série longue du chiffre d'affaires, par semaine,
+# par mois ou par année.
 
-# Agrège le CA réalisé + objectif par semaine ou par mois.
-# (db = sortie de prepa_db : colonnes DATE, ventes, PREMIER_JOUR_SEMAINE, PREMIER_JOUR_MOIS)
+# Agrège le CA réalisé et l'objectif par semaine ou par mois.
 agrege_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"),
                               exclure_courant = TRUE) {
   unite <- match.arg(unite)
@@ -33,7 +30,6 @@ graph_historique <- function(db_kpi, db_obj, unite = c("semaine", "mois"), n = 1
   unite <- match.arg(unite)
   dat <- agrege_historique(db_kpi, db_obj, unite) %>%
     filter(ventes > 0)
-  # %>%  slice_tail(n = n)
   
   lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
   else format(dat$PERIODE, "%B %Y")
@@ -65,7 +61,6 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
   p <- ggplot(dat, aes(x = id, y = ventes)) + 
     geom_smooth(method = "loess", xseq = sort(unique(dat$id)))
   
-  # 2. Extraire les données construites
   build_data <- ggplot_build(p)
   loess_data <- build_data$data[[1]]
   
@@ -76,7 +71,6 @@ graph_historique_tendance <- function(db_kpi, db_obj, unite = c("semaine", "mois
   
   lbl <- if (unite == "semaine") paste0("Sem. du ", format(dat$PERIODE, "%d/%m/%Y"))
   else format(dat$PERIODE, "%B %Y")
-  # (pas de couleur par objectif ici : ce graphe trace des lignes, pas des barres)
   
   plot_ly(dat) %>%
     add_lines(x = ~PERIODE, y = ~ventes, name = "CA réalisé",

@@ -1,8 +1,6 @@
-# Du libellé de caisse à la catégorie de boisson.
-#
-# La caisse laisse renommer une ligne : un même produit y porte plusieurs
-# orthographes. Cette correspondance-ci se fait sur le texte, faute de mieux ;
-# le reste du dashboard passe par ID_REF (cf. R/donnees.R).
+# Du libellé de caisse à la catégorie de boisson. Cette correspondance se
+# fait sur le texte, faute de mieux ; le reste du dashboard passe par ID_REF
+# (cf. R/donnees.R).
 
 from_product_to_boisson <- function(DB){
   DB |> 
@@ -13,7 +11,6 @@ from_product_to_boisson <- function(DB){
              PRODUIT %in% c("Pépin blanc verre",
                             "Pépin rouge verre",
                             "Hurluberlu rouge verre") ~ 12.5,
-             # CATEGORIE == "BOISSONS CHAUDES" & 
                (str_detect(PRODUIT,"Café") | str_detect(PRODUIT,"Capuccino")
                 | str_detect(PRODUIT,"[Ll]atte") | str_detect(PRODUIT,"Espresso"))
                 ~ 4,

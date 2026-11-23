@@ -2,43 +2,26 @@ options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))
 
 #### Chargement initial des données ####
 
-# L'environnement où vivent les DB_*, nommé pour pouvoir y réécrire.
-#
-# C'est celui dans lequel server.R est évalué, donc celui que voient tous les
-# réactifs. Le bouton « mise à jour » remplace les tables ICI, une fois pour
-# toutes les sessions — les données sont chargées une fois par processus R, pas
-# une fois par personne connectée.
+# L'environnement des DB_*, celui où server.R est évalué : les données sont
+# chargées une fois par processus R, et le bouton de mise à jour les remplace
+# ici pour toutes les sessions.
 ENV_DONNEES <- environment()
 
-# Le dernier cache disponible, quelle que soit sa date (cf. R/connect.R).
-#
-# Avant, cette ligne réclamait le cache de la VEILLE et refaisait tout l'import
-# s'il n'y était pas : la première personne connectée du matin attendait
-# plusieurs minutes, et les suivantes non. Désormais l'import ne tourne plus
-# jamais au démarrage — il tourne chaque nuit, ailleurs
-# (.github/workflows/import.yml) — et le dashboard s'ouvre sur ce qu'il trouve.
-#
-# Ce qu'on doit en échange à la personne qui regarde : la date de ce qu'elle
-# voit, affichée en permanence, et le moyen de demander mieux. C'est la
-# pastille de la barre de navigation (cf. R/fraicheur.R).
+# Le dernier cache disponible, quelle que soit sa date (cf. R/connect.R) ;
+# l'import tourne ailleurs, chaque matin. La date affichée dans la barre de
+# navigation dit l'âge des données (cf. R/fraicheur.R).
 DONNEES <- connexion_ou_creation(envir = ENV_DONNEES)
 
-# Le compteur de versions des données. PARTAGÉ par toutes les sessions, à
-# dessein : quand une personne met les données à jour, les écrans déjà ouverts
-# affichent des réactifs calculés sur les tables d'AVANT, et rien ne les
-# invalidera tout seuls (DB_JOURS est un objet, pas un réactif). Ce compteur
-# est ce qui le leur apprend.
+# Le compteur de versions des données, partagé par toutes les sessions : il
+# apprend aux écrans déjà ouverts que leurs tables ont été remplacées.
 VERSION_DONNEES <- reactiveVal(0L)
 
-# Le journal des décisions prises sur les mois douteux (cf. R/validation.R).
-# Partagé lui aussi : une validation faite dans une session doit verdir la
-# pastille dans les autres, sans attendre l'import du lendemain.
+# Le journal des décisions sur les mois douteux (cf. R/validation.R),
+# partagé : une validation se voit dans toutes les sessions.
 VALIDATIONS <- reactiveVal(validations_chargees(ENV_DONNEES))
 
-# Ce qu'il y a à faire quand les tables ont été remplacées, d'où que vienne le
-# remplacement. Trois endroits appelaient les mêmes trois lignes ; un
-# quatrième en aurait oublié une, et ce sont des oublis silencieux — des
-# écrans qui montrent les anciens chiffres sans le dire.
+# Ce qu'il y a à faire quand les tables ont été remplacées, d'où que vienne
+# le remplacement.
 donnees_remplacees <- function(res) {
   DONNEES <<- res
   VALIDATIONS(validations_chargees(ENV_DONNEES))
@@ -49,19 +32,12 @@ donnees_remplacees <- function(res) {
 
 server <- function(input, output, session) {
 
-  # logged : connecté ou non. onglets : les clés auxquelles ce mot de passe
-  # donne droit (cf. R/acces.R), qui pilotent la barre de navigation.
+  # logged : connecté ou non. onglets : les clés autorisées (cf. R/acces.R).
   USER <- reactiveValues(logged = FALSE, nom = NULL, role = NULL,
                          onglets = character(0))
 
-  # Vrai une fois que les onglets autorisés sont VRAIMENT dans la page.
-  #
-  # Les sélecteurs d'un onglet — périodes, années, semaines, brassins — sont
-  # garnis depuis le serveur par des observateurs qui ne dépendent que des
-  # données. Tant que l'onglet n'est pas inséré, leur update*Input() vise un
-  # champ inexistant : le message est perdu sans erreur, et l'observateur, qui
-  # n'a plus aucune raison d'être invalidé, ne rejoue jamais. Le sélecteur
-  # reste vide pour de bon. Ils attendent donc ce drapeau.
+  # Vrai une fois les onglets autorisés insérés dans la page : les sélecteurs
+  # d'onglet ne se garnissent qu'après (cf. R/acces.R).
   ONGLETS_PRETS <- reactiveVal(FALSE)
 
   #### Données préparées ####
@@ -78,27 +54,12 @@ server <- function(input, output, session) {
     prepa_db(DB_OBJECTIFS, paste0("CA_",input$unite_tva))
   })
   
-  # LA comptabilité que lisent les volets : sans les mois à venir.
-  #
-  # Odoo porte des écritures datées jusqu'en juin 2027 — loyers, assurances,
-  # amortissements programmés. Elles sont justes, et elles n'ont rien à faire
-  # dans une analyse de ce qui s'est passé : un CA de juin 2027 dans une
-  # tendance, des charges que personne n'a payées dans une marge annuelle.
-  # La coupe se fait ICI, une fois, et tout ce qui lit la compta passe par
-  # elle (cf. compta_a_date dans R/exploitation.R).
-  #
-  # Une exception, et une seule : le grand livre de l'onglet Écritures, qui
-  # lit DB_ECRITURES. C'est le journal d'Odoo, il doit montrer ce qu'Odoo
-  # contient, mois à venir compris.
-  # Un réactif partagé serait plus court, mais il ferait dépendre chaque volet
-  # d'un objet défini loin de lui — et les blocs de ce fichier sont rejoués
-  # morceau par morceau par la suite de tests. On appelle donc la fonction là
-  # où la compta ENTRE dans chaque volet. test_compta_a_date.R vérifie qu'il
-  # n'existe aucun autre chemin.
+  # La comptabilité passe toujours par compta_a_date(DB_COMPTA), qui retire
+  # les mois à venir (cf. R/exploitation.R) ; seul le grand livre (DB_ECRITURES)
+  # les garde. test_compta_a_date.R vérifie qu'il n'existe aucun autre chemin.
 
-  # Coûts matière : uniquement la comptabilité réelle, au mois. Aucune donnée
-  # simulée — une période absente de DB_COMPTA reste vide, elle n'est pas
-  # comblée. Le pilotage vaut mieux vide que faux.
+  # Coûts matière : la comptabilité réelle, au mois ; une période absente reste
+  # vide.
   DB_COUTS_MATIERE <- reactive({
     compta_a_date(DB_COMPTA) %>%
       filter(TYPE == "compte", AGREGE,
@@ -119,16 +80,14 @@ server <- function(input, output, session) {
     couts_matiere_par_jour(DB_COUTS_MATIERE(), creer_db_date())
   })
   
-  # Dernier jour d'ouverture (= "veille")
+  # Dernier jour d'ouverture (la « veille »).
   date_veille <- DB_KPI_SIMPLE %>%
     filter(CA_HTVA > 0, DATE < today()) %>%
     summarise(d = max(DATE)) %>%
     pull(d)
 
-  #### Login ####
-  # Le mot de passe ne dit plus seulement « oui / non » : il désigne un profil,
-  # et donc une liste d'onglets (cf. R/acces.R et l'onglet « IMPORT PASS » du
-  # Sheet). On construit la barre de navigation à partir de cette liste.
+  # #### Login ####
+  # Le mot de passe désigne un profil, donc une liste d'onglets (cf. R/acces.R).
   observeEvent(input$boutton_log, {
     acces <- verifie_acces(DB_PASSWORD, input$password)
 
@@ -142,33 +101,24 @@ server <- function(input, output, session) {
     USER$role    <- acces$ROLE
     USER$onglets <- acces$ONGLETS
 
-    # Les onglets autorisés sont insérés à la suite de l'accueil, dans l'ordre
-    # du catalogue. Ceux qui manquent ne sont pas masqués : ils n'ont jamais
-    # été envoyés au navigateur, et leurs sorties ne seront jamais calculées.
-    precedent <- ONGLET_ACCUEIL
-    for (cle in setdiff(acces$ONGLETS, ONGLET_ACCUEIL)) {
+    # Les onglets autorisés sont insérés à la suite de l'onglet de départ, dans
+    # l'ordre du catalogue ; les autres ne sont jamais envoyés au navigateur.
+    precedent <- ONGLET_DEPART
+    for (cle in setdiff(acces$ONGLETS, ONGLET_DEPART)) {
       nav_insert("nav", panneau_onglet(cle), target = precedent,
                  position = "after", session = session)
       precedent <- cle
     }
 
-    # Le drapeau ne passe pas à TRUE ici, mais au flush SUIVANT. Côté
-    # navigateur, Shiny traite ses messages dans l'ordre où leurs gestionnaires
-    # sont enregistrés, et « inputMessages » (3e) passe avant
-    # « shiny-insert-tab » (19e) : garnir dans le même flush que l'insertion
-    # remplirait des champs pas encore créés. onFlushed() décale d'un cycle,
-    # donc les onglets existent quand les valeurs arrivent.
+    # Le drapeau passe à TRUE au flush SUIVANT : côté navigateur, les messages
+    # d'input sont traités avant l'insertion des onglets du même flush.
     session$onFlushed(function() ONGLETS_PRETS(TRUE), once = TRUE)
 
     shinyjs::hide("login_screen")
     shinyjs::show("app_screen")
   })
 
-  # Qui est connecté, discrètement, à droite de la barre : avec plusieurs mots
-  # de passe en circulation, c'est la seule façon de savoir lequel on utilise
-  # — et pourquoi tel onglet manque. Le bouton de déconnexion vit ici plutôt
-  # que dans la coquille : il n'a de sens qu'une fois connecté, et le req()
-  # ci-dessous suffit à le faire apparaître et disparaître avec le badge.
+  # Qui est connecté, à droite de la barre, avec le bouton de déconnexion.
   output$badge_utilisateur <- renderUI({
     req(USER$logged)
     tagList(
@@ -178,40 +128,24 @@ server <- function(input, output, session) {
              tags$span(class = "role", paste0(" (", USER$role, ")"))),
       actionLink(
         "deconnexion", class = "lien-deconnexion",
-        # title = l'infobulle au survol ; aria-label = le nom annoncé, qui
-        # reprend le libellé visible (WCAG 2.5.3) et reste juste quand le mot
-        # est masqué sur téléphone.
+        # title : l'infobulle ; aria-label reprend le libellé visible.
         title = "Se déconnecter", `aria-label` = "Déconnexion",
         label = tagList(
           icon("right-from-bracket"),
-          # Le mot disparaît sous 992 px : sur téléphone la barre est déjà
-          # chargée, et l'icône suffit (le title reste pour le survol).
+          # Le mot disparaît sur petit écran ; l'icône reste.
           tags$span(class = "d-none d-lg-inline ms-1", "Déconnexion")))
     )
   })
 
-  # Déconnexion : on recharge la page plutôt que de défaire l'insertion des
-  # onglets un à un.
-  #
-  # Défaire à la main voudrait dire retirer chaque onglet inséré, remasquer les
-  # cartes, revider le champ mot de passe — et surtout se souvenir de tout ce
-  # que la session a accumulé entre-temps : périodes saisies, prix simulés,
-  # lignes sélectionnées dans les tableaux. Un oubli, et la personne suivante
-  # hérite de l'état de la précédente. Le rechargement, lui, ne peut rien
-  # oublier.
-  #
-  # Il est peu coûteux : les données sont chargées en tête de server.R, hors de
-  # la fonction serveur, donc une fois par processus R et non par session. La
-  # page revient sur l'écran de connexion sans retoucher au .RData.
+  # Déconnexion : on recharge la page, ce qui remet toute la session à zéro.
+  # Les données, chargées hors de la fonction serveur, ne sont pas relues.
   observeEvent(input$deconnexion, {
     session$reload()
   })
 
   #### Fraîcheur des données et mise à jour ####
 
-  # La version des données sur laquelle CETTE session a été construite. Si le
-  # compteur partagé la dépasse, c'est qu'un import a eu lieu ailleurs : les
-  # réactifs de cet écran sont périmés, et la pastille le dit.
+  # La version des données sur laquelle cette session a été construite.
   VERSION_VUE <- isolate(VERSION_DONNEES())
 
   output$badge_fraicheur <- renderUI({
@@ -220,10 +154,8 @@ server <- function(input, output, session) {
                     a_recharger = VERSION_DONNEES() > VERSION_VUE)
   })
 
-  # Qui peut refaire l'import complet ? Les associés seulement. Reprendre le
-  # dernier import ne coûte rien et reste ouvert à tous ; relire toutes les
-  # sources mobilise un exécutant pendant quelques minutes, et c'est un geste
-  # de correction, pas de consultation.
+  # Refaire l'import complet : les associés seulement. Reprendre le dernier
+  # import reste ouvert à tous.
   peut_importer <- reactive(identical(USER$role, "admin"))
 
   observeEvent(input$ouvrir_fraicheur, {
@@ -244,9 +176,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$recharger_ecran, session$reload())
 
-  # Reprendre le dernier import : un téléchargement, pas un import. Quelques
-  # secondes, pendant lesquelles le processus est bloqué — assumé, c'est le
-  # temps d'un fichier de quelques mégaoctets.
+  # Reprendre le dernier import : un téléchargement de quelques secondes.
   observeEvent(input$recharger_donnees, {
     removeModal()
     show_modal_spinner(
@@ -259,9 +189,6 @@ server <- function(input, output, session) {
       showNotification(paste("Reprise impossible :", conditionMessage(attr(res, "condition"))),
                        type = "error", duration = 12)
     } else {
-      # `<<-` : DONNEES vit dans ENV_DONNEES, hors de la fonction serveur, et
-      # c'est bien là qu'il doit changer — pour cette session comme pour les
-      # autres.
       donnees_remplacees(res)
       session$reload()
     }
@@ -269,14 +196,10 @@ server <- function(input, output, session) {
 
   #### Refaire l'import complet ####
 
-  # Deux états, et deux seulement :
+  # Deux états :
   #   EN_COURS  un import tourne là-bas (c'est lui qui fait battre le suivi)
   #   SUIVI     ce qu'on en montre
-  #
-  # Ils sont séparés parce qu'un observateur qui LIT la valeur qu'il ÉCRIT se
-  # réinvalide lui-même : le battement de quinze secondes deviendrait une
-  # boucle serrée sur l'API de GitHub. L'observateur ne lit donc que
-  # EN_COURS, qu'il n'écrit qu'une fois, pour s'arrêter.
+  # Séparés parce qu'un observateur qui lit ce qu'il écrit se réinvalide.
   EN_COURS <- reactiveVal(FALSE)
   SUIVI    <- reactiveVal(NULL)
   debut_import <- NULL
@@ -292,9 +215,7 @@ server <- function(input, output, session) {
     conf <- config_import_distant()
 
     if (is.null(conf)) {
-      # Pas de jeton : on est en développement, sur son propre R. L'import
-      # tourne ici et bloque tout le processus — ce qui ne dérange que soi.
-      # En production, GH_TOKEN_IMPORT est posé et ce chemin n'est jamais pris.
+      # Sans jeton (développement) : l'import tourne ici et bloque le processus.
       show_modal_spinner(
         spin = "half-circle", color = COUL_BRUN,
         text = "Import complet en cours (quelques minutes)…")
@@ -323,10 +244,8 @@ server <- function(input, output, session) {
     showModal(dialogue_suivi_import())
   })
 
-  # Le battement qui suit l'exécution distante. Il s'arrête de lui-même, dans
-  # les deux cas où il doit s'arrêter : l'exécution est finie, ou le quart
-  # d'heure est passé. Un observateur qui interroge GitHub indéfiniment est un
-  # observateur qu'on a oublié d'arrêter.
+  # Le battement qui suit l'exécution distante ; il s'arrête quand elle est
+  # finie ou au bout d'un quart d'heure.
   observe({
     req(EN_COURS())
     invalidateLater(15000)
@@ -338,8 +257,7 @@ server <- function(input, output, session) {
     etat <- etat_import_distant()
     if (!isTRUE(etat$ok))  return(avance(paste("suivi indisponible :", etat$message)))
     if (!isTRUE(etat$fini)) return(avance(etat$message))
-    # Terminé mais pas réussi : surtout ne pas recharger un fichier qui n'a
-    # pas été écrit.
+    # Terminé sans succès : rien à recharger.
     if (!isTRUE(etat$reussi)) return(avance(etat$message, fini = TRUE))
 
     res <- try(recharge_donnees(envir = ENV_DONNEES), silent = TRUE)
@@ -362,68 +280,6 @@ server <- function(input, output, session) {
     )
   })
 
-  #### Volet "Accueil" ####
-
-  # Bandeau : CA de la veille, de la semaine et du mois, chacun face à son
-  # objectif. Suit le sélecteur HTVA/TVAC.
-  output$accueil_kpi <- renderUI({
-    kpi_accueil(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, input$unite_tva)
-  })
-
-  # La grille des cartes : seulement celles dont l'onglet est autorisé. Une
-  # carte qui renverrait vers un onglet absent de la barre n'a pas de sens.
-  output$accueil_cartes <- renderUI({
-    req(USER$logged)
-    grille_cartes_accueil(USER$onglets)
-  })
-
-  # Une carte par onglet. Celles qui portent des euros suivent la TVA ; les
-  # autres (fûts, réservations) sont en volumes et n'en dépendent pas.
-  output$acc_maintenant <- renderUI({
-    acc_maintenant(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille)
-  })
-  output$acc_annee <- renderUI({
-    acc_annee(UPD_KPI_SIMPLE(), date_veille)
-  })
-  output$acc_futs <- renderUI({
-    acc_futs(DB_BIERES, tryCatch(db_predict_bieres(), error = function(e) NULL))
-  })
-  output$acc_bieres <- renderUI({
-    acc_bieres(DB_TICKET, DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_focaccias <- renderUI({
-    acc_focaccias(DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_pizzwanze <- renderUI({
-    acc_pizzwanze(DB_PRODUITS, input$unite_tva)
-  })
-  output$acc_reservations <- renderUI({
-    acc_reservations(RESA())
-  })
-  output$acc_compta <- renderUI({
-    acc_compta(if (exists("DB_COMPTA")) compta_a_date(DB_COMPTA) else NULL)
-  })
-  output$acc_planning <- renderUI({
-    if (is.null(PLANNING_BRUT())) return(corps_vide("Pas encore de planning."))
-    acc_planning(PLAN_RESUME())
-  })
-
-  # Les boutons « Aller plus loin » basculent sur l'onglet correspondant.
-  # Bouton et onglet cible viennent tous deux de CARTES_ACCUEIL (R/acces.R) :
-  # ajouter une carte, c'est ajouter une ligne, et il n'y a plus deux listes à
-  # tenir d'accord (l'ancienne visait « tab_bieres », qui n'existe pas).
-  for (i in seq_len(nrow(CARTES_ACCUEIL))) {
-    # local() fige l'indice : sans lui, les huit observeEvent partageraient la
-    # dernière valeur de la boucle et renverraient tous vers le même onglet.
-    local({
-      bouton <- CARTES_ACCUEIL$BOUTON[i]
-      cible  <- CARTES_ACCUEIL$CLE[i]
-      observeEvent(input[[bouton]], {
-        nav_select("nav", cible, session = session)
-      }, ignoreInit = TRUE)
-    })
-  }
-
   #### Volet "Maintenant" — Indicateurs clés ####
   ca_periode <- function(db, d1, d2) {
     db %>% filter(DATE >= d1, DATE <= d2) %>% summarise(s = sum(ventes, na.rm = TRUE)) %>% pull(s)
@@ -444,24 +300,8 @@ server <- function(input, output, session) {
   })
 
   #### Volet "Maintenant" — Veille ####
-  output$titre_veille <- renderText({
-    "Semaine en cours"
-  })
-  
   output$title_vb_veille <- renderUI({
     titre_avec_tva("CA de la veille", input$unite_tva)
-  })
-
-  output$box_veille <- renderUI({
-    box_ventes_jour(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(), date_veille, 0,
-                    format_date = "%d/%m", unite_tva = input$unite_tva)
-  })
-
-  output$top_veille <- renderDT({
-    datatable_simple(
-      top_produits_periode(DB_PRODUITS, date_veille, date_veille, n = 10, 
-                           unite_tva = input$unite_tva)
-    )
   })
 
   #### Volet "Maintenant" — Semaine en cours ####
@@ -480,7 +320,7 @@ server <- function(input, output, session) {
                      unite_tva = input$unite_tva)
   })
   
-  # Les 5 semaines qui précèdent la semaine en cours, en une seule matrice
+  # Les 5 semaines qui précèdent la semaine en cours.
   output$recap_semaines <- renderUI({
     tableau_semaines(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                      date_debut_semaine - 7, n_semaines = 5,
@@ -490,7 +330,7 @@ server <- function(input, output, session) {
   
   #### Volet "Maintenant" — Progression du mois ####
   
-  # Liste des mois disponibles (du plus récent au plus ancien)
+  # Mois disponibles, du plus récent au plus ancien.
   observe({
     req(ONGLETS_PRETS())
     mois_dispo <- UPD_KPI_SIMPLE() %>%
@@ -541,8 +381,7 @@ server <- function(input, output, session) {
     div(class = "d-flex gap-2 flex-wrap align-items-center",
         badge("Réalisé", format_CA(reel, -1), COUL_BRUN),
         badge("Objectif", format_CA(obj, -1), COUL_AMBRE),
-        # Même convention que les barres de CA : vert atteint, ambre à partir
-        # de 90 %, rouge en dessous.
+        # Vert atteint, ambre à partir de 90 %, rouge en dessous.
         badge("Atteint", if (is.na(pct)) "—" else paste0(pct, " %"),
               couleur_objectif(reel, obj)))
   })
@@ -570,18 +409,13 @@ server <- function(input, output, session) {
     )
   })
 
-  #### Volet "Détails" — Périodes ####
-  #
-  # Une seule chaîne pour les trois mailles : la maille est une VARIABLE, pas
-  # trois copies du même code. L'ancienne version avait un bloc par maille et
-  # une fonction generatrice pour deux d'entre elles ; les trois divergeaient
-  # déjà sur des détails.
+  # #### Volet "Détails" — Périodes ####
+  # Une seule chaîne pour les trois mailles (jour, semaine, mois).
 
   det_maille <- reactive(input$det_maille %||% "jour")
 
   # La fenêtre par défaut suit la maille : 8 semaines de jours, 6 mois de
-  # semaines, 2 ans de mois. Elle est semée à chaque changement de maille, et
-  # derrière ONGLETS_PRETS() comme tout sélecteur d'onglet (cf. R/acces.R).
+  # semaines, 2 ans de mois.
   observe({
     req(ONGLETS_PRETS())
     m <- maille_detail(det_maille())
@@ -611,8 +445,7 @@ server <- function(input, output, session) {
     graph_serie_detail(det_serie(), det_maille(), source = "det_serie")
   })
 
-  # La période choisie au clic. Le clic rend `customdata` (la date en texte) et
-  # non `x`, qui ne porte qu'un libellé d'axe : as.Date("ven 11/09") lève.
+  # La période choisie au clic, lue dans `customdata` (la date en texte).
   det_choisie <- reactiveVal(NULL)
   observeEvent(event_data("plotly_click", source = "det_serie"), {
     ev <- event_data("plotly_click", source = "det_serie")
@@ -620,14 +453,13 @@ server <- function(input, output, session) {
     if (length(d) == 1 && !is.na(d)) det_choisie(d)
   })
 
-  # Changer de maille périme la sélection : un début de semaine n'est pas un
-  # début de mois. On la vide plutôt que de la traîner.
+  # Changer de maille vide la sélection.
   observeEvent(det_maille(), { det_choisie(NULL) })
 
   det_periode <- reactive({
     s <- det_serie()
     c <- det_choisie()
-    # Défaut : la dernière période de la fenêtre, celle qu'on vient regarder.
+    # Défaut : la dernière période de la fenêtre.
     if (is.null(c) || is.null(s) || !(c %in% s$PERIODE)) {
       if (is.null(s) || !nrow(s)) debut_maille(date_veille, det_maille())
       else max(s$PERIODE)
@@ -659,8 +491,7 @@ server <- function(input, output, session) {
       det_maille())
   })
 
-  # Les heures d'une journée n'ont pas d'objectif : la légende de couleur n'y
-  # voudrait rien dire, et se lirait comme un jugement absent du graphe.
+  # Pas de légende de couleur pour les heures d'une journée (pas d'objectif).
   output$det_legende_compo <- renderUI({
     if (identical(maille_detail(det_maille())$COMPOSITION, "heure")) NULL
     else legende_objectif()
@@ -730,8 +561,7 @@ server <- function(input, output, session) {
       ca = if (is.null(r)) NA_real_ else r$CA))
   })
 
-  # La note change avec la maille : au mois les heures sont mesurées, ailleurs
-  # elles sont pointées. Écrire les deux phrases en dur ferait lire la mauvaise.
+  # La note suit la maille : heures mesurées au mois, pointées ailleurs.
   output$det_heures_note <- renderUI({
     if (identical(det_maille(), "mois"))
       div(class = "small text-muted mt-1",
@@ -780,8 +610,7 @@ server <- function(input, output, session) {
       transmute(Produit = tronque_nom(Produit),
                 Quantité = Quantite,
                 !!sym(col_name) := format_CA(CA, -1),
-                # Sans sa jumelle, la colonne de CA se trie dans l'ordre du
-                # dictionnaire (cf. defs_tri dans R/theme.R).
+                # La jumelle de tri (cf. defs_tri dans R/theme.R).
                 !!sym(col_tri(col_name)) := CA)
     datatable(df, selection = "single", rownames = FALSE,
               options = list(pageLength = 12, dom = 'ftp', 
@@ -827,8 +656,7 @@ server <- function(input, output, session) {
     category_column <- paste0("Part dans '",category,"'")
     
     df <- evo_produit_periode() %>%
-      # arrange() AVANT le formatage : trié sur « 31/01/2026 », l'ordre est
-      # celui du dictionnaire, donc celui des jours du mois.
+      # arrange() avant le formatage des dates.
       arrange(desc(SEMAINE)) %>%
       transmute(Semaine = format(SEMAINE, "%d/%m/%Y"),
                 Quantité = Quantite,
@@ -859,14 +687,12 @@ server <- function(input, output, session) {
 
   #### Volet "Fût" ####
 
-  # Évolution + prédictions des fûts en cours (calcul HoltWinters, une seule fois)
+  # Prédiction HoltWinters des fûts en cours, calculée une fois.
   db_predict_bieres <- reactive({
     table_evo_brassins(DB_BIERES,today())
   })
 
   output$bieres_niveaux <- renderUI({
-    # La prédiction est déjà calculée pour les autres sorties : on la réutilise
-    # pour afficher l'échéance sous chaque jauge.
     cartes_niveaux_bieres(niveau_bieres_actuel(DB_BIERES), db_predict_bieres())
   })
 
@@ -878,7 +704,7 @@ server <- function(input, output, session) {
     datatable_simple(table_predictions_fin(db_predict_bieres()))
   })
 
-  # Sélecteur de brassin pour le rapport
+  # Sélecteur de brassin pour le rapport.
   observe({
     req(ONGLETS_PRETS())
     brassins <- DB_BRASSINS %>% arrange(desc(DT_BRASSIN))
@@ -894,7 +720,7 @@ server <- function(input, output, session) {
 
   #### Volet "Simulation" ####
 
-  # Période par défaut : 8 dernières semaines
+  # Période par défaut : 8 dernières semaines.
   observe({
     req(ONGLETS_PRETS())
     updateDateRangeInput(session, "sim_periode",
@@ -906,7 +732,7 @@ server <- function(input, output, session) {
     if (is.null(rng) || any(is.na(rng))) c(date_veille - weeks(8), date_veille) else rng
   })
 
-  # Base figée par période (ordre stable) + prix simulés (vecteur par n° de ligne)
+  # Base figée par période (ordre stable) et prix simulés (par n° de ligne).
   sim_base <- reactive({
     p <- sim_periode_val()
     prepa_simulation(DB_PRODUITS, p[1], p[2])
@@ -914,18 +740,15 @@ server <- function(input, output, session) {
 
   sim_prix <- reactiveVal(NULL)
 
-  # (Ré)initialise les prix simulés quand la base change + remplit les catégories
-  # Le drapeau est dans l'expression déclenchante, pas dans le corps :
-  # observeEvent() isole son corps, donc une dépendance posée là ne rejouerait
-  # jamais l'observateur au moment où le drapeau bascule — et sim_categorie
-  # resterait vide. C'est le seul observeEvent parmi les garnissages.
+  # (Ré)initialise les prix simulés et les catégories quand la base change.
+  # Le drapeau est dans l'expression déclenchante : le corps est isolé.
   observeEvent({ req(ONGLETS_PRETS()); sim_base() }, {
     sim_prix(sim_base()$PRIX_MOYEN)
     updateSelectInput(session, "sim_categorie",
                       choices = sort(unique(sim_base()$CATEGORIE)))
   })
 
-  # Appliquer une variation % à toute une catégorie
+  # Une variation en % sur toute une catégorie.
   observeEvent(input$sim_apply, {
     base <- sim_base()
     cur  <- sim_prix()
@@ -935,12 +758,12 @@ server <- function(input, output, session) {
     sim_prix(cur)
   })
 
-  # Réinitialiser tous les prix
+  # Réinitialiser tous les prix.
   observeEvent(input$sim_reset, {
     sim_prix(sim_base()$PRIX_MOYEN)
   })
 
-  # Édition directe d'un prix simulé (colonne 4, rownames = FALSE)
+  # Édition directe d'un prix simulé (colonne 4).
   observeEvent(input$sim_table_cell_edit, {
     info <- input$sim_table_cell_edit
     if (!is.null(info$col) && info$col == 4) {
@@ -959,7 +782,7 @@ server <- function(input, output, session) {
     calc_simulation(sim_base(), sim_prix())
   })
 
-  # Tableau éditable rendu une seule fois (par période) ; mis à jour via proxy
+  # Tableau éditable, rendu une fois par période, mis à jour par proxy.
   output$sim_table <- renderDT({
     sim <- calc_simulation(sim_base(), isolate(sim_prix()))
     datatable(
@@ -999,25 +822,14 @@ server <- function(input, output, session) {
            if (!is.na(pct)) paste0("  (", ifelse(d >= 0, "+", ""), pct, " %)") else "")
   })
 
-  #### Volet "Compta / Gestion" ####
-  # Un bloc générique sert les deux sous-onglets (semaine / mois). Chaque volet
-  # a un panneau A (période analysée) et un panneau B (période comparée), ce
-  # dernier étant affiché/masqué par shinyjs — l'UI reste statique.
-  #### Volet "Compta / Gestion" — socle commun ####
+  # #### Volet "Compta / Gestion" — socle commun ####
 
-  # Ce que TOUS les onglets du volet lisent : la compta brute, les mois
-  # écartés, et la compta retenue qui en découle. Posé avant eux, parce que
-  # chacun en dépend et qu'aucun ne doit le recalculer de son côté.
-  #
-  # Tout vient de DB_COMPTA. Aucune donnee simulee : si les chiffres ne sont pas
-  # la, le volet reste vide.
-  # La compta BRUTE, jamais filtrée. C'est elle qui sert à repérer les mois
-  # douteux : la filtrer ici ferait disparaître de la liste le mois qu'on vient
-  # d'écarter, donc sa case, donc l'écartement — une boucle.
+  # Ce que tous les onglets du volet lisent. La compta BRUTE n'est jamais
+  # filtrée par l'écartement : c'est elle qui sert à choisir les mois à
+  # écarter.
   compta_brute <- reactive({
     req(exists("DB_COMPTA"))
-    # « Brute » veut dire : sans écartement de mois. Les mois à VENIR, eux,
-    # ne passent pas — ils ne sont pas douteux, ils n'ont pas eu lieu.
+    # Les mois à venir, eux, ne passent pas.
     compta_a_date(DB_COMPTA)
   })
 
@@ -1025,23 +837,17 @@ server <- function(input, output, session) {
     periodes_improbables(postes_exploitation(compta_brute()))
   })
 
-  # Le topo, calculé sur la compta BRUTE. Il ne dépend PAS de l'écartement, et
-  # c'est volontaire : s'il en dépendait, le mois qu'on vient d'écarter
-  # sortirait du tableau, donc de la sélection, donc de l'écartement — et la
-  # table se redessinerait à chaque clic en perdant le clic.
+  # Le topo, sur la compta brute : il ne dépend pas de l'écartement, sinon un
+  # mois écarté sortirait du tableau qui sert à l'écarter.
   compta_topo <- reactive({
     topo_mois(compta_brute(), compta_improbable(), VALIDATIONS())
   })
 
   output$topo_table <- renderDT({
     tbl <- table_topo(compta_topo())
-    # escape = FALSE pour la pastille d'état. Tout le contenu de ce tableau est
-    # fabriqué ici — aucun libellé de compte, donc aucun texte venu d'un
-    # export ne traverse sans échappement.
-    # Deux familles de colonnes masquées, et il faut penser aux deux : les
-    # jumelles « .tri: », que defs_tri() connaît, et le drapeau « .f_ », qui
-    # ne sert qu'à colorer la cellule voisine. L'oublier le laisse s'afficher
-    # en bout de ligne — un « -1 » que personne ne sait lire.
+    # escape = FALSE pour la pastille d'état ; aucun texte venu d'un export ne
+    # traverse ce tableau. Les colonnes « .f_ » sont masquées, comme les
+    # jumelles de tri.
     drapeaux <- which(startsWith(names(tbl), ".f_")) - 1L
     chiffres <- match(COLONNES_CHIFFREES_TOPO, names(tbl)) - 1L
     defs <- c(defs_tri(tbl),
@@ -1056,24 +862,18 @@ server <- function(input, output, session) {
                      scrollX = TRUE, scrollCollapse = TRUE,
                      order = list(list(0, "desc")),
                      columnDefs = defs))
-    # Le nombre de comptes mouvementés : signal d'incomplétude indépendant des
-    # montants (cf. topo_mois).
     formatStyle(dt, "Comptes", valueColumns = ".f_Comptes",
                 backgroundColor = styleEqual(-1L, "rgba(192,57,43,0.18)"),
                 fontWeight = styleEqual(-1L, "600"))
   })
 
-  # SÉLECTIONNER ÉCARTE. Le sens compte : une ligne non sélectionnée est une
-  # ligne retenue, donc l'état de départ — aucune sélection — veut dire « rien
-  # d'écarté », qui est le bon défaut. Dans l'autre sens, l'écran s'ouvrirait
-  # sur une analyse déjà amputée.
+  # SÉLECTIONNER ÉCARTE : aucune sélection = rien d'écarté, le bon défaut.
   compta_exclus <- reactive({
     s <- input$topo_table_rows_selected
     if (!length(s)) as.Date(character(0)) else compta_topo()$PERIODE[s]
   })
 
-  # Les deux raccourcis. Ils ne décident rien que le clic ne puisse faire : ils
-  # évitent douze clics, et c'est tout ce qu'on leur demande.
+  # Les deux raccourcis de sélection.
   observeEvent(input$topo_ecarter_risque, {
     DT::selectRows(DT::dataTableProxy("topo_table"),
                    which(compta_topo()$A_ECARTER))
@@ -1084,10 +884,8 @@ server <- function(input, output, session) {
 
   #### Trancher un mois douteux ####
 
-  # Écarter un mois est une décision de LECTURE, locale à la session et perdue
-  # à la fermeture. Le trancher est autre chose : c'est le constat qu'on est
-  # allé voir, et il doit survivre à la session, au processus et à l'import.
-  # Il part donc dans un classeur (cf. R/validation.R).
+  # Écarter est une décision de lecture, perdue à la fermeture ; trancher est
+  # un constat qui doit durer : il part dans un classeur (cf. R/validation.R).
   observeEvent(input$topo_valider, {
     showModal(dialogue_validation(compta_topo(), VALIDATIONS()))
   })
@@ -1103,8 +901,7 @@ server <- function(input, output, session) {
     com <- trimws(as.character(input$valid_commentaire))
     if (is.na(com)) com <- ""
 
-    # Une décision sans motif ne vaut rien : dans six mois, « validé » sans un
-    # mot ne dira pas ce qui a été vérifié, et il faudra tout refaire.
+    # Une décision sans motif ne vaut rien.
     if (!identical(dec, "revoque") && !nzchar(com)) {
       showNotification(
         "Dites en un mot ce que vous avez vérifié : c'est tout l'intérêt du journal.",
@@ -1116,9 +913,7 @@ server <- function(input, output, session) {
     ecrit <- try(ecrit_validation(ligne), silent = TRUE)
 
     if (inherits(ecrit, "try-error")) {
-      # On ne touche à RIEN à l'écran. Une pastille verte sur une décision qui
-      # n'est pas dans le classeur disparaîtrait au prochain import, sans que
-      # personne puisse dire pourquoi.
+      # Échec d'écriture : rien ne change à l'écran.
       showNotification(paste("Enregistrement impossible :",
                              conditionMessage(attr(ecrit, "condition"))),
                        type = "error", duration = 15)
@@ -1137,13 +932,10 @@ server <- function(input, output, session) {
   output$topo_resume <- renderUI({
     resume_topo(compta_topo(), compta_exclus())
   })
-  # La compta RETENUE : celle que lisent les six onglets.
+  # La compta RETENUE : celle que lisent les onglets.
   compta <- reactive({ ecarte_mois(compta_brute(), compta_exclus()) })
 
-  # La même, mais qui rend NULL au lieu de s'interrompre quand DB_COMPTA
-  # manque. Le volet Année sait afficher son CA sans comptabilité — il perd
-  # juste la marge — là où les onglets de Compta n'ont rien à montrer sans
-  # elle. Le `if` évite d'appeler compta(), donc le req() qu'elle porte.
+  # La même, mais NULL quand DB_COMPTA manque (le volet Année s'en passe).
   compta_si_dispo <- reactive({
     if (exists("DB_COMPTA")) compta() else NULL
   })
@@ -1152,16 +944,11 @@ server <- function(input, output, session) {
 
   #### Volet "Compta / Gestion" — Contrôle ####
 
-  # Les alertes portent sur TOUT l'historique, pas sur le dernier mois. Un
-  # onglet qui demande « puis-je me fier à ces chiffres » doit répondre pour
-  # toute la série : une écriture mal classée l'an dernier fausse encore les
-  # comparaisons d'aujourd'hui, et personne n'ira la chercher mois par mois.
+  # Les alertes portent sur tout l'historique.
   ctrl_alertes <- reactive({
     req(exists("DB_COMPTA"))
-    # Les mois VALIDÉS à la main sortent des alertes : c'est tout l'objet de
-    # la validation. Les mois REJETÉS y restent — leurs chiffres sont bien
-    # improbables, c'est confirmé, pas résolu, et ça doit continuer de se voir
-    # tant que la source n'est pas corrigée.
+    # Les mois validés à la main sortent des alertes ; les mois rejetés y
+    # restent.
     alertes_integrite(compta(), postes_exploitation(compta()),
                       improb_hors_valides(compta_improbable(), compta_topo()))
   })
@@ -1170,8 +957,7 @@ server <- function(input, output, session) {
   output$ctrl_diag_resume <- renderText({ resume_diagnostic(ctrl_alertes()) })
   output$ctrl_badge       <- renderUI({ badge_alertes(ctrl_alertes()) })
 
-  # Compta BRUTE, à dessein : ce tableau répond à « quels comptes le plan
-  # ignore-t-il ». L'amputer des mois écartés masquerait le compte cherché.
+  # Compta brute : on cherche un compte, même dans un mois écarté.
   output$ctrl_comptes <- renderDT({
     nc <- comptes_non_classes(compta_brute())
     if (!nrow(nc))
@@ -1186,8 +972,7 @@ server <- function(input, output, session) {
                              searching = FALSE))
   })
 
-  # Les contrôles de lecture des écritures. Ils étaient calculés à l'import,
-  # journalisés en console, sauvés dans le .RData — et affichés nulle part.
+  # Les contrôles de lecture calculés à l'import.
   output$ctrl_import <- renderUI({
     tables <- list(
       if (exists("CONTROLE_ODOO")) CONTROLE_ODOO else NULL,
@@ -1197,18 +982,14 @@ server <- function(input, output, session) {
       return(div(class = "text-muted small p-2",
                  "Aucun contrôle d'import : la comptabilité ne vient pas",
                  " d'un export Odoo."))
-    # Même rendu que les alertes : une liste à lire, alertes en tête — et la
-    # destination de chacune se DÉDUIT de son nom plutôt que d'être stockée
-    # dans la table. Les contrôles sont calculés à l'import et sauvés dans le
-    # .RData : y ajouter une colonne casserait la lecture des caches déjà
-    # écrits, pour une information qui se retrouve ici sans effort.
+    # Même rendu que les alertes ; la destination du forage se déduit du nom du
+    # contrôle.
     rendu_diagnostic(d %>% transmute(TITRE = CONTROLE, STATUT = VERDICT,
                                      MESSAGE = DETAIL,
                                      FORAGE = forage_import(CONTROLE, DETAIL)))
   })
 
-  # Le forage : une consigne posée par un lien, un seul observateur pour les
-  # appliquer toutes.
+  # Le forage : un seul observateur applique toutes les consignes.
   observeEvent(input[[INPUT_FORAGE]], {
     f <- analyse_forage(input[[INPUT_FORAGE]])
     if (is.null(f)) return()
@@ -1218,17 +999,14 @@ server <- function(input, output, session) {
     if (!is.null(f$du) && !is.null(f$au))
       updateDateRangeInput(session, "ecr_dates",
                            start = as.Date(f$du), end = as.Date(f$au))
-    # Les filtres de poste et de journal ne sont jamais posés par un forage :
-    # les laisser tels quels ferait arriver sur une sélection vide sans qu'on
-    # comprenne pourquoi.
+    # Les filtres de poste et de journal sont remis à zéro.
     updateSelectizeInput(session, "ecr_poste", selected = "")
     updateSelectizeInput(session, "ecr_journal", selected = "")
   })
 
   #### Volet "Compta / Gestion" — Exploitation ####
 
-  # La granularite pilote tout l'onglet : la serie complete est agregee une
-  # fois, et la cascade comme le tableau y puisent.
+  # La granularité pilote tout l'onglet.
   expl_unite <- reactive(input$expl_unite %||% "mois")
 
   expl_serie_complete <- reactive({
@@ -1245,27 +1023,25 @@ server <- function(input, output, session) {
     req(ONGLETS_PRETS())
     p <- expl_serie_complete()
     dispo <- sort(unique(p$PERIODE), decreasing = TRUE)
-    # Les libelles suivent la granularite : « T3 2026 » pour un trimestre,
-    # « 2026 » pour une annee.
+    # Libellés selon la granularité : « T3 2026 », « 2026 ».
     updateSelectInput(session, "expl_periode",
                       choices = setNames(as.character(dispo),
                                          etiquette_periode(dispo, expl_unite())),
                       selected = as.character(dispo[1]))
   })
 
-  # La cascade porte sur la periode choisie ; les autres vues sur la serie.
+  # La cascade porte sur la période choisie, les autres vues sur la série.
   expl_une <- reactive({
     p <- expl_serie_complete()
     choisie <- suppressWarnings(as.Date(input$expl_periode %||% NA))
-    # Changer de granularite laisse un instant l'ancienne valeur dans le select
-    # — un debut de mois qui n'est pas un debut de trimestre. Plutot que de
-    # rendre une cascade vide, on retombe sur la periode la plus recente.
+    # Une valeur périmée (changement de granularité) : la période la plus
+    # récente.
     d <- if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
       max(p$PERIODE) else choisie
     filter(p, PERIODE == d)
   })
 
-  # Avant ou après amortissements : « avant » par défaut, comme partout.
+  # Avant ou après amortissements ; « avant » par défaut.
   expl_marge <- reactive(input$expl_marge %||% "avant")
 
   output$expl_kpi <- renderUI({
@@ -1274,16 +1050,14 @@ server <- function(input, output, session) {
     graph_cascade_exploitation(expl_une(), expl_unite(), expl_marge()) })
   output$expl_structure <- renderPlotly({
     graph_structure_exploitation(expl_serie(), expl_unite(), expl_marge()) })
-  # La période choisie est-elle close et complète ? Un trimestre à un mois sur
-  # trois se lit sinon comme un effondrement.
+  # Période close et complète ?
   output$expl_alerte_periode <- renderUI({
     alerte_periode(etat_periode(expl_une(), expl_unite()))
   })
 
   output$expl_table <- renderDT({
     tbl <- table_exploitation(expl_serie(), expl_unite(), expl_marge())
-    # Les colonnes .f_* portent le repérage des écarts (cf. R/exploitation.R) :
-    # masquées, elles ne servent qu'à colorer la cellule voisine.
+    # Les colonnes .f_* colorent la cellule voisine (cf. R/exploitation.R).
     caches <- which(startsWith(names(tbl), ".f_")) - 1L
     dt <- datatable(
       tbl, rownames = FALSE,
@@ -1306,52 +1080,40 @@ server <- function(input, output, session) {
 
   #### Volet "Compta / Gestion" — Écarts ####
 
-  # Même socle que le volet Exploitation : postes_exploitation() puis
-  # agrege_exploitation() à la granularité choisie. Rien n'est recalculé ici,
-  # sinon les deux sous-onglets finiraient par afficher deux marges.
+  # Même socle que l'Exploitation : postes_exploitation() puis
+  # agrege_exploitation().
   eca_unite <- reactive(input$eca_unite %||% "mois")
   eca_marge <- reactive(input$eca_marge %||% "avant")
 
-  # Deux séries, et la distinction porte tout le rabotage.
-  #
-  # La série COMPLÈTE sert au sélecteur de période : toutes les périodes
-  # doivent rester choisissables, y compris celles qu'un rabotage viderait.
+  # La série COMPLÈTE alimente le sélecteur : toutes les périodes restent
+  # choisissables.
   eca_serie_complete <- reactive({
     p <- agrege_exploitation(expl_postes(), eca_unite())
     req(nrow(p) > 0)
     p
   })
 
-  # Les rangs de mois présents dans la période analysée — le gabarit auquel on
-  # ramène les autres périodes (cf. R/analyse.R).
+  # Les rangs de mois de la période analysée (cf. R/analyse.R).
   eca_offsets <- reactive({
     if (!isTRUE(input$eca_raboter %||% TRUE))
       return(seq_len(mois_attendus(eca_unite())) - 1L)
     offsets_periode(expl_postes(), eca_periode(), eca_unite())
   })
 
-  # La série COMPARABLE : chaque période ramenée à ces mêmes rangs. C'est elle
-  # qui alimente tout ce qui compare — référence, pont, tuiles, tableau — et
-  # aussi la tendance : un graphe où 2026 vaut huit mois et 2025 douze ferait
-  # exactement l'erreur que la case à cocher existe pour éviter.
-  #
-  # La période analysée y est identique à celle de la série complète : tous ses
-  # mois sont dans le gabarit, par construction.
+  # La série COMPARABLE, chaque période ramenée à ces rangs : elle alimente
+  # référence, pont, tuiles et tableau.
   eca_serie_comparable <- reactive({
     p <- serie_rabotee(expl_postes(), eca_unite(), eca_offsets())
     req(nrow(p) > 0)
     p
   })
 
-  # Rabote-t-on réellement quelque chose ? Faux sur une période complète, et
-  # c'est ce qui permet de n'annoncer le rabotage que lorsqu'il a lieu.
+  # Rabote-t-on réellement quelque chose ?
   eca_rabotage <- reactive({
     etiquette_rabotage(eca_offsets(), eca_unite())
   })
 
-  # Le sélecteur de période. Comme partout, il n'est semé qu'une fois les
-  # onglets insérés : écrire dans un input qui n'existe pas encore est perdu
-  # en silence, et l'observateur ne rejoue pas (cf. R/acces.R).
+  # Le sélecteur de période, garni une fois les onglets insérés.
   observe({
     req(ONGLETS_PRETS())
     dispo <- sort(unique(eca_serie_complete()$PERIODE), decreasing = TRUE)
@@ -1364,9 +1126,7 @@ server <- function(input, output, session) {
   eca_periode <- reactive({
     p <- eca_serie_complete()
     choisie <- suppressWarnings(as.Date(input$eca_periode %||% NA))
-    # Changer de granularité laisse un instant l'ancienne valeur dans le select
-    # — un début de mois qui n'est pas un début de trimestre. On retombe alors
-    # sur la période la plus récente plutôt que de rendre un volet vide.
+    # Une valeur périmée : la période la plus récente.
     if (length(choisie) != 1 || is.na(choisie) || !choisie %in% p$PERIODE)
       max(p$PERIODE) else choisie
   })
@@ -1381,9 +1141,7 @@ server <- function(input, output, session) {
                       unite = eca_unite())
   })
 
-  # Le libellé dit le rabotage quand il a lieu : « 2025 » et « 2025 (janv.–août) »
-  # ne désignent pas les mêmes chiffres, et l'en-tête du tableau de comparaison
-  # comme le titre du graphe s'appuient dessus.
+  # Le libellé de la référence dit le rabotage quand il a lieu.
   eca_lib_ref <- reactive({
     r <- eca_reference()
     if (is.null(r)) return("aucune référence")
@@ -1391,10 +1149,8 @@ server <- function(input, output, session) {
     if (is.null(rab)) r$libelle else paste0(r$libelle, " (", rab, ")")
   })
 
-  # Les périodes dont la référence est faite : une seule pour les modes
-  # « précédente » et « an dernier », plusieurs pour la médiane. Le forage par
-  # compte en a besoin — il ne peut pas travailler sur une ligne médiane, qui
-  # n'est la comptabilité d'aucune période réelle.
+  # Les périodes dont la référence est faite (plusieurs pour la médiane) :
+  # le forage par compte en a besoin.
   eca_ref_periodes <- reactive({
     r <- eca_reference()
     if (is.null(r)) return(as.Date(character()))
@@ -1410,10 +1166,8 @@ server <- function(input, output, session) {
   output$eca_alerte <- renderUI({
     rab <- eca_rabotage()
     tagList(
-      # Sur une période partielle, l'alerte standard dit « les totaux ne sont
-      # pas comparables ». Quand le rabotage est actif, ils le redeviennent :
-      # on remplace donc l'avertissement par ce qui a été fait, sans quoi on
-      # lirait une mise en garde contre un problème déjà résolu.
+      # Avec le rabotage, on dit ce qui a été fait plutôt que d'avertir d'un
+      # problème résolu.
       if (is.null(rab)) alerte_periode(etat_periode(eca_actuel(), eca_unite()))
       else bandeau_alerte(
         TRUE,
@@ -1448,9 +1202,7 @@ server <- function(input, output, session) {
     pont_marge(eca_actuel(), r$ligne, eca_marge())
   })
 
-  # Le libellé de la période analysée sert au graphe, au tableau de
-  # décomposition ET aux phrases de lecture : un seul reactive, pour que les
-  # trois nomment la même période de la même façon.
+  # Un seul libellé de période pour le graphe, le tableau et les phrases.
   eca_lib_periode <- reactive(etiquette_periode(eca_periode(), eca_unite()))
 
   output$eca_pont <- renderPlotly({
@@ -1470,8 +1222,7 @@ server <- function(input, output, session) {
 
   eca_contrib <- reactive({
     req(exists("DB_COMPTA"))
-    # Le même gabarit que la série : sans lui, les contributions ne sommeraient
-    # plus à l'écart affiché juste au-dessus.
+    # Le même gabarit que la série : les contributions somment à l'écart.
     contributions_comptes(compta(), eca_periode(), eca_ref_periodes(),
                           eca_unite(), eca_offsets(), eca_marge())
   })
@@ -1487,8 +1238,7 @@ server <- function(input, output, session) {
                              etiquette_periode(eca_periode(), eca_unite()),
                              eca_lib_ref(), eca_marge())
     if (!".sens" %in% names(tbl)) return(datatable_simple(tbl))
-    # .sens colore l'écart sans être affichée : même mécanique que les
-    # colonnes .f_* du tableau d'exploitation.
+    # .sens colore l'écart sans être affichée.
     cache <- which(names(tbl) == ".sens") - 1L
     datatable(
       tbl, rownames = FALSE,
@@ -1503,17 +1253,13 @@ server <- function(input, output, session) {
 
   #### Volet "Compta / Gestion" — Évolution ####
 
-  # Pas de sélecteur de période : une tendance se lit jusqu'à aujourd'hui.
-  # Le gabarit de rabotage est donc celui de la DERNIÈRE période — sans quoi,
-  # au grain annuel, une année en cours se comparerait à des années entières
-  # et la courbe plongerait pour une raison de calendrier.
+  # Pas de sélecteur de période : la tendance va jusqu'à aujourd'hui, et le
+  # gabarit de rabotage est celui de la dernière période.
   evo_unite <- reactive(input$evo_unite %||% "mois")
   evo_marge <- reactive(input$evo_marge %||% "avant")
 
-  # La liste des indicateurs suit la marge : les libellés de « marge » et
-  # « marge en % » changent, et les amortissements n'y figurent qu'après.
-  # L'indicateur choisi est gardé quand il existe encore ; sinon (on quitte
-  # « amortissements » en revenant avant), on retombe sur la marge.
+  # La liste des indicateurs suit la marge ; l'indicateur choisi est gardé
+  # s'il existe encore.
   observe({
     req(ONGLETS_PRETS())
     reg <- indicateurs_analyse(evo_marge())
@@ -1544,9 +1290,7 @@ server <- function(input, output, session) {
                    input$evo_indic, evo_unite(), evo_marge())
   })
 
-  # La saisonnalité travaille toujours au grain MENSUEL, quelle que soit la
-  # granularité choisie : superposer des années agrégées à l'année ne
-  # donnerait qu'un point par courbe.
+  # La saisonnalité est toujours mensuelle.
   output$evo_saison <- renderPlotly({
     graph_saisonnalite(saisonnalite(expl_postes(), input$evo_indic, evo_marge()),
                        input$evo_indic, evo_marge())
@@ -1554,11 +1298,9 @@ server <- function(input, output, session) {
 
   #### Volet "Compta / Gestion" — Comptabilité générale ####
 
-  # Plus de reconstruction de plan : les comptes sont classés sur leur numéro
-  # (cf. R/plan_comptable.R), structure du PCMN qui ne bouge pas.
+  # Comptes classés sur leur numéro (cf. R/plan_comptable.R).
 
-  # La granularite pilote l'onglet entier : les comptes sont consolides au
-  # niveau choisi AVANT tout regroupement (cf. consolide_periode()).
+  # Comptes consolidés à la granularité choisie avant tout regroupement.
   cg_unite <- reactive(input$cg_unite %||% "mois")
 
   cg_dispo <- reactive({
@@ -1577,8 +1319,7 @@ server <- function(input, output, session) {
 
   cg_periodes <- reactive({
     req(input$cg_periodes)
-    # Changer de granularite laisse un instant des valeurs perimees dans le
-    # selecteur : on ne garde que celles qui existent au niveau courant.
+    # On ne garde que les périodes qui existent à la granularité courante.
     valides <- intersect(as.Date(input$cg_periodes), cg_dispo()$PERIODE)
     req(length(valides) > 0)
     sort(as.Date(valides, origin = "1970-01-01"))
@@ -1619,8 +1360,7 @@ server <- function(input, output, session) {
   output$cg_soldes <- renderPlotly({
     graph_soldes(compta(), cg_periodes(), cg_unite()) })
 
-  # Compta BRUTE : « quand ce compte a-t-il vécu » perdrait son sens sur une
-  # série amputée des mois écartés.
+  # Compta brute : la vie d'un compte, mois écartés compris.
   output$cg_vie <- renderDT({
     datatable_simple(
       vie_des_comptes(compta_brute()) %>%
@@ -1634,10 +1374,8 @@ server <- function(input, output, session) {
 
   #### Volet "Compta / Gestion" — Écritures ####
 
-  # DB_ECRITURES est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
-  # R/connect.R) : elle n'arrive qu'avec un import Odoo, et tout part donc de
-  # ce reactive, qui vaut NULL en son absence. Le volet le dit alors et se
-  # tait, au lieu de rendre des graphes vides qu'on prendrait pour une panne.
+  # DB_ECRITURES est optionnelle (cf. R/connect.R) : NULL en son absence, et le
+  # volet le dit.
   ecritures <- reactive({
     if (!exists("DB_ECRITURES")) return(NULL)
     enrichit_ecritures(DB_ECRITURES)
@@ -1655,9 +1393,7 @@ server <- function(input, output, session) {
       icone = "circle-info")
   })
 
-  # Les filtres sont fabriqués APRÈS les données : leurs choix sont ceux qui
-  # existent vraiment. Une liste de journaux écrite en dur se périmerait au
-  # premier journal créé dans Odoo, et sans rien dire.
+  # Les filtres proposent ce qui existe dans les données.
   output$ecr_filtres <- renderUI({
     e <- ecritures()
     if (is.null(e)) return(NULL)
@@ -1678,15 +1414,11 @@ server <- function(input, output, session) {
                 placeholder = "libellé, partenaire, pièce, compte"))
   })
 
-  # Le filtre vit dans un renderUI : il faut qu'il ait été RENDU avant qu'un
-  # forage écrive dedans, sinon la consigne se perd en silence. Même famille
-  # de piège que les zones d'alerte — et outputOptions() exige que la sortie
-  # existe DÉJÀ, d'où cet appel ici et non à côté de l'observateur.
+  # Le filtre doit être rendu avant qu'un forage écrive dedans : pas de
+  # suspension. outputOptions() exige que la sortie existe déjà.
   outputOptions(output, "ecr_filtres", suspendWhenHidden = FALSE)
 
-  # Un seul filtre pour tout le volet : KPI, graphes et tableau. Deux filtres
-  # indépendants donneraient un total et une liste qui ne parlent pas de la
-  # même chose.
+  # Un seul filtre pour tout le volet.
   ecr_filtre <- reactive({
     e <- ecritures()
     req(!is.null(e))
@@ -1706,26 +1438,20 @@ server <- function(input, output, session) {
     chips_postes(recap_postes(ecr_filtre()), input$ecr_poste)
   })
 
-  # Huit observateurs, créés UNE FOIS au démarrage sur la liste fermée des
-  # postes de gestion. Les pastilles se redessinent à chaque filtre ; leurs
-  # identifiants, eux, ne bougent pas — sans quoi il faudrait créer des
-  # observateurs à la volée, qui s'empilent silencieusement à chaque redessin.
+  # Un observateur par poste de gestion, créé une fois (liste fermée).
   for (i in seq_along(postes_gestion())) local({
     k <- i
     observeEvent(input[[id_chip_poste(k)]], {
       ps <- postes_gestion()[k]
       cur <- input$ecr_poste
       nouv <- if (ps %in% cur) setdiff(cur, ps) else c(cur, ps)
-      # "" et non character(0) : updateSelectizeInput() ignore un vecteur vide
-      # et laisserait la pastille cochée après le clic qui la décoche.
+      # "" et non character(0) : updateSelectizeInput() ignore un vecteur vide.
       updateSelectizeInput(session, "ecr_poste",
                            selected = if (length(nouv)) nouv else "")
     }, ignoreInit = TRUE)
   })
 
-  # Tous les journaux, pas seulement ceux de la sélection : sans ça, la
-  # couleur d'un journal changerait dès qu'un filtre en retire un autre, et
-  # une couleur qui bouge n'apprend plus rien.
+  # Tous les journaux, pour des couleurs stables.
   ecr_journaux <- reactive({
     e <- ecritures()
     if (is.null(e)) character(0) else sort(unique(e$JOURNAL))
@@ -1736,11 +1462,9 @@ server <- function(input, output, session) {
     chiffres <- match(COLONNES_CHIFFREES_ECR, names(tbl)) - 1L
     datatable(
       tbl, rownames = FALSE, selection = "none", escape = FALSE,
-      # Hauteur calée sur la fenêtre : le volet sert à TOUT voir d'un coup,
-      # pas à feuilleter par vingt-cinq.
+      # Hauteur calée sur la fenêtre.
       options = list(
-        # Pas de « f » : la recherche de DataTables est désactivée au profit
-        # du champ de la barre latérale, qui pilote AUSSI les totaux.
+        # Pas de « f » : la recherche passe par la barre latérale.
         dom = "lrtip", pageLength = 100,
         lengthMenu = list(c(50, 100, 250, 1000), c("50", "100", "250", "1000")),
         language = LANGUE_DT,
@@ -1754,30 +1478,23 @@ server <- function(input, output, session) {
   output$ecr_export <- downloadHandler(
     filename = function() nom_export_ecritures(),
     content = function(file) {
-      # write.csv2 : séparateur « ; » et virgule décimale, pour qu'un double
-      # clic sous un Excel belge ouvre des colonnes et non une seule.
+      # write.csv2 : point-virgule et virgule décimale, pour un Excel belge.
       write.csv2(ecr_filtre(), file, row.names = FALSE, fileEncoding = "UTF-8")
     })
 
   #### Volet "Compta / Gestion" — Projection ####
 
-  # Tout part de la compta BRUTE, et non de la compta retenue : les mois
-  # écartés sont précisément ceux qu'on vient combler ici. L'écartement garde
-  # un rôle, mais un seul — un mois écarté ne sert jamais de RÉFÉRENCE, parce
-  # qu'un doute qui entre dans une médiane ne se voit plus.
+  # Tout part de la compta BRUTE : les mois écartés sont ceux qu'on comble ici.
+  # Un mois écarté ne sert jamais de référence.
   proj_reels <- reactive({ postes_exploitation(compta_brute()) })
 
-  # Les sources extérieures à la comptabilité. Toutes sont facultatives : leur
-  # absence fait changer la MÉTHODE affichée, elle n'empêche pas l'écran.
+  # Sources extérieures à la comptabilité, toutes facultatives.
   proj_ventes <- reactive({
     if (!exists("DB_KPI_SIMPLE")) NULL else ventes_par_mois(DB_KPI_SIMPLE)
   })
 
-  # Paie, pointage, planning : les trois mesures du travail, rangées de la
-  # meilleure à la dernière (cf. PROJ_SOURCES_REMU). DB_ONSS et
-  # DB_HEURES_PLANNING sont optionnelles (cf. TABLES_OPTIONNELLES), et on ne
-  # dépend pas ici du SRC_ONSS() du volet Travail : ce bloc doit pouvoir être
-  # rejoué seul.
+  # Paie, pointage, planning (cf. PROJ_SOURCES_REMU), sans dépendre du volet
+  # Travail : ce bloc doit pouvoir être rejoué seul par les tests.
   proj_sources <- reactive({
     sources_remuneration(
       if (exists("DB_COUTS_TRAVAIL")) DB_COUTS_TRAVAIL else NULL,
@@ -1786,16 +1503,13 @@ server <- function(input, output, session) {
   })
 
   # La proposition de départ : les mois de l'année écoulée auxquels il manque
-  # un poste, et les postes qui y manquent. C'est une PROPOSITION — l'écran
-  # s'ouvre dessus, l'utilisateur en fait ce qu'il veut.
+  # un poste.
   proj_defauts <- reactive({
     p <- proj_reels()
     manque <- postes_manquants(p, floor_date(today(), "month") %m-% months(11))
     en_cours <- floor_date(today(), "month")
     mois <- sort(unique(manque$PERIODE), decreasing = TRUE)
-    # Le mois en cours n'a parfois AUCUNE écriture : il n'apparaît alors pas
-    # dans les postes, donc pas dans les manquants, alors que c'est le
-    # premier qu'on veuille projeter.
+    # Le mois en cours peut n'avoir aucune écriture : on l'ajoute.
     if (!en_cours %in% p$PERIODE) mois <- unique(c(en_cours, mois))
     cles <- unique(manque$CLE)
     if (!length(cles)) cles <- PROJ_POSTES$CLE
@@ -1835,9 +1549,7 @@ server <- function(input, output, session) {
     if (length(n) != 1 || is.na(n)) PROJ_DEFAUT_REF else n
   })
 
-  # Les hypothèses de l'utilisateur, en pourcentage. Elles s'appliquent APRÈS
-  # le modèle, et le tableau montre les deux valeurs : sans cela, un curseur
-  # oublié à +10 % devient un chiffre qu'on prend pour un calcul.
+  # Les hypothèses de l'utilisateur, en %, appliquées après le modèle.
   proj_ajust <- reactive({
     list(ca           = input$proj_aj_ca,
          matieres     = input$proj_aj_matieres,
@@ -1852,8 +1564,7 @@ server <- function(input, output, session) {
                             compta_exclus(), proj_ajust())
   })
 
-  # Le compte d'exploitation tel qu'il serait. Il ne quitte pas cet onglet :
-  # aucun autre rendu du dashboard ne le lit.
+  # Le compte d'exploitation projeté ne sort pas de cet onglet.
   proj_compte <- reactive({ applique_projection(proj_reels(), projection()) })
 
   proj_ctrl <- reactive({
@@ -1874,9 +1585,7 @@ server <- function(input, output, session) {
 
   output$proj_graph <- renderPlotly({ graph_projection(proj_compte()) })
 
-  # Les mois que la trajectoire montre : ce sont eux, et pas d'autres, qu'on
-  # peut détailler en cascade. Choisir un mois absent du graphe du dessus
-  # ferait un écran qui se contredit.
+  # Les mois de la trajectoire, seuls détaillables en cascade.
   proj_mois_traj <- reactive({
     d <- proj_compte()
     if (is.null(d) || !nrow(d)) return(as.Date(character()))
@@ -1887,11 +1596,9 @@ server <- function(input, output, session) {
     m <- proj_mois_traj()
     req(length(m) > 0)
     proj <- proj_mois_sel()
-    # Le dernier mois projeté par défaut : c'est celui qu'on vient de
-    # demander. Faute de projection, le dernier mois tout court.
+    # Défaut : le dernier mois projeté, sinon le dernier mois.
     defaut <- as.character(if (length(proj)) max(proj) else max(m))
-    # isolate() : cet observateur ÉCRIT dans l'entrée qu'il lit. Sans cela,
-    # chaque mise à jour se rappellerait elle-même.
+    # isolate() : cet observateur écrit dans l'entrée qu'il lit.
     actuel <- isolate(input$proj_mois_cascade)
     garde <- !is.null(actuel) && actuel %in% as.character(m)
     updateSelectInput(session, "proj_mois_cascade",
@@ -1899,9 +1606,7 @@ server <- function(input, output, session) {
       selected = if (garde) actuel else defaut)
   })
 
-  # Un clic sur une barre de la trajectoire choisit le mois. L'événement rend
-  # l'ÉTIQUETTE de la catégorie (« sept. 2026 ») et non la date : on remonte
-  # donc par le libellé, qui est fabriqué au même endroit pour les deux.
+  # Un clic sur la trajectoire choisit le mois, par son étiquette.
   observeEvent(event_data("plotly_click", source = "proj_traj"), {
     e <- event_data("plotly_click", source = "proj_traj")
     m <- proj_mois_traj()
@@ -1929,8 +1634,7 @@ server <- function(input, output, session) {
            if (projete) ", projection comprise" else ", tel qu'il est")
   })
 
-  # La cascade du volet Exploitation, telle quelle : c'est le même mois, lu de
-  # la même façon. En refaire une ici en aurait fait deux à maintenir.
+  # La cascade du volet Exploitation, telle quelle.
   output$proj_cascade <- renderPlotly({
     m <- proj_mois_cascade()
     req(!is.null(m))
@@ -1949,8 +1653,7 @@ server <- function(input, output, session) {
   output$proj_resultat <- renderDT({
     tbl <- table_projection_resultat(proj_compte(), projection())
     if (ncol(tbl) == 1) return(datatable_simple(tbl))
-    # escape = FALSE pour la pastille d'état. Tout le contenu est fabriqué
-    # ici : aucun libellé venu d'un export ne traverse sans échappement.
+    # escape = FALSE pour la pastille d'état.
     chiffres <- which(!names(tbl) %in% c("Mois", "État") &
                       !startsWith(names(tbl), PREFIXE_TRI)) - 1L
     datatable(tbl, rownames = FALSE, escape = FALSE,
@@ -1965,9 +1668,7 @@ server <- function(input, output, session) {
     resume_fiabilite(fiabilite_modele(proj_ctrl()))
   })
 
-  # Les sources de rémunération, mesurées une à une. C'est la seule façon de
-  # savoir si le pointage valorisé par contrat vaut mieux que le volume
-  # d'heures — l'ordre de l'échelle, lui, ne dit que ce qu'on en croit.
+  # Les sources de rémunération, mesurées une à une.
   output$proj_sources_remu <- renderUI({
     req(exists("DB_COMPTA"))
     resume_sources_remu(controle_sources_remuneration(
@@ -1983,11 +1684,9 @@ server <- function(input, output, session) {
                              columnDefs = defs_tri(tbl)))
   })
 
-  #### Volet "Travail" — Sources ####
-  # DB_ONSS est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
-  # R/connect.R) : tout part donc de ce reactive, qui vaut NULL en son absence,
-  # et chaque sortie sait traiter le NULL. Le volet se dessine même sans elle —
-  # il compare alors Horeko et la comptabilité, ce qui reste utile.
+  # #### Volet "Travail" — Sources ####
+  # DB_ONSS est optionnelle : NULL en son absence ; le volet compare alors
+  # Horeko et la comptabilité.
   SRC_ONSS <- reactive({
     o <- if (exists("DB_ONSS")) DB_ONSS else NULL
     if (onss_valide(o)) o else NULL
@@ -1995,9 +1694,7 @@ server <- function(input, output, session) {
 
   src_unite <- reactive(input$src_unite %||% "mois")
 
-  # Les sources au grain MENSUEL d'abord, puis consolidées : la paie est
-  # mensuelle par nature, agréger avant de comparer serait perdre le détail
-  # qu'on est venu voir.
+  # Grain mensuel d'abord, puis consolidé.
   src_mensuel <- reactive({
     req(exists("DB_COUTS_TRAVAIL"))
     sources_mensuelles(DB_COUTS_TRAVAIL, SRC_ONSS())
@@ -2015,7 +1712,7 @@ server <- function(input, output, session) {
       summarise(HEURES = if (all(is.na(HEURES))) NA_real_
                          else sum(HEURES, na.rm = TRUE),
                 COUT = sum(COUT, na.rm = TRUE), .groups = "drop")
-    # Le curseur coupe les périodes les plus anciennes, pas les sources.
+    # Le curseur coupe les périodes les plus anciennes.
     gardees <- tail(sort(unique(d$PERIODE)), as.integer(input$src_nb %||% 24))
     d %>% filter(PERIODE %in% gardees) %>% arrange(PERIODE, SOURCE)
   })
@@ -2043,8 +1740,7 @@ server <- function(input, output, session) {
                "Horeko partout ailleurs."),
         titre = "Pas encore de paie", couleur = COUL_NEUTRE,
         icone = "circle-info"))
-    # Le contrôle de lecture est calculé à l'import : s'il n'a pas été
-    # conservé dans le .RData, on ne l'invente pas.
+    # Le contrôle de lecture vient de l'import.
     alerte_onss(if (exists("CONTROLE_ONSS")) CONTROLE_ONSS else NULL)
   })
 
@@ -2062,9 +1758,7 @@ server <- function(input, output, session) {
   output$src_secteurs <- renderPlotly({
     graph_sources_secteurs(src_secteurs()) })
 
-  # Le tableau reste MENSUEL quelle que soit la granularité choisie : la
-  # demande était « lister, par mois, les heures et le coût selon chaque
-  # source ». Les graphiques au-dessus servent la vue d'ensemble.
+  # Le tableau reste mensuel quelle que soit la granularité.
   output$src_table <- renderDT({
     datatable_simple(table_sources(src_mensuel()))
   })
@@ -2106,8 +1800,7 @@ server <- function(input, output, session) {
     
     lab <- paste0(substr(as.character(a$JOUR), 1, 3), " ", format(a$DATE, "%d/%m"))
     ordre <- factor(lab, levels = lab)
-    # Deux découpages du même total : par lieu (où installer) ou par créneau
-    # (quand renforcer le service).
+    # Par lieu (où installer) ou par créneau (quand renforcer).
     par_lieu <- !identical(input$resa_agenda_par, "creneau")
     s1 <- if (par_lieu) list(v = a$SALLE, n = "Salle", c = COUL_LIEU[["SALLE"]])
           else          list(v = a$MIDI,  n = "Midi",  c = COUL_AMBRE)
@@ -2199,8 +1892,7 @@ server <- function(input, output, session) {
 
   #### Volet "Comparaison" ####
 
-  # Met à jour la liste des périodes disponibles selon la granularité choisie ;
-  # sélectionne par défaut les 2 plus récentes.
+  # Périodes disponibles selon la granularité ; les 2 plus récentes par défaut.
   observe({
     req(ONGLETS_PRETS())
     req(input$comp_unite)
@@ -2241,17 +1933,12 @@ server <- function(input, output, session) {
   })
 
   annee_val <- reactive({
-    # Entre l'insertion de l'onglet et son garnissage, le select existe mais
-    # est vide : input$annee_choisie vaut "" et non NULL, et as.integer("")
-    # vaut NA — que serie_annuelle() finit par passer à as.Date(), d'où un
-    # « format standard non ambigu » très loin de sa cause.
+    # Select encore vide : "" et non NULL, donc NA après as.integer().
     a <- suppressWarnings(as.integer(input$annee_choisie))
     if (length(a) != 1 || is.na(a)) year(today()) else a
   })
 
-  # compta_si_dispo() et non DB_COMPTA : un mois écarté dans l'onglet Contrôle
-  # doit sortir du cumul annuel aussi. Sinon l'écartement ne vaudrait que pour
-  # le volet où on le décide, et deux écrans donneraient deux marges.
+  # compta_si_dispo() : les mois écartés sortent aussi du cumul annuel.
   serie_annee <- reactive({
     serie_annuelle(UPD_KPI_SIMPLE(), UPD_OBJECTIFS(),
                    compta_si_dispo(), annee_val())
@@ -2262,8 +1949,7 @@ server <- function(input, output, session) {
                    compta_si_dispo(), annee_val() - 1)
   })
 
-  # Deux messages, dans cet ordre : ce qui reste à vérifier, puis ce qui a
-  # déjà été retiré. Les deux ne s'affichent que pour l'année regardée.
+  # Ce qui reste à vérifier, puis ce qui a été retiré, pour l'année regardée.
   output$annee_compta_alerte <- renderUI({
     if (!exists("DB_COMPTA")) return(NULL)
     a <- annee_val()
@@ -2294,11 +1980,8 @@ server <- function(input, output, session) {
                     serie = serie_annee(), serie_m1 = serie_annee_m1())
   })
   
-  #### Volet "Planning" ####
-  # DB_HEURES_PLANNING est une table OPTIONNELLE (cf. TABLES_OPTIONNELLES dans
-  # R/connect.R) : tant que l'import ne la produit pas, le volet doit le dire
-  # plutôt que planter. Tout part donc de ce reactive, qui vaut NULL en son
-  # absence, et chaque sortie en dessous sait traiter le NULL.
+  # #### Volet "Planning" ####
+  # DB_HEURES_PLANNING est optionnelle : NULL en son absence.
   PLANNING_BRUT <- reactive({
     p <- if (exists("DB_HEURES_PLANNING")) DB_HEURES_PLANNING else NULL
     if (planning_valide(p)) p else NULL
@@ -2307,8 +1990,7 @@ server <- function(input, output, session) {
   PLAN_JOUR <- reactive({
     p <- PLANNING_BRUT()
     if (is.null(p)) return(NULL)
-    # L'horizon coupe la projection, pas l'historique : les médianes et la
-    # productivité de référence ont besoin de tout le passé disponible.
+    # L'horizon coupe la projection, pas l'historique.
     horizon <- date_veille + days(req(input$plan_horizon))
     planning_jour(p %>% filter(as.Date(DATE) <= horizon),
                   UPD_KPI_SIMPLE(), date_veille)
@@ -2319,15 +2001,12 @@ server <- function(input, output, session) {
                        n_semaines = req(input$plan_ref_semaines))
   })
 
-  # Le détail des heures hors service, pour le survol seulement : il ne passe
-  # par aucun calcul, d'où ce reactive séparé plutôt qu'une colonne de plus
-  # dans la projection.
+  # Le détail des heures hors service, pour le survol.
   PLAN_FIXE <- reactive({
     detail_heures_fixes(PLANNING_BRUT())
   })
 
-  # Le CA habituel de chaque jour de semaine, sur les mêmes semaines de
-  # référence que les heures : c'est lui qu'on confronte à l'objectif.
+  # Le CA habituel de chaque jour de semaine.
   PLAN_CA_HABITUEL <- reactive({
     ca_habituel(UPD_KPI_SIMPLE(), date_veille,
                 n_semaines = req(input$plan_ref_semaines))
@@ -2342,8 +2021,7 @@ server <- function(input, output, session) {
     resume_projection(PLAN_PROJECTION())
   })
 
-  # Deux messages distincts : pas de table du tout, ou une table sans passé à
-  # laquelle se comparer. Les confondre enverrait chercher le mauvais problème.
+  # Pas de table du tout, ou une table sans passé : deux messages.
   output$plan_alerte <- renderUI({
     if (is.null(PLANNING_BRUT()))
       return(bandeau_alerte(
@@ -2387,11 +2065,9 @@ server <- function(input, output, session) {
     datatable_simple(table_planning_avenir(PLAN_PROJECTION()))
   })
 
-  #### Volet "Travail" ####
-  # DB_COUTS_TRAVAIL arrive déjà recalé sur la paie (cf. import.R et
-  # R/sources_travail.R) : HEURES et COUT_TRAVAIL sont les valeurs retenues,
-  # Horeko n'ayant servi qu'à les répartir sur les jours et les créneaux. Le
-  # total comptable sert de point de contrôle, jamais de correcteur.
+  # #### Volet "Travail" ####
+  # DB_COUTS_TRAVAIL arrive recalé sur la paie (cf. R/sources_travail.R) ; le
+  # total comptable est un point de contrôle.
 
   trav_unite <- reactive(input$trav_unite %||% "mois")
 
@@ -2411,8 +2087,7 @@ server <- function(input, output, session) {
                          selected = as.character(head(p, 6)))
   })
 
-  # Bornes de la fenêtre : du début de la plus ancienne période retenue à la
-  # fin de la plus récente.
+  # Bornes de la fenêtre.
   trav_bornes <- reactive({
     req(input$trav_periodes)
     p <- intersect(as.Date(input$trav_periodes), trav_dispo())
@@ -2435,7 +2110,7 @@ server <- function(input, output, session) {
     heures_fixes(DB_COUTS_TRAVAIL, b$d1, b$d2)
   })
 
-  # Total mensuel des rémunérations, tel que la comptabilité le publie.
+  # Total mensuel des rémunérations selon la comptabilité.
   trav_compta <- reactive({
     if (!"COUT_COMPTA" %in% names(DB_COUTS_TRAVAIL)) return(NULL)
     DB_COUTS_TRAVAIL %>%
@@ -2447,8 +2122,7 @@ server <- function(input, output, session) {
 
   trav_agrege <- reactive({
     ag <- agrege_travail(trav_base(), trav_fixe(), trav_compta(), trav_unite())
-    # On ne garde que les périodes explicitement retenues : les bornes peuvent
-    # en couvrir d'autres si la sélection a des trous.
+    # Seulement les périodes retenues.
     filter(ag, PERIODE %in% trav_bornes()$periodes)
   })
 
@@ -2458,22 +2132,17 @@ server <- function(input, output, session) {
     graph_productivite_temps(trav_agrege(), trav_unite())
   })
 
-  # Période détaillée : celle qu'on a cliquée, sinon la plus récente retenue.
+  # Période détaillée : celle qu'on a cliquée, sinon la plus récente.
   trav_periode_detail <- reactive({
     ev <- event_data("plotly_click", source = "trav_productivite_graph")
     ag <- trav_agrege()
     req(nrow(ag) > 0)
 
-    # Le graphe a un axe de LIBELLÉS, pas de dates : ev$x vaut « T3 2026 », et
-    # as.Date() lève dessus la même erreur « format standard non ambigu » que
-    # sur un select vide. On lit donc customdata, où chaque point porte sa
-    # période au format ISO (cf. graph_productivite_temps).
+    # L'axe porte des libellés : on lit customdata (cf. graph_productivite_temps).
     d <- if (is.null(ev) || is.null(ev$customdata)) NULL
          else suppressWarnings(as.Date(as.character(ev$customdata)[1]))
 
-    # Un clic survit au changement de granularité : la période cliquée peut ne
-    # plus exister dans la série courante. On retombe alors sur la plus
-    # récente, plutôt que de vider le tableau.
+    # Période cliquée disparue (changement de granularité) : la plus récente.
     if (is.null(d) || length(d) != 1 || is.na(d) || !d %in% ag$PERIODE)
       d <- max(ag$PERIODE)
     fin <- switch(trav_unite(),
@@ -2491,14 +2160,13 @@ server <- function(input, output, session) {
 
   output$trav_heures_decomp <- renderDT({
     p <- trav_periode_detail()
-    # DB_ONSS sert au total de la paie, qui inclut le « Non ventilé » et les
-    # secteurs sans pointage — invisibles dans la somme des lignes.
+    # DB_ONSS sert au total de la paie, « Non ventilé » compris.
     datatable_simple(table_decomposition_travail(
       DB_COUTS_TRAVAIL, p$d1, p$d2, ca_periode = p$ca,
       db_onss = if (exists("DB_ONSS")) DB_ONSS else NULL))
   })
 
-  # --- Créneaux types, sur la même fenêtre
+  # Créneaux types, sur la même fenêtre.
   cren_stats <- reactive({ stats_creneaux(trav_base()) })
 
   output$cren_heatmap <- renderPlotly({
@@ -2526,10 +2194,8 @@ server <- function(input, output, session) {
       pull(BOISSON)
   })
 
-  # Référentiel des vraies bières, calculé une seule fois
-  # REF_BIERES <- ref_bieres(DB_PRODUITS)
 
-  # Semaines proposées (la semaine en cours, partielle, est exclue)
+  # Semaines proposées (la semaine en cours, partielle, est exclue).
   observe({
     req(ONGLETS_PRETS())
     sems <- semaines_dispo(DB_JOURS)
@@ -2593,7 +2259,7 @@ server <- function(input, output, session) {
 
   #### Volet "Pizzwanze" ####
 
-  # Dates des soirées, calculées une seule fois
+  # Dates des soirées, calculées une fois.
   SOIREES_PIZZWANZE <- soirees_pizzwanze(DB_PRODUITS)
 
   observe({
@@ -2632,7 +2298,6 @@ server <- function(input, output, session) {
   })
 
   output$pizz_carte <- renderPlotly({
-    # n <- suppressWarnings(as.integer(input$pizz_profondeur))
     graph_carte_pizzwanze(DB_PRODUITS, SOIREES_PIZZWANZE, n_soirees = 12, unite_tva = input$unite_tva)
   })
 
@@ -2695,23 +2360,18 @@ server <- function(input, output, session) {
     datatable_simple(table_focaccias(foca_data(), input$unite_tva))
   })
 
-  #### Volet "Focaccias" — carte Production ####
-  # Le préremplissage vient des dernières semaines COMPLÈTES des données, et
-  # non de la semaine sélectionnée dans la barre latérale : on prépare la
-  # production à venir, pas celle d'une semaine consultée dans l'historique.
+  # #### Volet "Focaccias" — carte Production ####
+  # Préremplie sur les dernières semaines complètes, pas sur la semaine
+  # consultée.
 
   prod_base <- reactive({
-    # Le curseur de marge vit dans l'onglet Focaccias, qui n'est inséré qu'après
-    # la connexion : avant, input$prod_multi est NULL, `1 + NULL/100` vaut
-    # numeric(0), et le case_when() de production_focaccias_base() refuse de
-    # recycler une condition de 5 lignes contre une valeur de longueur 0.
-    # L'observateur de préremplissage, lui, tourne dès le premier flush.
+    # req() : input$prod_multi vaut NULL tant que l'onglet n'est pas inséré.
     req(input$prod_multi)
     production_focaccias_base(DB_PRODUITS, n_semaines = 3,
                               marge = 1 + input$prod_multi / 100)
   })
 
-  # (Ré)applique les valeurs par défaut. La ligne libre reste vide.
+  # (Ré)applique les valeurs par défaut ; la ligne libre reste vide.
   appliquer_prefill <- function() {
     b <- prod_base()
     for (i in b$ID) {
@@ -2745,8 +2405,7 @@ server <- function(input, output, session) {
                 " dernières semaines (+",input$prod_multi,"%) : ",info_sup)
   })
 
-  # Une paire de sorties calculées par ligne : quantité nécessaire, puis
-  # quantité à produire une fois le stock déduit.
+  # Par ligne : quantité nécessaire, puis à produire une fois le stock déduit.
   for (i in INGREDIENTS_FOCACCIA$ID) {
     local({
       idx <- i
@@ -2767,21 +2426,14 @@ server <- function(input, output, session) {
         stk <- input[[paste0("prod_stk_", idx)]]
         stk <- if (is.null(stk) || is.na(stk)) 0 else stk
         reste <- nec - stk
-        # Un stock supérieur au besoin n'est pas une production négative :
-        # on l'annonce comme un surplus.
+        # Stock supérieur au besoin : un surplus.
         if (reste <= 0) paste0("0 g (surplus ", format_qte_g(-reste), ")")
         else format_qte_g(reste)
       })
     })
   }
   
-  # La navigation des cartes d'accueil est branchée plus haut, à partir de
-  # CARTES_ACCUEIL : le second jeu d'observateurs qui vivait ici faisait
-  # double emploi.
-
-  # EN DERNIER, parce que toutes les sorties doivent exister : sans ceci, les
-  # bandeaux d'alerte ne s'affichent JAMAIS. Masqués tant qu'ils sont vides,
-  # Shiny les suspend ; suspendus, ils ne se calculent pas ; jamais calculés,
-  # ils restent vides. Cf. reveille_zones_alerte() dans R/helpers.R.
+  # EN DERNIER, quand toutes les sorties existent (cf. reveille_zones_alerte()
+  # dans R/helpers.R).
   reveille_zones_alerte(output)
 }

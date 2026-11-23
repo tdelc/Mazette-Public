@@ -1,4 +1,7 @@
-# Tableau de prédiction de bières
+# Volet « Boissons », partie fûts : niveaux, prédiction de fin et rapport
+# d'un brassin.
+#
+# Tableau de prédiction des bières en cours.
 table_evo_brassins <- function(db_bieres,
                                max_date=today(),
                                length_predict = 200,
@@ -23,7 +26,7 @@ table_evo_brassins <- function(db_bieres,
     mutate(DT_PREDICT = max_date)
 }
 
-# Évolution des brassins
+# Rapport d'un brassin : sa vie, ses ventes, ses formats.
 
 report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
   
@@ -37,7 +40,6 @@ report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
   
   name_logo <- paste0(info_brassin$`NAME LOGO`,".png")
   path_logo <- NA
-  # if (length(name_logo) != 0 & !is.na(name_logo)){
   try({
     path_logo <- paste0("logos/",name_logo)
     id_png <- df_logos %>% filter(name == name_logo) %>% pull(id)
@@ -46,7 +48,6 @@ report_brassin <- function(DB_BRASSINS,DB_BIERES,DB_PRODUITS,id_brassin){
     img_magick <- image_read(path_logo) %>% image_scale("200")
     img_grob <- rasterGrob(as.raster(img_magick),interpolate = TRUE)
   },silent = TRUE)
-  # }
   
   # Repérer les autres bières en ventes à ce moment
   context_beers <- DB_BRASSINS %>%
@@ -202,9 +203,7 @@ etiquette_fin_fut <- function(fin_est, aujourdhui = today()) {
     return(list(texte = "fin non prévisible", couleur = "#8d7b68"))
   
   jours <- as.numeric(as.Date(fin_est) - aujourdhui)
-  # Une échéance déjà passée alors que le fût est toujours ouvert signale un
-  # retard de saisie ou une consommation plus lente que prévu : on le dit,
-  # plutôt que d'annoncer « aujourd'hui ».
+  # Échéance dépassée alors que le fût est ouvert : on le dit.
   quand <- if (jours < 0) "échéance dépassée"
   else if (jours == 0) "aujourd'hui"
   else if (jours == 1) "demain"
@@ -218,14 +217,8 @@ etiquette_fin_fut <- function(fin_est, aujourdhui = today()) {
 }
 
 # Cartes de niveau des fûts : une par bière en cours, avec sa jauge, son
-# volume restant et — si la table de prédiction est fournie — sa date de fin
-# prévue. On voit ainsi d'un coup d'œil la bière, son niveau et son échéance.
-#
-# La jauge est dessinée en CSS (dégradé conique) plutôt qu'en plotly : la
-# grille plotly impose un nombre de colonnes fixe au moment du rendu, si bien
-# que sur un téléphone les jauges se retrouvaient réduites à quelques dizaines
-# de pixels. Ici, c'est la grille CSS qui décide du nombre de colonnes selon
-# la largeur réellement disponible.
+# volume restant et sa date de fin prévue. La jauge est en CSS (dégradé
+# conique) pour suivre la largeur de l'écran.
 cartes_niveaux_bieres <- function(niveaux, db_predict = NULL) {
   if (is.null(niveaux) || nrow(niveaux) == 0)
     return(div(class = "text-muted small", "Aucune bière en cours."))
@@ -242,7 +235,6 @@ cartes_niveaux_bieres <- function(niveaux, db_predict = NULL) {
     
     div(
       class = "fut-carte",
-      # Les deux variables CSS pilotent le dégradé conique de la jauge
       div(
         class = "fut-jauge",
         style = paste0("--pct:", pct, ";--coul:", couleur, ";"),
@@ -265,13 +257,12 @@ cartes_niveaux_bieres <- function(niveaux, db_predict = NULL) {
   div(class = "fut-grid", lapply(seq_len(nrow(niveaux)), carte))
 }
 
-# Évolution + prédiction du volume restant (version plotly de graph_evo_brassin)
+# Volume restant et sa prédiction.
 graph_evo_brassin_plotly <- function(db, max_affichage = today() %m+% months(1)) {
   if (is.null(db) || nrow(db) == 0)
     return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
   
-  # On n'affiche la prédiction que jusqu'à un mois après aujourd'hui (au-delà,
-  # l'extrapolation HoltWinters n'apporte rien et écrase l'échelle).
+  # Prédiction affichée jusqu'à un mois : au-delà, elle écrase l'échelle.
   db <- db %>% filter(DATE <= max_affichage)
   if (nrow(db) == 0)
     return(plotly_empty() %>% layout(title = "Aucune bière en cours"))
@@ -357,7 +348,7 @@ predict_fin_brassin <- function(DB_PREDICT,id_brassin){
   }
 }
 
-# Ajout des prédictions
+# Prédiction HoltWinters du volume restant d'un brassin.
 table_evo_brassin <- function(db_bieres,id_brassin,length_predict = 200,
                               max_date=today()){
   

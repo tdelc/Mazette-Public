@@ -163,7 +163,7 @@ ok("aucune ligne rend NULL, comme la lecture d'un fichier absent",
    is.null(range_lignes(list())))
 
 # ---------- LE point : la meme forme que le fichier ----------
-# Si cette assertion tombe, tout l'argument de docs/odoo.md tombe avec elle :
+# Si cette assertion tombe, l'API et l'export ne passent plus par la même chaîne :
 # « seule lit_ecritures_fichier() est remplacee ».
 source("R/plan_comptable.R", encoding = "UTF-8", local = TRUE)
 source("R/sources_travail.R", encoding = "UTF-8", local = TRUE)  # nombre_europeen

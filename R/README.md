@@ -1,59 +1,28 @@
 # `R/` — toute la logique
 
-`global.R` source **tout** ce répertoire, par ordre alphabétique. Deux
-conséquences à connaître :
+`global.R` source **tout** ce répertoire, par ordre alphabétique, puis définit
+ses propres constantes (couleurs, jours, mois). Deux conséquences :
 
-- une fonction peut en appeler une autre définie plus loin — l'ordre ne compte
-  que pour le code exécuté **au chargement** ;
-- mais une **constante** de premier niveau, elle, est évaluée tout de suite.
-  C'est pourquoi aucune table ici ne peut référencer les couleurs `COUL_*` :
-  elles sont définies dans `global.R`, *après* ce répertoire. Une table de
-  couleurs se construit donc dans une fonction (`etats_topo()`), jamais au
-  chargement.
+- une fonction peut en appeler une autre définie plus loin ;
+- une **constante** de premier niveau est évaluée tout de suite : elle ne peut
+  donc pas utiliser les couleurs `COUL_*` de `global.R`. Une table de couleurs
+  se construit dans une fonction (`etats_topo()`).
 
-Chaque fichier s'ouvre sur un commentaire qui dit son rôle et, souvent, le
-piège qu'il a coûté. C'est là qu'il faut lire avant de modifier.
+Chaque fichier s'ouvre sur un commentaire qui dit son rôle.
 
-## Le socle
-
-| Fichier | Rôle |
+| Fichiers | Rôle |
 |---|---|
-| `acces.R` | le catalogue des onglets (`ONGLETS`), les profils, les droits. **Les fonctions `ui_*()` y sont désignées par leur NOM, sous forme de chaîne** : aucune analyse statique ne voit qu'elles servent |
-| `connect.R` | ce qui survit entre deux sessions : `TABLES_DASHBOARD` et `TABLES_OPTIONNELLES` |
-| `donnees.R` | stockage normalisé des tickets et reconstruction au chargement |
-| `helpers.R` | périodes, ratios, bandeaux d'alerte — et `ZONES_ALERTE`, qui évite un piège Shiny coûteux |
-| `theme.R` | formats d'affichage (`format_CA`, `euro_compta`), pastilles, et les jumelles de tri des tableaux |
-| `kpi.R` | les tuiles de synthèse |
-| `date.R` | le calendrier de référence, et `parse_date_souple()` — LE parseur de dates du projet : tout ce qui entre par un classeur passe par lui |
-| `box.R`, `produits.R` | utilitaires transverses |
+| `acces.R` | onglets (`ONGLETS`), profils (`PROFILS`), droits. Les fonctions `ui_*()` y sont désignées par leur **nom**, en chaîne |
+| `connect.R` | quel cache charger, et les tables enregistrées (`TABLES_DASHBOARD`, `TABLES_OPTIONNELLES`) |
+| `fraicheur.R`, `import_distant.R` | la date des données ; le déclenchement de l'import sur GitHub |
+| `donnees.R` | stockage réduit des tickets, nomenclature et TVA des produits |
+| `date.R` | calendrier de référence et `parse_date_souple()`, LE parseur de dates |
+| `helpers.R`, `theme.R`, `kpi.R`, `box.R`, `objectifs.R` | formats, tri des tableaux, tuiles, couleurs d'objectif, zones d'alerte |
+| `maintenant.R`, `details.R`, `historique.R`, `annee.R`, `comparaison.R`, `simulation.R`, `reservations.R` | les volets du même nom (`details.R` = Ventes) |
+| `boissons.R`, `brassins.R`, `consommation.R`, `produits.R`, `focaccia.R`, `pizzwanze.R` | boissons, fûts, nourriture |
+| `travail.R`, `sources_travail.R`, `planning.R` | heures, coût du travail et ses trois sources, planning |
+| `plan_comptable.R`, `exploitation.R`, `analyse.R`, `ecritures.R`, `projection.R`, `validation.R`, `couts.R` | le volet Compta |
+| `odoo.R`, `odoo_api.R` | des écritures Odoo à `DB_COMPTA` |
 
-## La comptabilité
-
-| Fichier | Rôle |
-|---|---|
-| `plan_comptable.R` | classement des comptes par leur **numéro** (`PLAN_PCMN`), compte de résultat |
-| `exploitation.R` | du CA à la marge ; le contrôle de vraisemblance et le topo des mois |
-| `analyse.R` | le pont de marge, les contributions par compte, les alertes d'intégrité |
-| `ecritures.R` | le grand livre, ses filtres, et le forage depuis une alerte |
-| `odoo.R` | des écritures Odoo brutes à `DB_COMPTA`, et la couture avec l'ancienne source |
-| `odoo_api.R` | la même lecture, par l'API plutôt que par un fichier |
-| `projection.R` | compléter un mois incomplet : les quatre estimateurs, et le contrôle du modèle |
-| `couts.R` | coûts matière : table canonique et normalisation des sources |
-| `sources_travail.R` | les trois sources d'heures et de coût du travail, et leur réconciliation |
-
-## Les volets
-
-`accueil.R`, `maintenant.R`, `details.R`, `historique.R`, `annee.R`,
-`boissons.R`, `consommation.R`, `focaccia.R`, `pizzwanze.R`, `brassins.R`,
-`simulation.R`, `travail.R`, `planning.R`, `reservations.R`, `comparaison.R`,
-`objectifs.R`.
-
-Un fichier par volet, nommé comme son onglet. Il contient les calculs et les
-graphiques de ce volet, et rien d'autre : ce qui sert à deux volets remonte
-dans le socle.
-
-## Un fichier par volet, et rien de plus
-
-Ce qui sert à deux volets remonte dans le socle. Ce qui ne sert plus à aucun
-s'en va : `compta.R` et `sql.R` sont partis ainsi, l'un remplacé par les six
-onglets de Compta, l'autre resté sans usage.
+Ce qui sert à deux volets vit dans le socle ; ce qui ne sert plus s'en va.
+Voir [`docs/developpement.md`](../docs/developpement.md).

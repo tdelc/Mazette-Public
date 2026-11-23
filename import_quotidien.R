@@ -1,39 +1,16 @@
-#!/usr/bin/env Rscript
-# L'import de la nuit, sans dashboard autour.
+# L'import quotidien, sans dashboard autour, lancé par GitHub Actions
+# (.github/workflows/import.yml) : il refait l'import et dépose le cache sur
+# Drive, où le dashboard le reprend.
 #
-# ---------------------------------------------------------------------------
-# À quoi ça sert
-# ---------------------------------------------------------------------------
-# Jusqu'ici, l'import tournait quand quelqu'un ouvrait le dashboard sans
-# trouver de cache à la bonne date : la première personne connectée du matin
-# attendait plusieurs minutes, les suivantes non. Ce script fait le même
-# travail, mais la nuit et ailleurs — sur un exécutant GitHub Actions
-# (cf. .github/workflows/import.yml) — de sorte que le dashboard n'ait plus
-# qu'à reprendre le fichier déposé sur Drive.
+# Toute la logique est dans refait_import() (R/connect.R), comme pour le
+# bouton « Refaire l'import » du dashboard.
 #
-# ---------------------------------------------------------------------------
-# Ce qu'il ne fait pas
-# ---------------------------------------------------------------------------
-# Il ne contient AUCUNE logique d'import, et aucun code de sauvegarde. Tout
-# est dans refait_import() (R/connect.R), qui est aussi ce que lance le bouton
-# « refaire l'import » du dashboard. Un seul chemin, donc un seul format de
-# fichier, un seul contrat de tables, et un seul endroit à corriger. Un script
-# de nuit qui recopierait le save() finirait par produire un fichier que le
-# dashboard ne sait plus lire, et personne ne saurait lequel des deux a tort.
-#
-# ---------------------------------------------------------------------------
-# Les journaux d'Actions d'un dépôt public sont PUBLICS
-# ---------------------------------------------------------------------------
-# D'où le détour par sink() : la trace complète de l'import reste dans
-# outputs/import.log, sur l'exécutant, qui est détruit à la fin. Ce qui monte
-# dans le résumé est choisi ligne par ligne ci-dessous — des noms de tables,
-# des nombres de lignes, des dates, et le SUJET des contrôles sans leur
-# détail, parce qu'un détail de contrôle comptable porte des montants.
-#
-# En cas d'échec, les dernières lignes du journal sont imprimées : ce sont des
-# titres d'étape et des décomptes (tous les appels de trace d'import.R sont des
-# cli_h*/cli_alert_* ; aucun n'imprime une table ni un montant), et sans elles
-# un échec n'est qu'un carré rouge.
+# Les journaux d'Actions de ce dépôt sont PUBLICS : la trace complète de
+# l'import est détournée vers outputs/import.log (détruit avec l'exécutant),
+# et le résumé ne publie que des noms de tables, des nombres de lignes, des
+# dates et le SUJET des contrôles — jamais un montant. En cas d'échec, les
+# dernières lignes du journal sont publiées : ce ne sont que des titres
+# d'étape et des décomptes.
 
 t0 <- Sys.time()
 options(warn = 1)
@@ -90,11 +67,8 @@ if (inherits(res, "error")) {
         " (", nrow(jours), " jours)")
   }
 
-  # D'où viennent les écritures, et jusqu'où elles vont. Le 14 novembre, la
-  # question « les écritures se sont-elles importées ? » n'avait pas de
-  # réponse dans ce journal : le nombre de lignes de DB_ECRITURES bougeait,
-  # sans dire ni par quel chemin (API ou export collé sur Drive) ni jusqu'à
-  # quelle date. Des dates et des décomptes, jamais un montant.
+  # D'où viennent les écritures et jusqu'où elles vont : des dates et des
+  # décomptes, jamais un montant.
   ecr <- tryCatch(get("DB_ECRITURES", envir = globalenv()), error = function(e) NULL)
   ids <- tryCatch(get("IDS_ODOO", envir = globalenv()), error = function(e) NULL)
   if (is.data.frame(ecr) && nrow(ecr) && "DATE" %in% names(ecr)) {
@@ -124,9 +98,7 @@ if (inherits(res, "error")) {
           ctrl$CONTROLE[i])
   }
 
-  # Un import qui réussit mais ne rapporte rien de neuf est le scénario du
-  # 21 octobre : la table n'avait pas bougé depuis des jours et personne ne
-  # l'a vu. On le dit ici, là où ça se lit.
+  # Un import qui réussit sur une source qui n'a pas bougé : on le dit.
   if (is.data.frame(jours) && nrow(jours)) {
     retard <- as.integer(Sys.Date() - max(jours$DATE)) - 1L
     if (retard > 0) {

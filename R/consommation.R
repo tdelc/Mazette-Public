@@ -1,21 +1,11 @@
-# Volet « Consommation » : ce qui se boit et ce qui se mange.
+# Outils communs aux volets Boissons et Nourriture : suivi à la semaine,
+# toujours comparé à la semaine précédente (S-1).
 #
-# Bières et focaccias partagent le même écran parce qu'ils posent la même
-# question — quel produit part, à quel rythme — et que les séparer obligerait
-# à comparer deux onglets de tête.
-# Deux volets de suivi de la consommation, à la maille SEMAINE, toujours
-# comparés à la semaine précédente (S-1).
-#
-# Sources :
-#   DB_TICKET   : une ligne par produit vendu, avec TIMESTAMP (donc l'heure),
-#                 BOISSON et VOLUME_TOT_L -> analyse horaire et en litres.
-#                 Attention : DATE est le JOUR DE SERVICE (une vente à 1h du
-#                 matin est rattachée à la soirée de la veille).
-#   DB_PRODUITS : une ligne par (jour, produit) avec PRODUIT_FULL complet,
-#                 options comprises -> seule source qui porte les suppléments
-#                 des focaccias. Peut contenir plusieurs lignes par jour et
-#                 produit : toujours agréger.
-
+#   DB_TICKET   une ligne par produit vendu, avec l'heure et les litres. DATE
+#               est le jour de service : une vente à 1h est rattachée à la
+#               soirée de la veille.
+#   DB_PRODUITS une ligne par (jour, produit), options comprises : la seule
+#               source des suppléments de focaccia. Toujours agréger.
 
 
 heure_service <- function(ts) {

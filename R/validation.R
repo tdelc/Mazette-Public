@@ -1,60 +1,30 @@
-# Trancher un mois douteux, et que ça se sache.
+# Trancher un mois douteux (cf. docs/maintenance.md).
 #
-# ---------------------------------------------------------------------------
-# Le problème
-# ---------------------------------------------------------------------------
-# Le topo des mois (R/exploitation.R) juge les chiffres, et il ne sait juger
-# qu'eux : un mois dont la rémunération a chuté de 60 % est « à risque », et il
-# le restera à chaque ouverture du dashboard. Même après qu'on a ouvert Odoo,
-# regardé, compris que c'était un décalage de paie, et conclu que les chiffres
-# sont bons.
+# Le topo des mois (R/exploitation.R) juge les chiffres : un mois « à risque »
+# le resterait à chaque ouverture, même vérifié. Une DÉCISION humaine recouvre
+# donc le verdict calculé :
 #
-# Le verdict ne retient donc rien du travail de vérification. L'alerte reste
-# rouge pour toujours, et une alerte qui ne s'éteint jamais finit par ne plus
-# rien vouloir dire — c'est la pire chose qui puisse arriver à un contrôle.
+#   valide   chiffres vérifiés et bons  -> pastille verte, plus proposé à
+#                                          l'écartement
+#   rejete   chiffres vérifiés et faux  -> pastille rouge, toujours proposé
+#   revoque  annule la décision         -> retour à l'état calculé
 #
-# ---------------------------------------------------------------------------
-# Ce que ce fichier ajoute
-# ---------------------------------------------------------------------------
-# Une DÉCISION humaine, qui recouvre le verdict calculé :
+# Chaque décision (commentaire, auteur, date) s'ajoute en une ligne à un
+# Google Sheet ; rien n'y est modifié ni supprimé, la dernière ligne d'un mois
+# fait foi.
 #
-#   valide   j'ai vérifié, les chiffres sont bons  -> pastille verte, le mois
-#                                                     n'est plus proposé à
-#                                                     l'écartement
-#   rejete   j'ai vérifié, les chiffres sont faux  -> pastille rouge, le mois
-#                                                     est TOUJOURS proposé à
-#                                                     l'écartement, même vieux
-#   revoque  j'annule ma décision                  -> le mois revient à son
-#                                                     état calculé
-#
-# Chaque décision porte un commentaire, un auteur et une date, et part en une
-# LIGNE DE PLUS dans un Google Sheet. Rien n'est jamais modifié ni supprimé :
-# pour changer d'avis, on ajoute une ligne. Le classeur est donc un journal, et
-# la décision qui compte pour un mois est simplement la dernière le concernant.
-#
-# ---------------------------------------------------------------------------
-# Une décision porte sur des CHIFFRES, pas sur un mois
-# ---------------------------------------------------------------------------
-# « Octobre est bon » ne veut rien dire en soi : ce qui a été vérifié, c'est un
-# CA et un nombre de comptes, à une date. Si l'export Odoo du lendemain apporte
-# quinze écritures de plus, le mois validé n'est plus celui qu'on a regardé.
-#
-# La décision enregistre donc les deux chiffres qu'elle a vus, et cesse de
-# s'appliquer s'ils ont bougé. Le mois retrouve alors son état calculé, et le
-# tableau dit pourquoi. C'est la seule façon qu'une validation ne devienne pas,
-# avec le temps, un tapis sous lequel balayer.
+# Une décision enregistre le CA et le nombre de comptes qu'elle a vus, et cesse
+# de s'appliquer s'ils ont bougé.
 
 #### Le journal des décisions ####
 
-# Les colonnes du classeur, dans cet ordre. Il est vide au départ : la première
-# écriture pose l'en-tête (cf. ecrit_validation).
+# Les colonnes du classeur ; la première écriture pose l'en-tête.
 COLONNES_VALIDATION <- c("MOIS", "DECISION", "COMMENTAIRE", "QUI", "QUAND",
                          "CA", "N_COMPTES")
 
 DECISIONS_VALIDATION <- c("valide", "rejete", "revoque")
 
-# De combien le CA peut bouger sans que la décision tombe. Un euro : on cherche
-# des écritures ajoutées, pas du bruit d'arrondi.
+# De combien le CA peut bouger sans que la décision tombe.
 TOLERANCE_CA_VALIDATION <- 1
 
 validations_vides <- function()
@@ -62,12 +32,8 @@ validations_vides <- function()
                  COMMENTAIRE = character(), QUI = character(),
                  QUAND = character(), CA = numeric(), N_COMPTES = integer())
 
-#' Met un classeur lu en forme, quoi qu'il contienne.
-#'
-#' Tolérant par construction : le classeur est modifiable à la main, et une
-#' ligne abîmée ne doit pas emporter les autres. Une ligne sans mois lisible ou
-#' sans décision connue est écartée — et lit_validations() le dit à l'import,
-#' plutôt que de la perdre en silence.
+#' Met un classeur lu en forme. Une ligne sans mois lisible ou sans décision
+#' connue est écartée (et comptée par lignes_validation_perdues()).
 normalise_validations <- function(df) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(validations_vides())
   manque <- setdiff(COLONNES_VALIDATION, names(df))
@@ -93,11 +59,8 @@ lignes_validation_perdues <- function(df) {
 }
 
 #' La décision qui compte pour chaque mois : la dernière, hors révocations.
-#'
-#' Le classeur est un journal, donc l'ordre fait foi. QUAND est écrit au
-#' format ISO (« 2026-11-08 10:12:33 ») précisément pour que l'ordre
-#' alphabétique soit l'ordre chronologique — et, à QUAND égal, c'est la ligne
-#' la plus basse du classeur qui gagne.
+#' QUAND est au format ISO, donc l'ordre alphabétique est chronologique ; à
+#' QUAND égal, la ligne la plus basse gagne.
 derniere_decision <- function(validations) {
   v <- normalise_validations(validations)
   if (!nrow(v)) return(v)
@@ -110,15 +73,12 @@ derniere_decision <- function(validations) {
 
 #### Appliquer les décisions au topo ####
 
-#' Recouvre l'état calculé de chaque mois par la décision humaine, s'il y en a.
+#' Recouvre l'état calculé de chaque mois par la décision humaine.
 #'
 #' @param topo sortie de topo_mois(), AVANT décisions.
 #' @param validations le journal, tel que lu.
-#' @return le même topo, avec trois colonnes de plus (DECISION, DECIDE_PAR,
-#'   DECIDE_LE) et, pour les mois tranchés, ETAT / A_ECARTER / POURQUOI revus.
-#'
-#' Les colonnes sont ajoutées même sans aucune décision : un volet en aval ne
-#' doit pas avoir à tester leur existence avant de les lire.
+#' @return le même topo, avec DECISION, DECIDE_PAR et DECIDE_LE (toujours
+#'   présentes) et, pour les mois tranchés, ETAT / A_ECARTER / POURQUOI revus.
 applique_validations <- function(topo, validations = NULL,
                                  tolerance_ca = TOLERANCE_CA_VALIDATION) {
   if (is.null(topo) || !nrow(topo)) {
@@ -143,9 +103,7 @@ applique_validations <- function(topo, validations = NULL,
     le    <- suppressWarnings(as.Date(quand))
 
     if (chiffres_ont_bouge(topo[i, ], d[k, ], tolerance_ca)) {
-      # La décision ne porte plus. On ne la cache pas pour autant : la dire
-      # périmée vaut mieux que de la faire disparaître, sinon on croit n'avoir
-      # jamais vérifié ce mois.
+      # Une décision périmée est dite, pas cachée.
       topo$POURQUOI[i] <- ajoute_motif(
         topo$POURQUOI[i],
         paste0("la décision du ", if (is.na(le)) "?" else date_fr(le),
@@ -166,12 +124,8 @@ applique_validations <- function(topo, validations = NULL,
   topo
 }
 
-# Les chiffres regardés au moment de la décision sont-ils encore ceux-là ?
-#
-# Un chiffre absent de la décision (classeur rempli à la main, colonne vide)
-# ne fait pas tomber la validation : on ne peut pas comparer, on ne conclut
-# donc rien. C'est le sens le moins désagréable des deux — l'autre révoquerait
-# en silence des décisions parfaitement valables.
+# Les chiffres de la décision sont-ils encore ceux du mois ? Un chiffre
+# absent de la décision ne la fait pas tomber.
 chiffres_ont_bouge <- function(ligne_topo, decision, tolerance_ca) {
   ca <- !is.na(decision$CA) && !is.na(ligne_topo$CA) &&
         abs(ligne_topo$CA - decision$CA) > tolerance_ca
@@ -194,11 +148,8 @@ motif_decision <- function(decision, le) {
   paste0(verbe, qui, quand, com)
 }
 
-#' Les mois dont les chiffres ont été vérifiés et jugés bons.
-#'
-#' Ce sont les seuls à sortir des alertes d'intégrité : un mois REJETÉ, lui,
-#' porte bien des chiffres improbables — c'est confirmé, pas résolu — et doit
-#' continuer de se voir tant que la source n'est pas corrigée.
+#' Les mois vérifiés et jugés bons : les seuls à sortir des alertes
+#' d'intégrité. Un mois rejeté y reste tant que la source n'est pas corrigée.
 mois_valides <- function(topo) {
   if (is.null(topo) || !nrow(topo) || !"ETAT" %in% names(topo))
     return(as.Date(character()))
@@ -214,10 +165,8 @@ improb_hors_valides <- function(improb, topo) {
 
 #### La ligne qu'on ajoute au classeur ####
 
-#' Fabrique la ligne de journal correspondant à une décision.
-#'
-#' Les chiffres sont pris dans le topo, et non saisis : ce sont EXACTEMENT
-#' ceux que la personne avait sous les yeux en décidant.
+#' La ligne de journal d'une décision, avec les chiffres pris dans le topo :
+#' ceux que la personne avait sous les yeux.
 ligne_validation <- function(mois, decision, commentaire, qui, topo,
                              quand = Sys.time()) {
   mois <- lubridate::floor_date(as.Date(mois), "month")
@@ -236,14 +185,11 @@ ligne_validation <- function(mois, decision, commentaire, qui, topo,
 
 chemin_validation <- function() Sys.getenv("PATH_VALIDATION_COMPTA")
 
-# googlesheets4 n'est pas attaché (cf. global.R) : il partage le jeton du
-# compte de service déjà obtenu par googledrive, comme le fait l'historique du
-# planning dans import.R.
+# googlesheets4 n'est pas attaché (cf. global.R) : il reprend le jeton du
+# compte de service de googledrive.
 auth_sheets <- function() {
-  # Le garde-fou est ICI, et pas dans les fonctions qui s'en servent : elles
-  # acceptent toutes une doublure d'accès, et une doublure n'a besoin
-  # d'aucun paquet. Un test qui échouerait faute de googlesheets4
-  # n'éprouverait plus rien de ce qu'il croit éprouver.
+  # Le test du paquet est ici : les fonctions appelantes acceptent une
+  # doublure qui n'en a pas besoin.
   if (!requireNamespace("googlesheets4", quietly = TRUE))
     stop("googlesheets4 n'est pas installé : classeur de validation hors d'atteinte.")
   auth_drive()
@@ -251,8 +197,7 @@ auth_sheets <- function() {
   invisible(TRUE)
 }
 
-# Les deux accès au classeur, isolés pour que tout le reste se teste sans
-# réseau. La suite de tests passe une doublure à leur place.
+# Les deux accès au classeur, remplaçables pour les tests.
 io_validation <- function() list(
   lire = function(ss) {
     auth_sheets()
@@ -269,9 +214,7 @@ io_validation <- function() list(
     googlesheets4::sheet_append(googlesheets4::as_sheets_id(ss), df, sheet = 1)
   })
 
-# Ce qui part dans le classeur : des dates et des nombres, pas des objets R.
-# Une Date écrite telle quelle revient en nombre de jours depuis 1970 dans une
-# cellule, et plus personne ne sait la lire à l'œil.
+# Des dates en texte : une Date brute deviendrait un nombre de jours.
 pour_le_classeur <- function(df) {
   df <- normalise_validations(df)
   df$MOIS <- format(df$MOIS, "%Y-%m-%d")
@@ -279,10 +222,6 @@ pour_le_classeur <- function(df) {
 }
 
 #' Lit le journal. Rend un tableau vide, jamais une erreur.
-#'
-#' Au premier passage le classeur est vide : il n'y a rien à lire, et c'est
-#' normal. L'import ne doit pas tomber pour ça, et le dashboard doit s'ouvrir
-#' sans journal comme il s'ouvrait avant qu'il existe.
 lit_validations <- function(ss = chemin_validation(), io = io_validation()) {
   if (!nzchar(ss)) {
     cli::cli_alert_warning(
@@ -304,12 +243,8 @@ lit_validations <- function(ss = chemin_validation(), io = io_validation()) {
   v
 }
 
-#' Ajoute une ligne au journal. Lève si l'écriture échoue — à dessein.
-#'
-#' L'appelant ne doit mettre la décision à l'écran qu'une fois le classeur
-#' écrit. Une pastille verte sur une décision qui n'a pas été enregistrée est
-#' le pire des deux mondes : elle disparaît au prochain import, et on ne sait
-#' pas pourquoi.
+#' Ajoute une ligne au journal. Lève si l'écriture échoue : la décision ne
+#' doit s'afficher qu'une fois enregistrée.
 ecrit_validation <- function(ligne, ss = chemin_validation(),
                              io = io_validation()) {
   if (!nzchar(ss))
@@ -322,9 +257,8 @@ ecrit_validation <- function(ligne, ss = chemin_validation(),
   if (entete_pose) {
     io$ajouter(ss, pour_le_classeur(ligne))
   } else {
-    # Classeur encore vide, ou en-tête absent : la première écriture pose les
-    # colonnes. On réécrit ce qui était lisible AVEC la nouvelle ligne, pour
-    # ne rien perdre d'un classeur qu'on aurait commencé à la main.
+    # Classeur vide ou sans en-tête : on réécrit ce qui était lisible avec la
+    # nouvelle ligne.
     ancien <- if (inherits(existant, "try-error")) NULL else existant
     io$ecrire(ss, pour_le_classeur(dplyr::bind_rows(
       normalise_validations(ancien), normalise_validations(ligne))))
@@ -341,13 +275,8 @@ validations_chargees <- function(envir = globalenv()) {
 
 #### Le dialogue ####
 
-#' Les mois qu'on peut trancher, du plus récent au plus ancien.
-#'
-#' Tout sauf les mois plausibles — et sauf le mois EN COURS, qui est partiel
-#' par construction : le valider n'aurait aucun sens aujourd'hui, et la
-#' décision tomberait demain de toute façon, puisque ses chiffres auront bougé.
-#' Les mois déjà tranchés restent dans la liste : on doit pouvoir changer
-#' d'avis.
+#' Les mois qu'on peut trancher : tous sauf les plausibles et le mois en
+#' cours. Les mois déjà tranchés restent, pour pouvoir changer d'avis.
 mois_a_trancher <- function(topo) {
   if (is.null(topo) || !nrow(topo)) return(character(0))
   gardes <- !topo$ETAT %in% c("ok", "en_cours")
@@ -360,8 +289,7 @@ mois_a_trancher <- function(topo) {
   stats::setNames(as.character(t$PERIODE), libelles)
 }
 
-#' Ce qui est déjà décidé pour ce mois, à rappeler avant d'en décider autre
-#' chose. NULL s'il n'y a rien.
+#' Ce qui est déjà décidé pour ce mois, ou NULL.
 apercu_decision <- function(validations, mois) {
   if (is.null(mois) || !length(mois) || !nzchar(as.character(mois))) return(NULL)
   d <- derniere_decision(validations)
@@ -391,9 +319,7 @@ dialogue_validation <- function(topo, validations = NULL) {
     selectInput("valid_mois", "Mois à trancher", choices = choix,
                 selectize = FALSE),
     uiOutput("valid_actuel"),
-    # Libellés courts : la conséquence de chaque choix tient sous le groupe,
-    # plutôt que dans une étiquette de radio qui se coupe en deux lignes mal
-    # alignées dès qu'elle dépasse la largeur du dialogue.
+    # Libellés courts ; la conséquence de chaque choix est écrite dessous.
     radioButtons(
       "valid_decision", "Après vérification",
       choiceNames  = list("Les chiffres sont bons",

@@ -1,49 +1,18 @@
-# L'import des données, chaque matin, avant que quiconque ouvre le dashboard.
+# L'import des données, chaque matin (cf. docs/maintenance.md).
 #
-# -----------------------------------------------------------------------------
-# Pourquoi ici et pas ailleurs
-# -----------------------------------------------------------------------------
-# L'import lit une dizaine de classeurs Drive et interroge Odoo : quelques
-# minutes. Tant qu'il tournait au démarrage du dashboard, c'est la première
-# personne connectée du matin qui payait l'attente. Il fallait donc le lancer
-# ailleurs, et à heure fixe.
+# Déclenché par Google Apps Script (workflow_dispatch), qui tient l'heure : le
+# `schedule` de GitHub peut prendre plusieurs heures de retard et ne reste ici
+# qu'en filet. Sur un dépôt public, GitHub désactive aussi les workflows
+# planifiés après 60 jours sans commit ; workflow_dispatch n'est pas concerné.
 #
-# Google Apps Script sait planifier, mais ne sait pas exécuter du R. Un PC
-# allumé en permanence le saurait, mais il faut l'allumer, le mettre à jour, et
-# s'apercevoir du jour où il s'est éteint. Un exécutant GitHub Actions, lui,
-# est déjà là : il a R, il a le dépôt, il lit les secrets, il tourne quinze
-# minutes puis disparaît, et il écrit à l'adresse que le dashboard interroge
-# déjà — le dossier Drive.
-#
-# -----------------------------------------------------------------------------
-# Deux mises en garde, à connaître avant de s'y fier
-# -----------------------------------------------------------------------------
-#  1. `schedule` est au mieux une intention : en novembre 2026, les exécutions
-#     planifiées à 6h43 UTC ont démarré à 15h et 17h UTC, avec huit à dix
-#     heures de retard. L'heure du matin est donc donnée par Apps Script, qui
-#     appelle `workflow_dispatch` (cf. docs/automatisation.md). Le `schedule`
-#     ci-dessous ne reste qu'en filet, au cas où Apps Script tomberait.
-#
-#  2. Sur un dépôt PUBLIC, GitHub désactive les workflows planifiés après
-#     60 jours sans commit (il prévient par courriel). Si le dépôt s'endort,
-#     cette planification s'arrête — et c'est encore la pastille qui le dira.
-#     Le déclenchement par Apps Script (cf. docs/automatisation.md) n'a pas ce
-#     défaut : `workflow_dispatch` ne s'endort jamais.
-#
-# -----------------------------------------------------------------------------
-# Les journaux de ce dépôt sont publics
-# -----------------------------------------------------------------------------
-# Rien de ce qui touche aux chiffres ne doit y monter. C'est pour ça que
-# l'import est appelé par import_quotidien.R, qui détourne sa trace vers un
-# fichier et ne publie qu'un résumé choisi. Et c'est pour ça qu'il n'y a ici
-# AUCUN upload-artifact : le .RData contient toute la comptabilité.
+# Les journaux de ce dépôt sont PUBLICS : import_quotidien.R détourne la trace
+# de l'import et ne publie qu'un résumé sans montant, et il n'y a ici aucun
+# upload-artifact (le .RData contient toute la comptabilité).
 name: Import quotidien
 
 on:
   schedule:
-    # Filet seulement : l'import du matin part d'Apps Script, à l'heure.
-    # Celui-ci passe quand GitHub le veut (souvent l'après-midi), ce qui est
-    # sans danger grâce au groupe `concurrency` ci-dessous.
+    # Filet seulement ; sans danger grâce à `concurrency` ci-dessous.
     - cron: "43 6 * * *"
   workflow_dispatch:    # à la main depuis l'onglet Actions, ou par l'API
                         # (c'est ce que fait le bouton du dashboard)
@@ -59,17 +28,8 @@ jobs:
     timeout-minutes: 30
     name: Rscript import_quotidien.R
 
-    # Les secrets sont rangés dans un ENVIRONNEMENT GitHub nommé SECRET, et
-    # non dans les secrets du dépôt. Ce n'est pas la même portée : un secret
-    # d'environnement n'est lisible que par un job qui DÉCLARE cet
-    # environnement — sans cette ligne, `secrets.LINK_JSON` vaut la chaîne
-    # vide et l'import échoue sur « cannot open URL '' ». Le secret n'est pas
-    # introuvable : il est hors de portée, et rien ne le dit.
-    #
-    # C'est la portée la plus étroite des deux, donc la bonne sur un dépôt
-    # public : en limitant l'environnement à la branche main (Settings →
-    # Environments → SECRET → Deployment branches), aucun workflow poussé
-    # sur une autre branche ne peut lire ces valeurs.
+    # Les secrets vivent dans l'environnement GitHub « SECRET » : un job qui ne
+    # le déclare pas les lit comme des chaînes vides.
     environment: SECRET
 
     steps:
@@ -79,10 +39,7 @@ jobs:
         with:
           use-public-rspm: true
 
-      # Le socle complet, pas seulement ce que l'import utilise : global.R
-      # charge tout R/, et l'import doit tourner dans le même environnement
-      # que la production. Un import qui réussit ici et échoue là-bas serait
-      # pire qu'un import qui échoue aux deux endroits.
+      # Tout le socle : global.R charge tout R/.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |

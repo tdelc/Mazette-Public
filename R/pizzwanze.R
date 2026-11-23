@@ -1,32 +1,17 @@
-# Volet « Pizzwanze » : les soirées pizza.
+# Volet « Pizzwanze » : les soirées pizza, toutes les trois à quatre semaines
+# le mardi soir.
 #
-# Elles ne sont pas déclarées quelque part — elles se DÉDUISENT des ventes
-# (cf. soirees_pizzwanze). Une soirée oubliée au planning reste donc visible,
-# et c'est la seule façon de ne pas dépendre d'une saisie manuelle.
+# Aucune catégorie ne les déclare : elles se déduisent des ventes. Un produit
+# est une pizza si son nom le dit (Khachapuri compris), et une soirée se
+# reconnaît à sa carte : au moins deux références de pizza le même jour. Les
+# soirées hors mardi sont ainsi capturées aussi.
 
-
-# La Pizzwanze est une soirée pizza qui revient toutes les trois à quatre
-# semaines, le mardi soir. Quelques pizzas sont là à chaque fois, le reste
-# change au gré des produits de saison.
-#
-# Détection : il n'existe pas de catégorie dédiée, on part donc du NOM du
-# produit — tout ce qui contient « pizza », plus le Khachapuri, une pizza
-# géorgienne qui ne porte pas le mot.
-#
-# Une soirée se reconnaît à sa CARTE : on y propose plusieurs pizzas. Les
-# autres jours où l'on voit passer de la pizza n'ont qu'une seule référence
-# (part vendue le lendemain, slices du Bal National...). Le critère est donc
-# « au moins deux références », et non « c'est un mardi » : les soirées
-# exceptionnelles hors mardi sont ainsi capturées elles aussi. Sur
-# l'historique disponible, la règle retient exactement les 32 mardis.
 
 # Un produit est une pizza si son nom le dit, Khachapuri compris.
-# `as.character` d'abord : la colonne peut arriver en facteur, et un NA nu est
-# logique — `replace_na` refuserait alors la valeur de remplacement texte.
+# as.character() d'abord : la colonne peut arriver en facteur.
 est_pizza <- function(x) {
   str_detect(tolower(replace_na(as.character(x), "")), "pizz|khachapuri")
 }
-
 
 
 # Dates des soirées Pizzwanze, de la plus ancienne à la plus récente.
@@ -173,7 +158,7 @@ kpi_pizzwanze_tiles <- function(ps, unite_tva = NULL) {
              sous_titre = if (is.na(ps$precedente)) "première soirée"
              else format(ps$precedente, "%d/%m/%Y")),
     kpi_tile(if (is.null(vedette)) "—" else str_trunc(vedette, 18),
-             "Pizza vedette", CONSO_BRUN, "trophy",
+             "Pizza vedette", COUL_BRUN, "trophy",
              sous_titre = if (is.null(vedette)) NULL
              else paste0(act$QUANTITE[1], " vendues")),
     kpi_tile(as.character(pic), "Pic de consommation", "#8d7b68", "clock",
@@ -186,8 +171,8 @@ graph_evo_pizzwanze <- function(hist, soiree = NULL) {
   if (is.null(hist) || nrow(hist) == 0)
     return(plotly_empty() %>% layout(title = "Aucune soirée détectée"))
   
-  couleurs <- if (is.null(soiree)) CONSO_BRUN
-  else ifelse(hist$DATE == as.Date(soiree), CONSO_AMBRE, CONSO_BRUN)
+  couleurs <- if (is.null(soiree)) COUL_BRUN
+  else ifelse(hist$DATE == as.Date(soiree), COUL_AMBRE, COUL_BRUN)
   
   plot_ly(hist) %>%
     add_bars(x = ~DATE, y = ~PIZZAS, name = "Pizzas",
@@ -196,10 +181,6 @@ graph_evo_pizzwanze <- function(hist, soiree = NULL) {
                                      PIZZAS, " pizzas — ", N_REF, " références<br>",
                                      format_CA(CA, -1),
                                      "<extra></extra>")) %>%
-    # add_markers(x = ~DATE, y = ~PIZZAS, name = "Nouveautés",
-    #             marker = list(color = COUL_VERT, size = 8, symbol = "diamond"),
-    #             text = ~NOUVEAUTES,
-    #             hovertemplate = ~paste0(NOUVEAUTES, " nouveauté(s)<extra></extra>")) %>%
     layout(xaxis = list(title = ""), yaxis = list(title = "Pizzas vendues"),
            legend = list(orientation = "h"),
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
@@ -229,7 +210,6 @@ graph_pizzas_soiree <- function(ps) {
   }
   p %>% layout(barmode = "stack", xaxis = list(title = "Pizzas vendues"),
                yaxis = list(title = ""), 
-               # legend = list(orientation = "h"),
                legend = list(yref = "container", y = 0, yanchor = "bottom"),
                margin = list(l = 10),
                paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
@@ -242,9 +222,8 @@ graph_carte_pizzwanze <- function(db_produits, soirees, n_soirees = NULL,
   if (length(soirees) == 0)
     return(plotly_empty() %>% layout(title = "Aucune soirée détectée"))
   
-  # n_soirees = NULL -> tout l'historique. C'est le réglage le plus parlant :
-  # la carte s'est stabilisée sur les dernières soirées, les allées et venues
-  # de pizzas ne se voient qu'en remontant plus loin.
+  # Par défaut tout l'historique : les allées et venues de pizzas ne se voient
+  # qu'en remontant loin.
   dernieres <- sort(soirees)
   if (!is.null(n_soirees)) dernieres <- tail(dernieres, n_soirees)
   detail <- conso_pizzas(db_produits, dernieres, unite_tva)
@@ -271,7 +250,7 @@ graph_carte_pizzwanze <- function(db_produits, soirees, n_soirees = NULL,
   
   plot_ly(x = format(dernieres, "%d/%m/%y"),
           y = str_trunc(as.character(mat$PIZZA), 30), z = z,
-          type = "heatmap", colorscale = list(c(0, "#f2efe6"), c(1, CONSO_BRUN)),
+          type = "heatmap", colorscale = list(c(0, "#f2efe6"), c(1, COUL_BRUN)),
           hovertemplate = "%{y}<br>%{x} : %{z:.0f} vendues<extra></extra>") %>%
     layout(xaxis = list(title = "", side = "top"), yaxis = list(title = ""),
            margin = list(l = 10),
@@ -285,7 +264,7 @@ graph_pizzas_heure <- function(par_heure) {
   
   plot_ly(par_heure) %>%
     add_bars(x = ~HEURE, y = ~QUANTITE,
-             marker = list(color = CONSO_AMBRE),
+             marker = list(color = COUL_AMBRE),
              hovertemplate = ~paste0(HEURE, "<br>", QUANTITE,
                                      " pizzas<extra></extra>")) %>%
     layout(xaxis = list(title = "Heure de service"),
@@ -311,8 +290,6 @@ table_pizzwanze <- function(ps, unite_tva = NULL) {
               Quantité         = QUANTITE,
               Part             = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
               !!sym(col_name) := format_CA(CA, -1),
-              # Statut     = STATUT_SOIR,
-              # `Soirées`  = N_SOIREES,
               `Qté préc.`      = Q_M1,
               `Évol.`          = ifelse(is.na(EVO), "—",
                                         paste0(ifelse(EVO >= 0, "+", ""), EVO, " %")))
