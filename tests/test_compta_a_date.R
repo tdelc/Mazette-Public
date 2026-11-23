@@ -45,12 +45,6 @@ ok("décembre et toute l'année suivante partent",
    !any(coupe$ANNEE == 2027) && !12 %in% coupe$MOIS[coupe$ANNEE == 2026])
 ok("et rien d'autre n'a bougé", ncol(coupe) == ncol(db))
 
-ok("les mois retirés se nomment",
-   { m <- mois_a_venir(db, AUJ)
-     length(m) == 7 && min(m) == as.Date("2026-12-01") &&
-       max(m) == as.Date("2027-06-01") })
-ok("sans mois à venir, la liste est vide",
-   length(mois_a_venir(coupe, AUJ)) == 0)
 ok("une table vide ou nulle traverse sans erreur",
    is.null(compta_a_date(NULL)) && nrow(compta_a_date(db[0, ], AUJ)) == 0)
 ok("un mois illisible ne passe pas pour du passé",
@@ -70,8 +64,8 @@ ok("le compte d'exploitation s'arrête au mois en cours",
 
 #### Le garde-fou : aucun autre chemin vers DB_COMPTA ####
 
-# server.R lit DB_COMPTA à quatre endroits — coûts matière, accueil, socle du
-# volet Compta, comparaison de périodes. Un cinquième ajouté sans la coupe
+# server.R lit DB_COMPTA à plusieurs endroits — coûts matière, socle du
+# volet Compta, comparaison de périodes. Un passage de plus sans la coupe
 # ferait rentrer juin 2027 par la fenêtre, et personne ne le verrait : les
 # montants sont justes, c'est leur DATE qui ne l'est pas.
 srv <- readLines("server.R", encoding = "UTF-8", warn = FALSE)

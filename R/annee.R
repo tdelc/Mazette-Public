@@ -1,29 +1,12 @@
-# Volet « Année » : l'année en cours face à son objectif.
-#
-# Le cumul du CA depuis janvier, l'écart à l'objectif annuel, et la projection
-# de fin d'année. Une seule granularité — l'année se lit d'un bloc, ou ne se
-# lit pas.
-# Suivi annuel « à date » : on ne compare que les jours déjà écoulés, en cumulé.
+# Volet « Année » : l'année en cours face à son objectif et à N-1, en
+# cumulé « à date » (seuls les jours écoulés comptent).
 
 # Série quotidienne de l'année : CA, objectif, et marge.
 #
-# La marge vient de DB_COMPTA, seule source qui couvre tout l'historique avec
-# TOUTES les charges — matières, rémunérations, frais généraux.
-# L'ancienne version croisait DB_HEURES (avril 2025 → mars 2026) et les matières
-# seules : hors de cette fenêtre le coût du travail valait zéro, et la marge
-# était surévaluée de moitié. Comparer deux années devenait sans objet.
-#
-# La marge retenue ici est MARGE_AA, celle du volet Compta : amortissements
-# exclus, résultat financier inclus (cf. l'en-tête de R/exploitation.R). Un
-# seul indicateur de marge dans tout le dashboard, sinon deux onglets donnent
-# deux chiffres et personne ne sait lequel lire. MARGE, le résultat
-# d'exploitation comptable, reste calculée — c'est d'elle que MARGE_AA se
-# dérive, et c'est elle que le contrôle confronte au solde publié.
-#
-# La comptabilité étant mensuelle, ses charges sont étalées uniformément sur les
-# jours d'ouverture du mois. Le cumul est donc exact à chaque fin de mois ; seul
-# le chemin à l'intérieur du mois est lissé. Un mois sans comptabilité laisse la
-# marge à NA plutôt que de la surestimer.
+# La marge est MARGE_AA, celle du volet Compta (cf. R/exploitation.R), tirée
+# de DB_COMPTA. La comptabilité étant mensuelle, ses charges sont étalées sur
+# les jours d'ouverture du mois : le cumul est exact à chaque fin de mois. Un
+# mois sans comptabilité laisse la marge à NA.
 serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
   d1 <- as.Date(paste0(annee, "-01-01"))
   d2 <- as.Date(paste0(annee, "-12-31"))
@@ -42,9 +25,7 @@ serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
     mutate(across(c(ventes, objectif), ~replace_na(., 0)),
            MOIS = floor_date(DATE, "month"))
 
-  # AUTRES = subsides, interventions ONEM... Les omettre sous-estimait la marge
-  # de plus de 100 000 EUR par an : ce sont des produits d'exploitation, ils
-  # entrent dans le resultat au meme titre que le chiffre d'affaires.
+  # AUTRES = subsides, interventions ONEM : des produits d'exploitation.
   charges <- if (is.null(db_compta) || !nrow(db_compta)) NULL else
     postes_exploitation(db_compta, d1, d2) %>%
       select(MOIS = PERIODE, AUTRES, MATIERES, REMUNERATION, GENERAUX,
@@ -56,15 +37,11 @@ serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
              select(-MOIS))
   }
 
-  # Répartition sur les seuls jours d'ouverture : imputer une charge à un jour
-  # de fermeture donnerait une marge négative sans activité en face.
+  # Répartition sur les seuls jours d'ouverture.
   res %>%
     left_join(charges, by = "MOIS") %>%
-    # Un mois sans comptabilité est inconnu pour TOUS ses jours. Il faut le
-    # retenir ici : la répartition ci-dessous donne 0 à un jour de fermeture,
-    # zéro charge en face de zéro vente, et sa marge passerait pour connue et
-    # nulle. Un mois écarté continuerait alors de peser dans la comparaison
-    # avec N-1 par ses jours de fermeture.
+    # Un mois sans comptabilité est inconnu pour tous ses jours, fermetures
+    # comprises : sinon un jour fermé y aurait une marge connue et nulle.
     mutate(CONNU = !is.na(CHARGES)) %>%
     group_by(MOIS) %>%
     mutate(N_OUVERTS = sum(ventes > 0),
@@ -73,10 +50,8 @@ serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
                   ~ if_else(N_OUVERTS > 0 & ventes > 0, . / N_OUVERTS, 0))) %>%
     ungroup() %>%
     mutate(MARGE    = if_else(CONNU, ventes + AUTRES - CHARGES, NA_real_),
-           # MARGE_AA = MARGE + AMORTISSEMENT + FINANCIER : l'identité de
-           # R/exploitation.R, pas un second calcul. Les deux marges doivent
-           # rester réconciliables, et la seule façon de le garantir est de
-           # dériver l'une de l'autre.
+           # Dérivée de MARGE par l'identité de R/exploitation.R, pour rester
+           # réconciliable avec elle.
            MARGE_AA = if_else(CONNU, MARGE + AMORTISSEMENT + FINANCIER,
                               NA_real_)) %>%
     select(-MOIS, -N_OUVERTS, -CONNU)
@@ -85,19 +60,9 @@ serie_annuelle <- function(db_kpi, db_obj, db_compta, annee = year(today())) {
 # Marge cumulée de l'année, superposée à celle de N-1 alignée sur la date N
 graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
   
-  # Le RANG se compte sur TOUS les jours d'ouverture, y compris ceux dont la
-  # marge est inconnue — un mois écarté, une comptabilité pas encore arrivée.
-  # C'est lui qui aligne l'année sur N-1 : les numéroter après avoir retiré ces
-  # jours, ce que faisait la version précédente, décalait la courbe. Mars
-  # écarté, et le 31 décembre se retrouvait comparé au 5 décembre de l'an
-  # d'avant : la comparaison devenait fausse sans qu'aucun chiffre ne le soit.
-  #
-  # Le cumul n'avance pas sur ces jours-là, et la courbe s'y interrompt : un
-  # trait continu laisserait croire qu'on y a gagné zéro, alors qu'on n'en sait
-  # rien. Plotly achève le travail au tracé — il retire les jours inconnus de
-  # fin de série, si bien que la courbe s'arrête simplement au dernier mois
-  # connu, et réduit un trou intérieur à une seule coupure sans toucher au rang
-  # des jours qui suivent. Le tracé compte donc moins de points que la série.
+  # Le rang se compte sur tous les jours d'ouverture, marge connue ou non :
+  # c'est lui qui aligne l'année sur N-1. Le cumul n'avance pas sur les jours
+  # inconnus et la courbe s'y interrompt.
   cum <- function(d) {
     d <- d %>% filter(DATE < today(), ventes > 0) %>% arrange(DATE)
     if (!nrow(d) || all(is.na(d$MARGE_AA))) return(NULL)
@@ -110,16 +75,14 @@ graph_marge_cumulee <- function(serie, serie_m1, annee = year(today())) {
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Pas de comptabilité sur cette année")))
 
-  # Le dernier point CONNU : l'annotation de fin ne peut pas se poser sur un
-  # trou, et le dernier jour de l'année peut en être un.
+  # Le dernier point connu : le dernier jour de l'année peut être un trou.
   fin <- a %>% filter(!is.na(CUMUL)) %>% slice_tail(n = 1)
   couleur <- if (fin$CUMUL >= 0) COUL_VERT else COUL_ROUGE
   
   g <- plot_ly() %>%
     add_trace(x = a$RANG, y = a$CUMUL, type = "scatter", mode = "lines",
               name = as.character(annee), fill = "tozeroy",
-              # Sans ça, plotly relie les deux bords du trou et le mois
-              # écarté redevient invisible.
+              # Sans ça, plotly relie les deux bords d'un mois écarté.
               connectgaps = FALSE,
               fillcolor = if (fin$CUMUL >= 0) "rgba(91,123,90,0.18)"
                           else "rgba(192,57,43,0.15)",
@@ -234,14 +197,8 @@ graph_ecart_ym1 <- function(db_kpi, annee = year(today()), var = c("ventes", "ma
     arrange(DATE) %>%
     filter(DATE < today())
 
-  # Une marge INCONNUE n'est pas une marge nulle.
-  #
-  # replace_na(VAL, 0) est juste pour le chiffre d'affaires : un jour sans
-  # vente a bien vendu zéro. Il est FAUX pour la marge : un mois écarté, ou
-  # une comptabilité pas encore arrivée, donne un NA qui devenait un zéro —
-  # et l'écart cumulé plongeait alors de toute la marge de l'an dernier, comme
-  # si on n'avait rien gagné ce mois-là. On retire donc ces jours de la
-  # comparaison plutôt que de leur inventer un résultat.
+  # Une marge inconnue n'est pas une marge nulle : on retire ces jours de la
+  # comparaison au lieu de les compter à zéro (ce qui vaut pour le CA).
   if (var == "marge")
     dat <- dat %>% filter(!is.na(VAL), !is.na(VAL_M1))
   if (!nrow(dat))
@@ -266,14 +223,13 @@ kpi_annee_tiles <- function(serie, serie_m1, unite_tva = NULL) {
   ca     <- sum(ecoule$ventes, na.rm = TRUE)
   obj    <- sum(ecoule$objectif, na.rm = TRUE)
 
-  # La marge ne se cumule que sur les jours où la comptabilité existe : ajouter
-  # un jour sans charges y ferait entrer son CA en marge pure.
+  # La marge ne se cumule que sur les jours où la comptabilité existe.
   avec_marge <- ecoule %>% filter(!is.na(MARGE_AA), ventes > 0)
   marge      <- sum(avec_marge$MARGE_AA, na.rm = TRUE)
   ca_marge   <- sum(avec_marge$ventes, na.rm = TRUE)
 
-  # N-1 sur le même nombre de jours d'ouverture écoulés. La marge se compare sur
-  # le même nombre de jours COUVERTS, sinon on oppose 12 mois à 3.
+  # N-1 sur le même nombre de jours d'ouverture ; la marge sur le même nombre
+  # de jours couverts.
   n_jours   <- nrow(ecoule %>% filter(ventes > 0))
   ecoule_m1 <- serie_m1 %>% filter(ventes > 0) %>% arrange(DATE) %>% head(n_jours)
   ca_m1     <- sum(ecoule_m1$ventes, na.rm = TRUE)

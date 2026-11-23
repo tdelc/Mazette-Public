@@ -1,4 +1,4 @@
-# Tables conservés dans le rds
+# Tables enregistrées dans le cache : leur absence fait échouer l'import.
 TABLES_DASHBOARD <- c(
   "DB_JOURS",            # CA par jour, base des objectifs
   "DB_KPI_SIMPLE",       # CA jour x (midi/soir, semaine/week-end, boisson/nourriture)
@@ -14,39 +14,27 @@ TABLES_DASHBOARD <- c(
   "DB_PASSWORD"          # mots de passe valides par période
 )
 
-# Tables enregistrées si elles existent, mais dont l'absence n'empêche pas
-# l'import d'aboutir. C'est le sas par lequel une nouvelle source entre dans le
-# dashboard : le volet qui la consomme sait se taire tant qu'elle manque, et on
-# n'a pas à livrer le code et l'import dans le même mouvement.
+# Tables enregistrées si elles existent : une nouvelle source entre par ici
+# sans bloquer l'import tant qu'elle manque.
 TABLES_OPTIONNELLES <- c(
   "DB_HEURES_PLANNING",  # heures planifiées par jour x service (cf. R/planning.R)
   "DB_ONSS",             # heures et coût de paie par mois x secteur (cf. R/sources_travail.R)
-  # Une ligne, mais elle doit voyager : sans elle, le volet Sources ne peut pas
-  # dire qu'une colonne de secteur a changé de nom dans le fichier de paie —
-  # et ce contrôle-là ne se refait pas depuis le .RData, seulement à l'import.
   "CONTROLE_ONSS",       # contrôle de lecture du fichier de paie
-  # Même raison : les contrôles de l'import Odoo (équilibre débit/crédit,
-  # comptes hors plan, matières non ventilées) ne se refont pas depuis le
-  # .RData, et c'est pourtant là qu'on voudra les relire.
   "CONTROLE_ODOO",       # contrôle de lecture des écritures Odoo
-  # Le journal des décisions prises sur les mois douteux. Il vit dans un
-  # classeur, et c'est lui qui fait foi ; cette copie n'est là que pour que le
-  # dashboard s'ouvre sans rappeler Google à chaque démarrage.
+  # Copie du classeur de décisions (cf. R/validation.R), pour ne pas rappeler
+  # Google à chaque démarrage.
   "DB_VALIDATION_COMPTA", # décisions de validation des mois (cf. R/validation.R)
 
-  # Les écritures au grain LIGNE, telles que lues. DB_COMPTA n'en garde que
-  # l'agrégat mensuel par compte : ce qui suffit à tous les calculs, et à rien
-  # d'autre. Ni la pièce, ni le partenaire, ni la date exacte n'y survivent —
-  # or c'est exactement ce qu'on cherche quand un poste surprend.
+  # Le grand livre, au grain ligne ; DB_COMPTA n'en garde que l'agrégat
+  # mensuel par compte.
   "DB_ECRITURES"         # grand livre, une ligne par écriture
 )
 
 
 #### Quel cache, et d'où ####
 
-# Un cache porte sa date dans son nom : R_new_env_2026-11-07.RData. C'est la
-# date du DERNIER JOUR de DB_JOURS, posée par l'import qui l'a produit — donc
-# la fraîcheur réelle des chiffres, et non l'heure à laquelle on a cliqué.
+# Un cache porte dans son nom la date du dernier jour de DB_JOURS : la
+# fraîcheur des chiffres, pas l'heure de l'import.
 PREFIXE_RDS <- "R_new_env_"
 
 nom_rds <- function(date, prefix = PREFIXE_RDS)
@@ -61,15 +49,8 @@ date_du_rds <- function(noms, prefix = PREFIXE_RDS) {
   d
 }
 
-#' Le plus récent des caches, QUELLE QUE SOIT sa date. NULL s'il n'y en a aucun.
-#'
-#' C'est le changement de doctrine : on ne réclame plus le cache de la veille
-#' pour le refuser s'il manque, on prend le plus frais de ceux qui existent.
-#' Refaire tout l'import parce que le nom attendu n'était pas là, c'était
-#' faire attendre dix minutes la première personne connectée du matin.
-#'
-#' Le tri porte sur la date LUE dans le nom, pas sur le nom : un fichier
-#' étranger au dossier (archive, essai renommé) ne peut pas passer devant.
+#' Le plus récent des caches, quelle que soit sa date ; NULL s'il n'y en a
+#' aucun. Le tri porte sur la date lue dans le nom.
 dernier_rds <- function(noms, prefix = PREFIXE_RDS) {
   d <- date_du_rds(noms, prefix)
   if (!any(!is.na(d))) return(NULL)
@@ -77,16 +58,9 @@ dernier_rds <- function(noms, prefix = PREFIXE_RDS) {
   list(nom = noms[[i]], date = d[[i]])
 }
 
-#' Qui gagne, du cache local et de celui de Drive ?
-#'
-#' Égalité au local : même date, même contenu, autant s'épargner le
-#' téléchargement. Drive ne l'emporte que s'il est STRICTEMENT plus frais —
-#' c'est le cas tous les matins, puisque c'est là que l'import de la nuit
-#' dépose son fichier.
-#'
-#' Drive injoignable (date NA) : le local sert, quelle que soit sa date. Un
-#' dashboard qui montre les chiffres d'avant-hier en le disant vaut mieux
-#' qu'un dashboard qui ne s'ouvre pas.
+#' Qui gagne, du cache local et de celui de Drive ? Drive seulement s'il est
+#' strictement plus récent ; Drive injoignable, le local sert quel que soit
+#' son âge.
 source_du_cache <- function(date_locale, date_drive) {
   if (is.na(date_locale) && is.na(date_drive)) return("import")
   if (is.na(date_drive))  return("local")
@@ -96,8 +70,8 @@ source_du_cache <- function(date_locale, date_drive) {
 
 #### Le tuyau Drive ####
 
-# Le compte de service, une fois par processus. connect.json est éphémère sur
-# l'hébergeur : il est retéléchargé au premier besoin de chaque instance.
+# Le compte de service. connect.json est éphémère sur l'hébergeur : il est
+# retéléchargé au premier besoin.
 auth_drive <- function() {
   if (!file.exists("connect.json"))
     download.file(Sys.getenv("LINK_JSON"), destfile = "connect.json", quiet = TRUE)
@@ -110,10 +84,8 @@ liste_drive <- function() {
   googledrive::drive_ls(googledrive::as_id(Sys.getenv("PATH_DRIVE")))
 }
 
-#' Le cache le plus frais du dossier Drive, avec son identifiant.
-#'
-#' `lister` est un paramètre pour que la suite de tests puisse le doubler :
-#' tout ce qui suit est du choix de fichier, et ça se vérifie sans réseau.
+#' Le cache le plus récent du dossier Drive, avec son identifiant. `lister`
+#' est remplaçable pour les tests.
 dernier_rds_drive <- function(prefix = PREFIXE_RDS, lister = liste_drive) {
   fichiers <- lister()
   if (is.null(fichiers) || !nrow(fichiers)) return(NULL)
@@ -132,17 +104,13 @@ telecharge_rds <- function(info, dossier = "outputs") {
 
 #### Ce qu'il reste à faire après un load() ####
 
-#' Les deux reconstructions que tout chargement doit faire, d'où qu'il vienne.
-#'
-#' Elles sont ici, et pas recopiées dans chaque chemin, parce qu'un chemin qui
-#' les oublierait ne planterait pas : il rendrait un DB_TICKET réduit et des
-#' mots de passe sans droits, c'est-à-dire un dashboard presque juste.
+#' Ce que tout chargement doit faire, d'où qu'il vienne : reconstruire
+#' DB_TICKET et normaliser les droits.
 finalise_donnees <- function(envir) {
   if (hydrate_dans(envir))
     cli::cli_alert_success("DB_TICKET reconstruit ({nrow(get('DB_TICKET', envir = envir))} lignes)")
 
-  # Un .RData enregistré avant la gestion des droits n'a que DATE_DEBUT,
-  # DATE_FIN et PASS (cf. R/acces.R).
+  # Un cache ancien n'a que DATE_DEBUT, DATE_FIN et PASS (cf. R/acces.R).
   if (exists("DB_PASSWORD", envir = envir, inherits = FALSE))
     assign("DB_PASSWORD",
            normalise_password(get("DB_PASSWORD", envir = envir)),
@@ -152,12 +120,9 @@ finalise_donnees <- function(envir) {
 
 #### Les trois chemins ####
 
-#' Refaire tout l'import, puis l'enregistrer en local et sur Drive.
-#'
-#' Le SEUL endroit du dépôt qui écrit un cache. Le script de la nuit
-#' (import_quotidien.R) passe par ici, le bouton « refaire l'import » aussi :
-#' il n'y a donc qu'un format de fichier, qu'un contrat de tables, et qu'un
-#' endroit à corriger.
+#' Refaire tout l'import, puis l'enregistrer en local et sur Drive. Le seul
+#' endroit qui écrit un cache : l'import planifié et le bouton du dashboard
+#' passent tous deux par ici.
 refait_import <- function(prefix = PREFIXE_RDS, dossier = "outputs",
                           envir = parent.frame()) {
   cli::cli_h1("Mise à jour des données")
@@ -190,17 +155,9 @@ refait_import <- function(prefix = PREFIXE_RDS, dossier = "outputs",
        tables = presentes)
 }
 
-#' Charger les données du dashboard, sans jamais faire attendre pour rien.
-#'
-#' L'ordre : le cache local s'il est au moins aussi frais que celui de Drive,
-#' sinon celui de Drive, et l'import complet seulement s'il n'existe AUCUN
-#' cache nulle part. Ce dernier cas n'arrive qu'au tout premier démarrage —
-#' ou le jour où le dossier Drive a été vidé.
-#'
-#' Ce que ça change pour la personne qui ouvre le dashboard le matin :
-#' quelques secondes de téléchargement au lieu de quelques minutes d'import.
-#' Et ce que ça lui doit en échange : voir la date de ce qu'elle regarde, et
-#' pouvoir demander mieux (cf. R/fraicheur.R et le bouton « mise à jour »).
+#' Charger les données du dashboard : le cache local s'il est au moins aussi
+#' récent que celui de Drive, sinon celui de Drive, et l'import complet
+#' seulement s'il n'existe aucun cache.
 connexion_ou_creation <- function(prefix = PREFIXE_RDS, force_import = FALSE,
                                   dossier = "outputs", envir = parent.frame()) {
   if (force_import) return(invisible(refait_import(prefix, dossier, envir)))
@@ -232,20 +189,15 @@ connexion_ou_creation <- function(prefix = PREFIXE_RDS, force_import = FALSE,
     FALSE
   })
 
-  # Un cache illisible — tronqué, écrit à moitié — ne doit pas bloquer le
-  # dashboard : on refait l'import, une fois, plutôt que de rendre la main
-  # sur un environnement vide.
+  # Un cache illisible : on refait l'import, une fois.
   if (!charge) return(invisible(refait_import(prefix, dossier, envir)))
 
   finalise_donnees(envir)
   invisible(list(fichier = info$nom, date = info$date, source = choix))
 }
 
-#' Reprendre le dernier cache de Drive, sans refaire l'import.
-#'
-#' C'est le geste du bouton « reprendre le dernier import » : quelques
-#' secondes, parce que le travail a déjà été fait cette nuit par le script
-#' planifié et que le dashboard, lui, ne le sait pas encore.
+#' Reprendre le dernier cache de Drive, sans refaire l'import (bouton
+#' « Reprendre le dernier import »).
 recharge_donnees <- function(prefix = PREFIXE_RDS, dossier = "outputs",
                              envir = parent.frame()) {
   distant <- dernier_rds_drive(prefix)

@@ -1,30 +1,15 @@
-# Le calendrier de référence.
-#
-# Une table d'une ligne par jour, qui porte le jour de semaine, le mois et
-# l'année. Tout ce qui agrège par période s'y joint plutôt que de recalculer
-# un format(), parce qu'un jour sans vente doit exister dans la série — sinon
-# une fermeture se lit comme un trou de données.
+# Le calendrier de référence : une ligne par jour. Tout ce qui agrège par
+# période s'y joint, pour qu'un jour sans vente existe dans la série.
 
 #### Lire une date, d'où qu'elle vienne ####
 
-# LE parseur de dates du projet. Tout ce qui entre par un classeur passe par
-# lui, et rien ne doit supposer le type de ce qui arrive.
+# LE parseur de dates du projet : tout ce qui entre par un classeur passe par
+# lui.
 #
-# Pourquoi : un Google Sheet, un export Excel et une archive .RData ne rendent
-# pas la même chose pour la même colonne. Selon le jour, DATEVALUE revient en
-# POSIXct, en Date, en numéro de série Excel, ou en texte — il suffit qu'une
-# cellule de la colonne contienne autre chose qu'une date, ou qu'un rbind()
-# empile une archive dont le type diffère, pour que toute la colonne bascule
-# en caractère.
-#
-# L'idiome qui traînait partout dans import.R, `ymd(format(x, "%Y-%m-%d"))`,
-# ne survivait pas à cette bascule : sur un vecteur de texte, format() prend
-# son deuxième argument pour `trim` et tombe sur « argument 'trim' incorrect »
-# — un message qui ne nomme ni la colonne, ni la table, ni la cause, et qui
-# arrête tout l'import. C'est ce défaut-là qui a motivé ce parseur.
-#
-# Un format inconnu rend NA plutôt qu'une date inventée : la ligne sera
-# écartée, et l'import dit combien il en a écarté.
+# Selon la source, une même colonne arrive en POSIXct, en Date, en numéro de
+# série Excel ou en texte — et une seule cellule atypique, ou un rbind() avec
+# une archive, fait basculer toute la colonne en texte. Ce parseur accepte
+# toutes ces formes. Un format inconnu rend NA plutôt qu'une date inventée.
 parse_date_souple <- function(x) {
   if (inherits(x, "Date")) return(x)
   if (inherits(x, "POSIXt")) return(as.Date(x))
@@ -33,14 +18,13 @@ parse_date_souple <- function(x) {
   txt <- trimws(as.character(x))
   txt[txt == ""] <- NA_character_
 
-  # Un POSIXct passé en texte par un rbind() garde son heure : « 2026-01-01
-  # 00:00:00 ». as.Date() avec un format ignore ce qui suit, c'est voulu.
+  # Un POSIXct passé en texte garde son heure ; as.Date() avec un format
+  # ignore la fin, c'est voulu.
   d <- as.Date(txt, format = "%Y-%m-%d")
   manquants <- is.na(d) & !is.na(txt)
   if (any(manquants))
     d[manquants] <- as.Date(txt[manquants], format = "%d/%m/%Y")
-  # Un numéro de série passé en texte, lui, n'est plus qu'une suite de
-  # chiffres : sans cette branche, « 46282 » ne serait plus une date du tout.
+  # Un numéro de série Excel passé en texte : « 46282 ».
   manquants <- is.na(d) & !is.na(txt) & grepl("^[0-9]+([.][0-9]+)?$", txt)
   if (any(manquants))
     d[manquants] <- as.Date(as.numeric(txt[manquants]), origin = "1899-12-30")

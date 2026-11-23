@@ -1,10 +1,5 @@
-# Couleur d'un CA selon l'atteinte de son objectif. Même convention que les
-# box de ventes (cf. get_color_from_gradient) :
-#   >= 100 %  -> vert    (objectif atteint)
-#   >=  90 %  -> ambre   (tout proche)
-#   <   90 %  -> rouge   (manqué)
-# Sans objectif renseigné (0 ou NA), la barre reste neutre : on ne peut rien
-# juger. Vectorisé, donc utilisable directement sur une colonne.
+# Couleur d'un CA selon l'atteinte de son objectif : vert à 100 %, ambre à
+# partir de 90 %, rouge en dessous, neutre sans objectif. Vectorisé.
 couleur_objectif <- function(reel, objectif, seuil_proche = 0.9) {
   pct <- ifelse(is.na(objectif) | objectif <= 0, NA_real_, reel / objectif)
   case_when(
@@ -30,10 +25,8 @@ chip_legende <- function(couleur, libelle) {
   )
 }
 
-# Légende de la convention « CA vs objectif », à poser sous les graphes en
-# barres. Elle vit ici, à côté de couleur_objectif(), et non dans ui.R : ui.R
-# et server.R sont évalués dans des environnements frères, et une légende
-# rendue conditionnellement par le serveur ne verrait pas celle de l'interface.
+# Légende de la convention « CA vs objectif ». Définie ici et non dans ui.R :
+# le serveur doit pouvoir la rendre aussi.
 legende_objectif <- function() {
   div(
     class = "d-flex gap-3 flex-wrap text-muted mt-1",
@@ -43,16 +36,13 @@ legende_objectif <- function() {
   )
 }
 
-# Fonction pour calculer les objectifs journaliers
+# Objectifs journaliers d'un mois, répartis selon le poids de chaque jour.
 calculer_objectifs_journaliers <- function(annee, mois, ca_htva, ca_tvac) {
-  # Nombre de jours dans le mois
   jours_dans_mois <- seq(ymd(paste(annee, mois, 1)),by = "day",
                          length.out = days_in_month(ymd(paste(annee, mois, 1))))
   
-  # Calculer la semaine du mois pour chaque jour
   semaine_du_mois <- week(jours_dans_mois) - week(min(jours_dans_mois)) + 1
   
-  # Préparer les données pour le calcul
   jours_data <- data.frame(
     DATE = jours_dans_mois,
     ANNEE = year(jours_dans_mois),
@@ -64,12 +54,10 @@ calculer_objectifs_journaliers <- function(annee, mois, ca_htva, ca_tvac) {
   INFO_OBJECTIFS <- tibble(JOUR_SEMAINE = 1:7,
                            OBJECTIF_PCT = c(0,0.065,0.1,0.125,0.21,0.29,0.21))
   
-  # Joindre avec les objectifs journaliers en %
   jours_data <- left_join(jours_data, INFO_OBJECTIFS, by = c("JOUR_SEMAINE" = "JOUR_SEMAINE")) %>%
     mutate(OBJECTIF_PCT = OBJECTIF_PCT/sum(OBJECTIF_PCT)) %>%
     select(-JOUR_SEMAINE)
   
-  # Calculer l'objectif journalier
   jours_data <- jours_data %>%
     mutate(CA_HTVA = round(ca_htva * OBJECTIF_PCT),
            CA_TVAC = round(ca_tvac * OBJECTIF_PCT))
@@ -107,10 +95,6 @@ transmute_objectifs <- function(import){
       CA_HTVA_NOURRITURE_6 = `Ventes nourriture à emporter 6%`,
       CA_HTVA_NOURRITURE_12 = `Ventes nourriture sur place 12%`,
       CA_HTVA_BOISSON_21 = `Ventes boissons sur place 21%`
-      # CA_HTVA_BOISSON_EXPORT_21 = `Ventes boissons à emporter 21%`,
-      # CA_HTVA_TRAITEUR_EXPORT = `Ventes traiteur à emporter`,
-      # CA_HTVA_TRAITEUR = `Ventes traiteur sur place`,
-      # CA_HTVA_ATELIER = `Ateliers`
     ) %>%
     select(starts_with("CA_HTVA")) %>%
     mutate_all(as.numeric)
@@ -121,7 +105,6 @@ transmute_objectifs <- function(import){
   db$DATE_FIN <- fin_mois
   
   db <- db %>%
-    # mutate(CA_TVAC = 1.21 * (CA_HTVA_BOISSON_21 + CA_HTVA_BOISSON_EXPORT_21) +
     mutate(CA_TVAC = 1.21 * (CA_HTVA_BOISSON_21) +
              1.12 * (CA_HTVA_NOURRITURE_12) +
              1.06 * CA_HTVA_NOURRITURE_6,

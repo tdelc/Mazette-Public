@@ -1,57 +1,29 @@
 # Volet « Projection » : compléter un mois dont la comptabilité n'est pas
-# encore entière.
+# encore entière (des rémunérations pas encore encodées, typiquement).
 #
-# Le besoin est né d'un fait : depuis juillet 2026, les rémunérations ne sont
-# pas encodées. Les mois existent, leurs ventes existent, leurs achats
-# existent — il ne manque qu'un poste, et ce poste suffit à rendre la marge
-# fausse de bout en bout. Le dashboard savait DÉTECTER ces mois (le topo) et
-# les ÉCARTER (l'onglet Contrôle) ; il ne savait pas dire ce qu'ils auraient
-# donné.
+# Trois règles :
 #
-# ---------------------------------------------------------------------------
-# Trois règles, et elles ne se négocient pas
-# ---------------------------------------------------------------------------
-#
-#   1. RIEN NE SORT D'ICI. La projection ne touche ni DB_COMPTA, ni la compta
-#      retenue, ni aucun autre onglet. Un chiffre modélisé qui s'échapperait
-#      dans l'onglet Exploitation y serait indiscernable d'un chiffre réel, et
-#      le jour où quelqu'un le lirait sans le savoir, tout le reste deviendrait
-#      douteux. Ce fichier ne produit donc qu'un AFFICHAGE.
-#
-#   2. CHAQUE CHIFFRE DIT D'OÙ IL VIENT. Toute valeur projetée porte sa méthode
-#      et sa base de calcul, affichées à côté d'elle. Une estimation qu'on ne
-#      peut pas contester n'est pas une estimation, c'est une rumeur.
-#
-#   3. ON MODÉLISE CE QU'ON SAIT MESURER AILLEURS. Les quatre postes projetés
-#      ont chacun une source indépendante de la comptabilité :
+#   1. RIEN NE SORT D'ICI. La projection ne touche ni DB_COMPTA ni aucun autre
+#      onglet : un chiffre modélisé serait indiscernable d'un réel.
+#   2. CHAQUE CHIFFRE DIT D'OÙ IL VIENT : méthode et base de calcul affichées.
+#   3. ON MODÉLISE CE QU'ON MESURE AILLEURS :
 #
 #        CA             les ventes de caisse du mois (DB_KPI_SIMPLE)
 #        Matières       le ratio médian matières / CA des mois de référence
-#        Rémunérations  ce qui a été MESURÉ ce mois-là — la paie, à défaut les
-#                       heures pointées, à défaut les heures planifiées —
-#                       recalé sur la comptabilité (cf. PROJ_SOURCES_REMU)
+#        Rémunérations  la paie, à défaut le pointage, à défaut le planning,
+#                       recalés sur la comptabilité (cf. PROJ_SOURCES_REMU)
 #        Frais généraux la médiane des mois de référence
 #
-#      Les autres postes — autres produits, amortissements, financier — sont
-#      repris tels quels. On ne les invente pas : ils ne se déduisent de rien.
+#      Autres produits, amortissements et financier sont repris tels quels.
 #
-# ---------------------------------------------------------------------------
-# Pourquoi la MÉDIANE partout
-# ---------------------------------------------------------------------------
-# Une moyenne suit le mois exceptionnel ; la médiane l'ignore. Or les mois de
-# référence d'une brasserie en comptent toujours un : une régularisation de
-# paie, un gros achat de matériel passé en frais généraux, un mois de
-# fermeture. La moyenne de six mois dont un double est fausse de 17 % ; la
-# médiane ne bouge pas. C'est le même choix que le contrôle de vraisemblance
-# (médiane ± MAD, cf. R/exploitation.R), et pour la même raison.
+# La médiane partout : elle ignore le mois exceptionnel que toute série de
+# référence contient.
 
 #### Ce qu'on sait projeter ####
 
-# Une ligne par poste projetable. CLE pilote les cases à cocher, BLOC désigne
-# la colonne de postes_exploitation() à remplacer.
-#
-# L'ORDRE COMPTE : le CA se projette en premier, parce que les matières se
-# calculent sur le CA retenu — projeté s'il l'est, réel sinon.
+# Une ligne par poste projetable : CLE pilote les cases à cocher, BLOC la
+# colonne remplacée. L'ordre compte : les matières se calculent sur le CA
+# retenu, donc après lui.
 PROJ_POSTES <- tibble::tribble(
   ~CLE,           ~BLOC,          ~LIBELLE,             ~SOURCE,
   "ca",           "CA",           "Chiffre d'affaires", "les ventes de caisse",
@@ -59,34 +31,23 @@ PROJ_POSTES <- tibble::tribble(
   "remuneration", "REMUNERATION", "Rémunérations",      "les heures planifiées",
   "generaux",     "GENERAUX",     "Frais généraux",     "les mois précédents")
 
-# Combien de mois la trajectoire montre. Partagé par le graphe, le tableau de
-# résultat et le sélecteur de la cascade : les trois doivent parler des mêmes
-# mois, sinon on choisit dans la liste un mois qui n'est pas sur la courbe.
+# Combien de mois la trajectoire montre (graphe, tableau, sélecteur).
 PROJ_MOIS_GRAPHE <- 14
 
-# Nombre de mois de référence par défaut. Six : assez pour qu'une médiane ait
-# un sens, assez peu pour rester dans la saison en cours.
+# Nombre de mois de référence par défaut.
 PROJ_DEFAUT_REF <- 6
 
-# En-dessous de trois mois de référence, un ratio médian n'est plus une
-# statistique, c'est une anecdote. On projette quand même — mais l'écran le
-# dit, et le tableau le signale.
+# En dessous, on projette quand même, mais l'écran le signale.
 PROJ_MIN_REF <- 3
 
-# À partir de quel montant un poste est réputé PRÉSENT dans un mois. Un euro :
-# en comptabilité, un poste vide vaut exactement zéro ; le seuil n'est là que
-# pour absorber un arrondi.
+# Seuil au-delà duquel un poste est réputé présent dans un mois.
 PROJ_SEUIL_PRESENT <- 1
 
 #### Les sources extérieures à la comptabilité ####
 
-# Les jours d'ouverture HABITUELS, par jour de semaine.
-#
-# Il faut ce repère pour savoir ce qu'un mois en cours a encore devant lui :
-# le 3 novembre, on ne sait pas combien de jours il reste à faire si on ne
-# sait pas lesquels sont ouverts. Un jour de semaine est réputé ouvert s'il
-# l'a été plus d'une fois sur deux sur la fenêtre regardée — la règle encaisse
-# un lundi férié sans se retourner.
+# Les jours d'ouverture habituels, par jour de semaine : ouvert plus d'une
+# fois sur deux sur la fenêtre. Sert à savoir ce qu'il reste à un mois en
+# cours.
 jours_ouverts_habituels <- function(journalier, avant, semaines = 12) {
   f <- journalier %>%
     filter(DATE < as.Date(avant),
@@ -97,23 +58,11 @@ jours_ouverts_habituels <- function(journalier, avant, semaines = 12) {
     filter(PART >= 0.5) %>% pull(J)
 }
 
-# Ventes de caisse par mois, HTVA, et le rythme du mois en cours.
+# Ventes de caisse par mois, HTVA (on compare à des comptes 70).
 #
-# HTVA et pas TVAC, sans égard pour le sélecteur de TVA du dashboard : ici on
-# compare à des comptes 70, qui sont hors taxe par construction. Laisser
-# l'utilisateur choisir ferait apparaître un CA projeté 21 % trop haut sans
-# que rien ne le signale.
-#
-# ATTENDUS / ECOULES / FACTEUR : LE mois en cours n'est pas un mois. Le 3
-# novembre, sa caisse annonce deux jours de ventes — et les rémunérations, les
-# frais généraux, les matières qu'on projetterait en face, eux, valent pour un
-# mois entier. Un CA à date confronté à des charges à mois plein donne une
-# marge catastrophique et parfaitement fausse. On porte donc le CA du mois en
-# cours à son mois complet, au prorata des jours d'ouverture.
-#
-# Un mois CLOS n'est jamais extrapolé, même s'il compte moins de jours
-# d'ouverture que d'habitude : il a été ce qu'il a été, et une fermeture
-# exceptionnelle n'est pas un trou à combler.
+# Le mois en cours est porté à son mois complet, au prorata des jours
+# d'ouverture (ATTENDUS / ECOULES / FACTEUR) : sinon un CA partiel ferait face
+# à des charges de mois entier. Un mois clos n'est jamais extrapolé.
 ventes_par_mois <- function(db_kpi, colonne = "CA_HTVA",
                             aujourd_hui = today()) {
   if (is.null(db_kpi) || !is.data.frame(db_kpi) || !nrow(db_kpi) ||
@@ -128,9 +77,7 @@ ventes_par_mois <- function(db_kpi, colonne = "CA_HTVA",
   aujourd_hui <- as.Date(aujourd_hui)
   en_cours <- floor_date(aujourd_hui, "month")
   ouverts  <- jours_ouverts_habituels(j, en_cours)
-  # Arrêté à hier, comme partout ailleurs dans le dashboard : la journée en
-  # cours n'est pas finie, et son CA partiel ferait baisser le rythme sur
-  # lequel tout le mois est porté.
+  # Arrêté à hier : la journée en cours n'est pas finie.
   j <- j %>% filter(DATE < aujourd_hui)
   if (!nrow(j)) return(NULL)
 
@@ -156,12 +103,7 @@ ventes_par_mois <- function(db_kpi, colonne = "CA_HTVA",
     arrange(PERIODE)
 }
 
-# Jusqu'où une source couvre chaque mois.
-#
-# Une source au grain JOUR peut s'arrêter en cours de mois — le calendrier de
-# shifts ne garde que l'avenir proche, le pointage s'arrête à la date
-# d'import. Un mois à moitié couvert donnerait une estimation amputée de
-# moitié, et rien ne le dirait.
+# Jusqu'où une source au grain jour couvre chaque mois.
 couverture_mois <- function(dates) {
   d <- as.Date(dates)
   d <- d[!is.na(d)]
@@ -172,21 +114,9 @@ couverture_mois <- function(dates) {
     mutate(FIN = fin_periode(PERIODE, "mois"))
 }
 
-# Heures planifiées par mois, tous services confondus.
-#
-# Tous services, et non les seules heures « variables » du volet Planning : en
-# face, le compte 62 paie aussi la cuisine, la brasserie et le support. Un
-# ratio euro/heure calculé sur les seules heures de service serait juste, mais
-# il ne voudrait rien dire.
-# DERNIER : jusqu'où le planning du mois va. Le calendrier de shifts ne garde
-# que l'avenir proche, et un mois planifié jusqu'au 20 seulement donnerait des
-# rémunérations amputées d'un tiers.
-#
-# On le SIGNALE, et on ne le redresse pas. Redresser au prorata supposerait
-# que les jours manquants ressemblent aux précédents — alors qu'un mois dont
-# le dernier jour est un lundi de fermeture paraîtrait tronqué tous les mois,
-# et gonflerait de 3 % en silence. Un biais silencieux coûte plus cher qu'une
-# estimation basse qu'on voit.
+# Heures planifiées par mois, tous services (le compte 62 les paie tous).
+# DERNIER dit jusqu'où le planning du mois va : un mois incomplet est
+# signalé, pas redressé.
 heures_par_mois <- function(db_planning) {
   if (!planning_valide(db_planning)) return(NULL)
   d <- db_planning %>%
@@ -204,45 +134,18 @@ heures_par_mois <- function(db_planning) {
 
 #### Les sources de la rémunération, de la meilleure à la dernière ####
 
-# On ne modélise les rémunérations que si quelque chose les a MESURÉES. Trois
-# sources le font, et elles ne se valent pas :
+# Les sources des rémunérations, de la meilleure à la dernière :
 #
-#   la PAIE (DB_ONSS) mesure le coût employeur du mois, c'est-à-dire presque
-#   exactement ce qu'on cherche. Il ne manque que ce que la comptabilité y
-#   ajoute — provisions, pécules — et c'est un rapport stable, donc modélisable ;
+#   paie (DB_ONSS)            le coût employeur mesuré ;
+#   pointage valorisé         chaque heure au taux de son contrat : le mix
+#                             contractuel du mois est pesé ;
+#   pointage en heures        le volume seul, quand la valorisation manque ;
+#   planning                  une prévision, seule source d'un mois en cours.
 #
-#   le POINTAGE VALORISÉ (DB_COUTS_TRAVAIL, colonne de coût) mesure les mêmes
-#   heures, mais chacune au taux de SON contrat — étudiant, CDD, CDI, extra.
-#   Le mix contractuel du mois y est donc déjà pesé, ce qu'un total d'heures
-#   ne peut pas faire : un mois d'été à moitié étudiant coûte moins cher à
-#   heures égales, et c'est précisément ce qu'on veut voir ;
-#
-#   le POINTAGE EN HEURES, lui, ne connaît que le volume. Il reste utile
-#   quand la valorisation manque — un contrat absent de la table des taux
-#   suffit à la rendre inutilisable sur tout un mois ;
-#
-#   le PLANNING (DB_HEURES_PLANNING) annonce les heures qu'on s'apprête à
-#   poser. C'est une prévision, pas une mesure — mais c'est la seule source
-#   qui existe pour un mois qui n'est pas fini.
-#
-# D'où la règle de choix : sur un mois CLOS, on descend la liste et les
-# sources qui MESURENT répondent les premières — préférer le planning à un
-# pointage, ce serait préférer ce qu'on avait prévu à ce qui s'est passé. Le
-# planning ne répond alors que si aucune des deux n'est là. Sur un mois EN
-# COURS, les mesures sont forcément partielles (le pointage s'arrête hier) :
-# elles sont écartées, et le planning, qui couvre le mois entier, reste seul.
-#
-# Le recalage est propre à chaque source : le rapport médian se calcule
-# toujours entre LA MÊME source et le compte 62 des mois de référence. Un
-# coût horaire calculé sur des heures pointées ne s'applique pas à des heures
-# planifiées, qui n'en sont pas le même compte.
-#
-# L'ordre dit ce qu'on CROIT de chaque source, pas ce qu'on a mesuré. Le
-# contrôle du modèle, lui, mesure : controle_sources_remuneration() donne
-# l'écart médian de chacune sur les mois connus, et l'écran les affiche côte
-# à côte. On n'automatise pas le choix pour autant — six mois d'historique
-# suffisent à faire gagner une source par hasard, et une source qui colle
-# mieux au passé n'est pas forcément la bonne pour le mois suivant.
+# Sur un mois clos, les mesures passent avant le planning. Sur un mois en
+# cours, les mesures (partielles) sont écartées. Chaque source est recalée par
+# son propre rapport médian au compte 62. controle_sources_remuneration()
+# mesure l'écart de chacune ; le choix, lui, n'est pas automatisé.
 PROJ_SOURCES_REMU <- tibble::tribble(
   ~CLE,          ~LIBELLE,                    ~UNITE,  ~QUOI,                ~RAPPORT,          ~MOIS_EN_COURS,
   "paie",        "Coût de la paie",           "euro",  "de coût employeur",  "compta/paie",     FALSE,
@@ -250,13 +153,8 @@ PROJ_SOURCES_REMU <- tibble::tribble(
   "horeko",      "Heures pointées",           "heure", "h pointées",         "",                FALSE,
   "planning",    "Heures planifiées",         "heure", "h planifiées",       "",                TRUE)
 
-#' Les trois sources, mises à la même forme : PERIODE, VALEUR, et la
-#' couverture du mois.
-#'
-#' sources_mensuelles() (R/sources_travail.R) fait déjà le gros du travail
-#' pour la paie et le pointage — leurs colonnes changent de nom d'un import à
-#' l'autre, et cette fonction-là connaît le piège. En refaire une ici en
-#' aurait fait deux à maintenir.
+#' Les sources, mises à la même forme : PERIODE, VALEUR, et la couverture du
+#' mois (s'appuie sur sources_mensuelles() de R/sources_travail.R).
 sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
                                  db_planning = NULL) {
   src <- list(paie = NULL, horeko_cout = NULL, horeko = NULL, planning = NULL)
@@ -268,13 +166,9 @@ sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
     m <- sources_mensuelles(db_couts, db_onss)
     cv <- couverture_mois(db_couts$DATE)
 
-    # Le pointage VALORISÉ se somme ici, et pas depuis sources_mensuelles(),
-    # pour une raison qui compte : celle-ci somme avec na.rm = TRUE. Or un
-    # contrat absent de la table des taux (« Cout » du classeur Horeko)
-    # laisse un coût à NA — et na.rm le ferait disparaître, c'est-à-dire
-    # compter ces heures-là pour zéro euro. Le mois serait sous-estimé sans
-    # que rien ne le dise. Sans na.rm, le mois entier devient NA et la source
-    # se tait : la ligne suivante de l'échelle répond à sa place.
+    # Le pointage valorisé est sommé sans na.rm : un contrat sans taux rend le
+    # mois NA, et la source suivante répond (plutôt que de compter ces heures
+    # pour zéro euro).
     col_cout <- if ("COUT_HOREKO_LIGNE" %in% names(db_couts))
       "COUT_HOREKO_LIGNE" else "COUT_TRAVAIL"
     if (col_cout %in% names(db_couts)) {
@@ -292,7 +186,6 @@ sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
       h <- m %>% filter(SOURCE == "horeko", !is.na(HEURES), HEURES > 0) %>%
         transmute(PERIODE, VALEUR = HEURES)
       if (nrow(h)) src$horeko <- h %>% left_join(cv, by = "PERIODE")
-      # La paie est mensuelle : présente, elle couvre son mois entier.
       p <- m %>% filter(SOURCE == "paie", !is.na(COUT), COUT > 0) %>%
         transmute(PERIODE, VALEUR = COUT)
       if (nrow(p)) src$paie <- p %>%
@@ -309,16 +202,9 @@ sources_remuneration <- function(db_couts = NULL, db_onss = NULL,
 
 #### Les mois de référence ####
 
-#' Les mois sur lesquels le modèle s'appuie, pour UN poste.
-#'
-#' Trois filtres, et chacun a sa raison :
-#'   - antérieurs au mois cible : on ne modélise pas avec l'avenir ;
-#'   - ni écartés, ni eux-mêmes projetés : un mois dont on doute ne peut pas
-#'     servir de référence, sinon le doute se propage sans qu'on le voie ;
-#'   - le poste y est présent : un mois sans rémunérations ne dit rien du coût
-#'     horaire. C'est le filtre qui compte le plus — sans lui, les mois
-#'     incomplets qu'on cherche justement à combler tireraient la médiane vers
-#'     zéro, et le modèle confirmerait le trou qu'il doit remplir.
+#' Les mois de référence d'UN poste : antérieurs au mois cible, ni écartés
+#' ni projetés, et où le poste est présent (sinon les mois troués tireraient
+#' la médiane vers zéro).
 mois_reference <- function(postes, cible, bloc = NULL, n = PROJ_DEFAUT_REF,
                            exclus = NULL, a_projeter = NULL) {
   if (is.null(postes) || !nrow(postes)) return(postes)
@@ -333,38 +219,28 @@ mois_reference <- function(postes, cible, bloc = NULL, n = PROJ_DEFAUT_REF,
 
 #### Les quatre estimateurs ####
 
-# Chacun rend la même chose : une valeur, la méthode qui l'a produite, la base
-# de calcul en clair, et le nombre de mois de référence derrière. Le tableau
-# affiche les quatre colonnes telles quelles — c'est la règle 2.
+# Chaque estimateur rend une valeur, sa méthode, sa base de calcul en clair
+# et le nombre de mois de référence.
 proj_valeur <- function(valeur, methode, detail, n_ref = 0L) {
   list(VALEUR = as.numeric(valeur), METHODE = methode,
        DETAIL = detail, N_REF = as.integer(n_ref))
 }
 
-# Un taux au centime : « 24,30€/h » et pas « 20€/h ». format_CA(x, -1)
-# arrondirait à la dizaine d'euros, ce qui sur un taux horaire est absurde.
+# Un taux au centime.
 proj_taux <- function(x) paste0(euro_compta(x), "/h")
 
 # Un rapport sans unité (le calibrage caisse -> compta), à trois décimales.
 proj_facteur <- function(x) sub(".", ",", format(round(x, 3), nsmall = 3),
                                 fixed = TRUE)
 
-#' CA : les ventes de caisse du mois, recalées sur la comptabilité.
-#'
-#' La caisse et le compte 70 ne comptent jamais tout à fait la même chose —
-#' offerts, arrondis, régularisations, ventes encaissées à cheval sur deux
-#' mois. L'écart est petit mais systématique, donc modélisable : on prend le
-#' rapport médian compta / caisse des mois de référence et on l'applique. Sans
-#' ce recalage, le CA projeté porterait un biais connu qu'on aurait choisi
-#' d'ignorer.
+#' CA : les ventes de caisse du mois, recalées sur la comptabilité par le
+#' rapport médian compta / caisse des mois de référence.
 projette_ca <- function(cible, ventes, ref) {
   cible <- as.Date(cible)
   ligne <- if (is.null(ventes)) NULL else ventes[ventes$PERIODE == cible, ]
   v <- if (is.null(ligne) || !nrow(ligne)) numeric(0) else ligne$VENTES[1]
 
-  # Un mois à peine commencé n'a rien à extrapoler : zéro jour écoulé ne
-  # donne aucun rythme. Plutôt que d'inventer un facteur, on reconduit la
-  # médiane — et la méthode affichée change, pour qu'on le sache.
+  # Mois à peine commencé : on reconduit la médiane, et la méthode le dit.
   if (!length(v) || is.na(v) || v <= 0 ||
       (isTRUE(ligne$EN_COURS[1]) && is.na(ligne$FACTEUR[1]))) {
     if (!nrow(ref))
@@ -396,12 +272,8 @@ projette_ca <- function(cible, ventes, ref) {
     nrow(cal))
 }
 
-#' Matières : le ratio médian au CA, appliqué au CA retenu.
-#'
-#' Le ratio matière est la grandeur la plus stable de la maison — c'est la
-#' recette, pas la fréquentation. D'où le choix de le modéliser lui, et non le
-#' montant : un mois à +20 % de CA doit porter +20 % de matières, ce qu'une
-#' médiane de montants raterait complètement.
+#' Matières : le ratio médian au CA, appliqué au CA retenu ; le ratio est la
+#' grandeur la plus stable.
 projette_matieres <- function(ca, ref) {
   r <- ref %>% filter(CA > PROJ_SEUIL_PRESENT) %>% mutate(R = MATIERES / CA)
   if (!nrow(r) || is.na(ca))
@@ -414,19 +286,8 @@ projette_matieres <- function(ca, ref) {
     nrow(r))
 }
 
-#' Rémunérations : ce qui a été mesuré ce mois-là, recalé sur le compte 62.
-#'
-#' On descend PROJ_SOURCES_REMU jusqu'à ce qu'une source réponde. Pour chacune,
-#' le recalage se fait entre elle-même et le compte 62 des mois de référence :
-#' un coût horaire calculé sur des heures pointées ne s'applique pas à des
-#' heures planifiées, qui ne comptent pas la même chose.
-#'
-#' Sur un mois en cours, les sources qui MESURENT sont forcément partielles —
-#' le pointage s'arrête hier. Elles sont donc écartées, et c'est le planning,
-#' puis la médiane, qui répondent.
-#'
-#' Dernier recours : la médiane des montants. L'écran le dit, la méthode
-#' affichée change.
+#' Rémunérations : la première source de PROJ_SOURCES_REMU qui répond,
+#' recalée sur le compte 62 ; dernier recours, la médiane des montants.
 projette_remuneration <- function(cible, sources, ref, aujourd_hui = today()) {
   cible <- as.Date(cible)
   clos  <- fin_periode(cible, "mois") < as.Date(aujourd_hui)
@@ -455,9 +316,7 @@ projette_remuneration <- function(cible, sources, ref, aujourd_hui = today()) {
     }
     r <- median(cal$REMUNERATION / cal$VALEUR)
 
-    # Une source au grain jour qui s'arrête avant la fin du mois : on le dit.
-    # L'estimation est alors basse de ce qui manque — et la redresser au
-    # prorata supposerait que les jours absents ressemblent aux autres.
+    # Une source qui s'arrête avant la fin du mois : on le dit.
     tronque <- !is.null(ligne$DERNIER) && !is.na(ligne$DERNIER[1]) &&
       ligne$DERNIER[1] < ligne$FIN[1]
     base <- if (s$UNITE == "euro")
@@ -481,12 +340,8 @@ projette_remuneration <- function(cible, sources, ref, aujourd_hui = today()) {
            ")"), nrow(ref))
 }
 
-#' Frais généraux : la médiane des mois de référence.
-#'
-#' Aucune source extérieure ne les annonce — assurances, énergie, honoraires,
-#' entretien tombent quand ils tombent. La médiane est ici le moins mauvais
-#' estimateur, et surtout le seul honnête : on ne prétend pas prévoir, on
-#' reconduit.
+#' Frais généraux : la médiane des mois de référence. On reconduit, on ne
+#' prétend pas prévoir.
 projette_generaux <- function(ref) {
   if (!nrow(ref))
     return(proj_valeur(NA_real_, "Médiane des mois précédents",
@@ -505,7 +360,7 @@ projette_generaux <- function(ref) {
 #' @param ventes sortie de ventes_par_mois(), ou NULL.
 #' @param sources sortie de sources_remuneration(), ou NULL.
 #' @param ajustements vecteur nommé par clé, en % : l'hypothèse de
-#'   l'utilisateur, appliquée APRÈS le modèle. Le tableau montre les deux.
+#'   l'utilisateur, appliquée après le modèle.
 #' @return une ligne par poste projeté.
 projette_mois <- function(postes, cible, cles, ventes = NULL, sources = NULL,
                           n_ref = PROJ_DEFAUT_REF, exclus = NULL,
@@ -526,9 +381,7 @@ projette_mois <- function(postes, cible, cles, ventes = NULL, sources = NULL,
     if (is.null(a) || is.na(a)) 0 else as.numeric(a)
   }
 
-  # Le CA retenu sert de base aux matières. Il part du réel et devient le
-  # projeté dès que le CA est lui-même projeté — c'est pour cela que l'ordre
-  # de PROJ_POSTES n'est pas décoratif.
+  # Le CA retenu (réel ou projeté) sert de base aux matières.
   ca_retenu <- lire("CA")
   lignes <- list()
 
@@ -554,12 +407,8 @@ projette_mois <- function(postes, cible, cles, ventes = NULL, sources = NULL,
   bind_rows(lignes)
 }
 
-#' La même chose sur plusieurs mois.
-#'
-#' Chaque mois se projette sans les autres : ses références excluent TOUS les
-#' mois projetés, y compris ceux qui le précèdent. Sinon juillet servirait de
-#' référence à août, et le modèle se nourrirait de lui-même — trois mois plus
-#' loin, plus personne ne saurait sur quoi repose le chiffre.
+#' La même chose sur plusieurs mois. Les références de chaque mois excluent
+#' tous les mois projetés : le modèle ne se nourrit pas de lui-même.
 projette_mois_multiples <- function(postes, mois, cles, ventes = NULL,
                                     sources = NULL, n_ref = PROJ_DEFAUT_REF,
                                     exclus = NULL, ajustements = NULL) {
@@ -573,13 +422,7 @@ projette_mois_multiples <- function(postes, mois, cles, ventes = NULL,
 #### Du poste projeté au compte d'exploitation ####
 
 # Les colonnes dérivées de postes_exploitation(), recalculées après
-# substitution.
-#
-# Ce calcul EXISTE DÉJÀ dans postes_exploitation() et il est reproduit ici :
-# c'est le genre de doublon qui diverge un jour en silence. Le garde-fou est
-# un test — test_projection.R applique une projection VIDE à une vraie sortie
-# de postes_exploitation() et exige que tout retombe au centime. Le jour où
-# l'une des deux formules bouge, la suite devient rouge.
+# substitution. Un test garde les deux formules identiques.
 recalcule_gestion <- function(p) {
   p %>% mutate(
     PRODUITS      = CA + AUTRES,
@@ -596,11 +439,8 @@ recalcule_gestion <- function(p) {
     PCT_MARGE_PA  = ratio_pct(MARGE_PA, CA))
 }
 
-#' Le compte d'exploitation tel qu'il serait, projection appliquée.
-#'
-#' Un mois projeté qui n'existe pas encore dans la comptabilité est CRÉÉ à
-#' zéro puis rempli : c'est le cas d'un mois dont rien n'est encore encodé, et
-#' c'est précisément celui où la projection sert le plus.
+#' Le compte d'exploitation projection appliquée. Un mois absent de la
+#' comptabilité est créé à zéro puis rempli.
 applique_projection <- function(postes, proj) {
   if (is.null(postes)) return(NULL)
   if (is.null(proj) || !nrow(proj))
@@ -626,12 +466,8 @@ applique_projection <- function(postes, proj) {
 
 #### Ce qui manque, et qu'on propose de combler ####
 
-#' Les postes absents d'un mois alors qu'ils devraient y être.
-#'
-#' « Absent » et pas « bizarre » : un poste à zéro là où les mois voisins en
-#' portent des milliers d'euros n'est pas une anomalie de gestion, c'est une
-#' écriture qui n'est pas passée. C'est ce signal-là, et lui seul, qui
-#' préselectionne les cases de l'écran — le reste est à l'utilisateur.
+#' Les postes absents d'un mois alors que les mois voisins en portent : une
+#' écriture pas encore passée. Ce signal préselectionne les cases de l'écran.
 #'
 #' @return une ligne par mois x poste manquant.
 postes_manquants <- function(postes, depuis = NULL) {
@@ -645,8 +481,7 @@ postes_manquants <- function(postes, depuis = NULL) {
   res <- lapply(seq_len(nrow(PROJ_POSTES)), function(i) {
     bloc <- PROJ_POSTES$BLOC[i]
     v <- postes[[bloc]]
-    # La médiane se prend sur les mois où le poste EST là : sinon trois mois
-    # troués sur six la ramènent à zéro, et plus rien ne paraît manquer.
+    # Médiane prise sur les mois où le poste est présent.
     presents <- v[abs(v) > PROJ_SEUIL_PRESENT]
     if (length(presents) < PROJ_MIN_REF) return(NULL)
     med <- median(presents)
@@ -660,13 +495,8 @@ postes_manquants <- function(postes, depuis = NULL) {
 
 #### Le contrôle du modèle ####
 
-#' Ce que le modèle aurait prédit sur des mois qu'on connaît.
-#'
-#' Un estimateur sans mesure d'erreur ne se discute pas. On rejoue donc le
-#' modèle sur les derniers mois COMPLETS, chacun projeté comme s'il était
-#' inconnu — ses propres références s'arrêtant avant lui — et on confronte au
-#' réel. L'écart médian qui en sort est la seule chose qui permette de dire si
-#' un chiffre projeté vaut 5 % près ou 30 %.
+#' Le modèle rejoué sur les derniers mois complets, chacun comme s'il était
+#' inconnu, et confronté au réel : l'écart dit ce que vaut un chiffre projeté.
 controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
                             n_ref = PROJ_DEFAUT_REF, exclus = NULL,
                             n_mois = 6) {
@@ -680,8 +510,7 @@ controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
   candidats <- postes %>% filter(!PERIODE %in% as.Date(exclus))
   candidats <- candidats %>% arrange(desc(PERIODE)) %>%
     head(n_mois + 1) %>% pull(PERIODE)
-  # Le mois le plus ancien du lot n'a pas de passé à lui : il servirait de
-  # témoin sans référence.
+  # Le mois le plus ancien n'a pas de passé.
   candidats <- sort(candidats)
   if (length(candidats) < 2) return(vide)
   candidats <- candidats[-1]
@@ -689,8 +518,7 @@ controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
   res <- lapply(candidats, function(m) {
     p <- projette_mois(postes, m, cles, ventes, sources, n_ref, exclus,
                        a_projeter = m)
-    # On ne juge que les postes RÉELLEMENT présents ce mois-là : comparer un
-    # modèle à un zéro manquant mesurerait le trou, pas le modèle.
+    # Seuls les postes présents ce mois-là sont jugés.
     p %>% filter(abs(REEL) > PROJ_SEUIL_PRESENT, !is.na(MODELE)) %>%
       transmute(PERIODE, CLE, LIBELLE, REEL, MODELE,
                 ECART = MODELE - REEL, ECART_PCT = ratio_pct(MODELE - REEL, abs(REEL)))
@@ -698,17 +526,9 @@ controle_modele <- function(postes, cles, ventes = NULL, sources = NULL,
   bind_rows(res)
 }
 
-#' Ce que vaut CHAQUE source de rémunération, mesuré sur les mois connus.
-#'
-#' L'échelle des sources dit ce qu'on croit ; ceci dit ce qu'on observe. Pour
-#' chaque source prise SEULE, on rejoue les derniers mois complets comme s'ils
-#' étaient inconnus et on compare au compte 62 réel. Un mois où la source
-#' n'aurait pas répondu — pas de donnée, pas assez de références — ne compte
-#' pas : on mesure la source, pas le repli.
-#'
-#' C'est ce qui permet de trancher « le pointage valorisé par contrat
-#' vaut-il mieux que le volume d'heures ? » sur des chiffres plutôt que sur
-#' une conviction.
+#' L'écart de chaque source de rémunération prise seule, rejouée sur les
+#' mois connus contre le compte 62 réel. Un mois où la source n'a pas répondu
+#' ne compte pas.
 controle_sources_remuneration <- function(postes, sources,
                                           n_ref = PROJ_DEFAUT_REF,
                                           exclus = NULL, n_mois = 6,
@@ -731,8 +551,7 @@ controle_sources_remuneration <- function(postes, sources,
     ecarts <- vapply(mois, function(m) {
       ref <- mois_reference(postes, m, "REMUNERATION", n_ref, exclus, m)
       r <- projette_remuneration(m, sources[s$CLE], ref, aujourd_hui)
-      # La source n'a pas répondu : c'est le repli qui a parlé, et l'erreur
-      # du repli n'apprend rien sur elle.
+      # La source n'a pas répondu : c'est le repli qui a parlé.
       if (!identical(r$METHODE, s$LIBELLE) || is.na(r$VALEUR))
         return(NA_real_)
       reel <- postes$REMUNERATION[postes$PERIODE == m][1]
@@ -760,8 +579,7 @@ fiabilite_modele <- function(ctrl) {
 
 #### Rendus ####
 
-# Le signe d'un chiffre modélisé, partout dans l'écran. Un caractère plutôt
-# qu'une couleur : un tableau se relit en noir et blanc, et se photocopie.
+# Le signe d'un chiffre modélisé : un caractère, lisible en noir et blanc.
 PROJ_MARQUE <- "≈ "
 
 proj_marque_cellule <- function(valeur, periode, bloc, proj) {
@@ -773,11 +591,8 @@ proj_marque_cellule <- function(valeur, periode, bloc, proj) {
   ifelse(modelise, paste0(PROJ_MARQUE, txt), txt)
 }
 
-#' Les tuiles : ce que pèsent les mois choisis, une fois complétés.
-#'
-#' Le « ≈ » n'est pas décoratif : sur un mois où seules les rémunérations sont
-#' projetées, le CA affiché est RÉEL. Une tuile « CA projeté » mentirait, et
-#' c'est le genre de mensonge qui se recopie dans un mail.
+#' Les tuiles des mois choisis, complétés. « ≈ » seulement sur ce qui est
+#' projeté.
 kpi_projection <- function(p, mois, proj = NULL) {
   sel <- p %>% filter(PERIODE %in% as.Date(mois))
   if (!nrow(sel))
@@ -810,7 +625,7 @@ kpi_projection <- function(p, mois, proj = NULL) {
              sous_titre = paste(format_pct(ratio_pct(marge, ca)), "du CA")))
 }
 
-#' Le travail du modèle, ligne par ligne : c'est la pièce justificative.
+#' Le travail du modèle, ligne par ligne.
 table_projection_detail <- function(proj) {
   if (is.null(proj) || !nrow(proj))
     return(tibble(Projection = "Aucun poste à projeter."))
@@ -829,9 +644,7 @@ table_projection_detail <- function(proj) {
       `.tri:Retenu` = RETENU,
       Méthode = METHODE,
       `Base de calcul` = DETAIL,
-      # Le nombre de mois derrière la médiane, en clair : une projection
-      # bâtie sur deux mois n'a pas le même poids qu'une bâtie sur six, et
-      # c'est invisible sur le montant seul.
+      # Le nombre de mois derrière la médiane.
       Réf = ifelse(N_REF == 0, "—", as.character(N_REF)),
       `.tri:Réf` = N_REF)
 }
@@ -860,19 +673,14 @@ table_projection_resultat <- function(p, proj, n = PROJ_MOIS_GRAPHE) {
     `.tri:% du CA` = d$PCT_MARGE_AA)
 }
 
-#' La trajectoire : la marge mois par mois, le projeté hachuré.
-#'
-#' Hachures et non seconde couleur : la couleur dit déjà le signe de la marge,
-#' et lui faire dire deux choses à la fois la rend muette. La texture est le
-#' seul canal libre.
+#' La trajectoire : la marge mois par mois, le projeté hachuré (la couleur
+#' dit déjà le signe).
 graph_projection <- function(p, n = PROJ_MOIS_GRAPHE, source = "proj_traj") {
   if (is.null(p) || !nrow(p))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
              layout(title = list(text = "Aucune comptabilité")))
   d <- p %>% arrange(PERIODE) %>% tail(n)
-  # Des étiquettes de mois sur un axe « category » : plotly les RANGE PAR
-  # ORDRE ALPHABÉTIQUE dès que deux traces les partagent, et la chronologie
-  # part en « août, avr., déc., févr. ». L'ordre doit donc être imposé.
+  # Ordre imposé : plotly trierait les catégories alphabétiquement.
   axe <- etiquette_periode(d$PERIODE, "mois")
   coul <- ifelse(d$MARGE_AA >= 0, COUL_VERT, COUL_ROUGE)
   reels <- d %>% filter(!PROJETE)
@@ -901,8 +709,7 @@ graph_projection <- function(p, n = PROJ_MOIS_GRAPHE, source = "proj_traj") {
       hovertemplate = paste0("Médiane des mois réels : ",
                              euro_exact(repere), "<extra></extra>"))
 
-  # event_register : sans lui, plotly n'envoie pas l'événement à Shiny et le
-  # clic sur une barre ne change rien — en silence, comme toujours.
+  # event_register : sans lui, le clic n'arrive pas à Shiny.
   g <- event_register(g, "plotly_click")
 
   g %>% layout(
@@ -915,9 +722,7 @@ graph_projection <- function(p, n = PROJ_MOIS_GRAPHE, source = "proj_traj") {
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# euro_signe() blanchit ce qui s'arrondit à zéro à la dizaine d'euros près :
-# un écart de 2 € s'y affichait « + », un signe tout seul. Ici la colonne
-# existe pour être lue à côté d'un pourcentage, on la formate donc à part.
+# Écart formaté à part : euro_signe() blanchit les petits montants.
 proj_ecart <- function(x)
   ifelse(is.na(x), "—",
   ifelse(abs(x) < 5, "0 €",
@@ -943,10 +748,8 @@ table_controle_modele <- function(ctrl) {
       `.tri:Écart %` = ECART_PCT)
 }
 
-#' La fiabilité en une phrase par poste.
-#'
-#' Les seuils sont volontairement larges : on mesure ici la capacité à
-#' annoncer un ordre de grandeur, pas à remplacer la comptabilité.
+#' La fiabilité en une phrase par poste ; seuils larges (un ordre de
+#' grandeur, pas la comptabilité).
 resume_fiabilite <- function(fiab) {
   if (is.null(fiab) || !nrow(fiab))
     return(div(class = "text-muted small",
@@ -969,10 +772,8 @@ resume_fiabilite <- function(fiab) {
         })))
 }
 
-#' Les sources de rémunération, côte à côte, avec ce qu'elles valent.
-#'
-#' Dans l'ordre de l'échelle : la première disponible est celle qui sert. La
-#' lire à côté de son écart mesuré, c'est pouvoir contester l'ordre.
+#' Les sources de rémunération côte à côte, dans l'ordre de l'échelle, avec
+#' leur écart mesuré.
 resume_sources_remu <- function(f) {
   if (is.null(f) || !nrow(f)) return(NULL)
   div(

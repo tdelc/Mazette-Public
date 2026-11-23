@@ -1,12 +1,7 @@
-# Volet « Comparaison » : plusieurs périodes face à face, au choix.
+# Volet « Comparaison » : plusieurs périodes face à face.
 #
-# Comparer des périodes deux à deux, ou dix à dix. Deux sources se croisent :
-#
-#   db_kpi    quotidien, donc disponible à la semaine comme à l'année, et
-#             porteur des répartitions midi/soir, boisson/nourriture,
-#             semaine/week-end ;
-#   db_compta MENSUEL. Les colonnes de gestion restent donc vides sur une
-#             comparaison hebdomadaire — aucune ventilation n'est inventée.
+#   db_kpi    quotidien : disponible à toutes les granularités ;
+#   db_compta mensuel : les colonnes de gestion restent vides à la semaine.
 
 #' Une ligne par période, avec tout ce qu'on sait d'elle.
 comparaison_periodes <- function(db_kpi, db_obj, db_compta = NULL,
@@ -48,9 +43,7 @@ comparaison_periodes <- function(db_kpi, db_obj, db_compta = NULL,
   if (!is.null(db_compta) && nrow(db_compta) && unite != "semaine") {
     g <- agrege_exploitation(postes_exploitation(db_compta),
                              if (unite == "annee") "annee" else "mois") %>%
-      # MARGE_AA, la marge de gestion (sans amortissement, avec le financier) :
-      # c'est elle qui raconte les dynamiques de gestion. Le résultat
-      # d'exploitation comptable ne sert plus qu'à la comptabilité générale.
+      # La marge de gestion, celle du volet Compta.
       select(PERIODE, MATIERES, REMUNERATION, GENERAUX, FINANCIER, MARGE_AA,
              PCT_MATIERES, PCT_TRAVAIL, PCT_PRIME, PCT_GENERAUX, PCT_MARGE_AA)
     res <- left_join(res, g, by = "PERIODE")
@@ -66,11 +59,8 @@ comparaison_periodes <- function(db_kpi, db_obj, db_compta = NULL,
   arrange(res, PERIODE)
 }
 
-#' Barres de CA colorées par l'atteinte de l'objectif.
-#'
-#' L'objectif n'a plus sa propre barre : deux séries côte à côte doublaient la
-#' largeur pour une information que le survol donne mieux. La couleur porte le
-#' jugement, le survol porte le détail.
+#' Barres de CA colorées par l'atteinte de l'objectif ; le survol porte le
+#' détail.
 graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
   unite <- match.arg(unite)
   if (is.null(comp) || nrow(comp) == 0)
@@ -81,8 +71,6 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
   lab  <- label_periode(comp$PERIODE, unite)
   ordre <- factor(lab, levels = lab)
 
-  # Le survol rassemble tout ce qu'on sait de la période : c'est là que
-  # l'information dense a sa place, pas dans des barres supplémentaires.
   ligne <- function(cle, val) ifelse(is.na(val) | val == "", "",
                                      paste0("<br>", cle, " : ", val))
   hover <- paste0(
@@ -132,10 +120,8 @@ graph_comparaison <- function(comp, unite = c("semaine", "mois", "annee")) {
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-#' Tableau comparatif : tout ce que la période porte, en colonnes.
-#'
-#' Les colonnes de gestion disparaissent si la comptabilité ne couvre aucune des
-#' périodes — inutile d'afficher huit colonnes vides sur une vue hebdomadaire.
+#' Tableau comparatif. Les colonnes de gestion disparaissent si la
+#' comptabilité ne couvre aucune période.
 table_comparaison_aff <- function(comp, unite = c("semaine", "mois", "annee"),
                                   unite_tva = NULL) {
   unite <- match.arg(unite)

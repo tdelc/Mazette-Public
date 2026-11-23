@@ -1,16 +1,6 @@
-#### Paramètre de la journée
-
-date_actuelle        <- Sys.Date()
-premier_jour_semaine <- date_actuelle - as.POSIXlt(date_actuelle)$wday + 1
-jours_semaine        <- seq(from = premier_jour_semaine, by = "days", length.out = 7)
-vecteur_jours_LOCAL  <- weekdays(jours_semaine)
-
 #### Authentification Google ####
 
-link_json <- Sys.getenv("LINK_JSON")
-path_drive <- Sys.getenv("PATH_DRIVE")
-
-download.file(link_json, destfile = "connect.json")
+download.file(Sys.getenv("LINK_JSON"), destfile = "connect.json")
 drive_auth(path = "connect.json")
 
 #### Récupération des liens drive ####
@@ -36,16 +26,17 @@ path_mazette <- drive_mazette$local_path
 
 IMPORT_BIERES_CORRESPONDANCE <- read_excel(path_mazette,sheet = "CORRESPONDANCE BIERES",range = cell_cols("A:D"))
 
-# L'onglet des accès a été refait à part pour ne pas casser l'ancien : son nom
-# est donc nommé ici plutôt que recopié, pour que les deux endroits qui s'y
-# réfèrent ne puissent pas diverger.
+# L'onglet des mots de passe.
 SHEET_PASS <- "IMPORT PASS NEW"
+
+# Un onglet d'objectifs par année ; « IMPORT OBJECTIFS » tout court est 2024.
+SHEETS_OBJECTIFS <- c("IMPORT OBJECTIFS", "IMPORT OBJECTIFS 2022",
+                      "IMPORT OBJECTIFS 2023", "IMPORT OBJECTIFS 2025",
+                      "IMPORT OBJECTIFS 2026")
 
 vec_sheets <- c("DB JOURS","IMPORT OLD DATA","IMPORT BRASSINS",
                 "IMPORT LIGHTSPEED","IMPORT TICKET","IMPORT CAISSE",
-                "IMPORT OBJECTIFS","IMPORT OBJECTIFS 2025",
-                "IMPORT OBJECTIFS 2022","IMPORT OBJECTIFS 2023",
-                "IMPORT OBJECTIFS 2026", SHEET_PASS)
+                SHEETS_OBJECTIFS, SHEET_PASS)
 
 read_mazette <- function(sheet_name) suppressWarnings(
   read_excel(path_mazette, sheet = sheet_name, .name_repair = "unique_quiet"))
@@ -58,18 +49,10 @@ IMPORT_BRASSINS      <- DB_sheets$`IMPORT BRASSINS`
 IMPORT_LIGHTSPEED    <- DB_sheets$`IMPORT LIGHTSPEED`
 IMPORT_TICKET        <- DB_sheets$`IMPORT TICKET`
 IMPORT_CAISSE        <- DB_sheets$`IMPORT CAISSE`
-IMPORT_OBJECTIF_2024 <- DB_sheets$`IMPORT OBJECTIFS`
-IMPORT_OBJECTIF_2022 <- DB_sheets$`IMPORT OBJECTIFS 2022`
-IMPORT_OBJECTIF_2023 <- DB_sheets$`IMPORT OBJECTIFS 2023`
-IMPORT_OBJECTIF_2025 <- DB_sheets$`IMPORT OBJECTIFS 2025`
-IMPORT_OBJECTIF_2026 <- DB_sheets$`IMPORT OBJECTIFS 2026`
-# [[ ]] et non $ : `$` sur une liste fait de l'appariement PARTIEL, en silence.
-# DB_sheets$"IMPORT PASS" trouvait donc "IMPORT PASS NEW" par préfixe — ça
-# marchait, mais par chance : un second onglet commençant pareil ("IMPORT PASS
-# OLD") rendrait le préfixe ambigu et renverrait NULL, sans un mot.
+# [[ ]] et non $ : `$` sur une liste apparie par préfixe, en silence.
 IMPORT_PASS          <- DB_sheets[[SHEET_PASS]]
 
-# Import des heures
+# Heures pointées (Horeko)
 
 cli::cli_h3("Drive Heures")
 
@@ -84,10 +67,6 @@ IMPORT_HEURES <- sheets_heures |> map_df(~{
 })
 IMPORT_COUT <- read_excel(drive_heures$local_path,sheet = "Cout")
 
-# Import des matières premières (old issu de la compta 2022 à juin 2026)
-
-# drive_download(drive_get(id =get_path("ID_OLD_COMPTA")),overwrite = TRUE)
-# HISTO_COUTS_MATIERE <- readRDS("HISTO_COUTS_MATIERE.rds")
 
 cli::cli_h3("Drive Compta")
 
@@ -96,50 +75,34 @@ DB_COMPTA <- readRDS("DB_COMPTA.rds")
 
 #### Compta Odoo ####
 
-# Source optionnelle, sur le modèle de la paie : tant que rien n'est
-# renseigné, l'import se comporte exactement comme avant.
+# Source optionnelle : sans configuration, la compta reste celle de
+# DB_COMPTA.rds. Deux façons de la renseigner, par priorité :
 #
-# Deux façons de la renseigner, dans cet ordre de priorité :
+# 1. l'API : les variables ODOO_URL, ODOO_DB, ODOO_LOGIN, ODOO_CLE_API
+#    (cf. R/odoo_api.R ; vérifier avec `Rscript essai_odoo_api.R`) ;
+# 2. un fichier : la ligne ID_ODOO_ECRITURES de l'onglet PATHS, vers l'export
+#    « Écritures comptables » (classeur Google ou .xlsx).
 #
-# 1. L'API — les quatre variables d'environnement ODOO_URL, ODOO_DB,
-#    ODOO_LOGIN, ODOO_CLE_API (cf. R/odoo_api.R). Rien à déposer nulle part,
-#    et les écritures sont celles de l'instant. Vérifie la connexion avec
-#    `Rscript essai_odoo_api.R` AVANT de lancer un import.
-# 2. Le fichier — une ligne `ID_ODOO_ECRITURES` dans l'onglet PATHS du Drive,
-#    pointant vers l'export « Écritures comptables » d'Odoo : un classeur
-#    Google (onglet « ECRITURES ») ou le .xlsx déposé tel quel.
-#
-# Odoo ne contient rien avant la reprise du 30/06/2026 : il ne remplace donc
-# pas DB_COMPTA, il en prend la suite. Toute la logique vit dans R/odoo.R.
+# Odoo commence à la reprise du 30/06/2026 : il prend la suite de DB_COMPTA
+# (cf. coud_compta() dans R/odoo.R).
 ID_ODOO  <- get_path("ID_ODOO_ECRITURES")
 IDS_ODOO <- identifiants_odoo()
 
-# Deux tuyaux, une seule chaîne. L'API passe devant quand elle est configurée
-# (les quatre variables ODOO_*), le fichier Drive sert sinon. Les deux rendent
-# le MÊME tableau brut, et tout ce qui suit est identique : c'est l'argument
-# central de docs/odoo.md, et c'est ce qui rend les deux sources comparables.
+# Les deux sources rendent le même tableau brut, puis suivent la même chaîne.
 A_LIRE_ODOO <- !is.null(IDS_ODOO) ||
   (length(ID_ODOO) == 1 && !is.na(ID_ODOO) && nzchar(ID_ODOO))
 
 if (A_LIRE_ODOO) {
   cli::cli_h3(if (!is.null(IDS_ODOO)) "API Odoo" else "Drive Odoo")
 
-  # Un échec de lecture ne doit pas emporter tout l'import : la compta Odoo
-  # s'AJOUTE à une chaîne qui marchait sans elle. On le dit fort, et on laisse
-  # DB_COMPTA tel quel plutôt que d'en produire une moitié.
+  # Un échec de lecture n'emporte pas l'import : DB_COMPTA reste tel quel.
   COMPTA_ODOO <- tryCatch({
-    # Le brut est gardé le temps d'un contrôle : normalise_ecritures() écarte
-    # les lignes sans date ni compte, et c'est en les COMPTANT qu'on verra un
-    # jour un format de date changer sous nos pieds.
+    # Le brut sert à compter les lignes écartées par la normalisation.
     BRUT_ODOO <- if (!is.null(IDS_ODOO)) {
       cli::cli_alert_info("Odoo : lecture par l'API ({IDS_ODOO$url})")
       lit_ecritures_odoo(IDS_ODOO)
     } else {
-      # Trois variables sur quatre : l'API ne se connecte pas, le fichier
-      # prend le relais, et la compta se met à dater du dernier export collé
-      # à la main. Cet avertissement vivait dans le `else` tout en bas —
-      # celui où il n'y a NI API NI fichier, donc jamais dans le cas où il
-      # sert. Il parle maintenant sur le chemin qu'il concerne.
+      # Variables Odoo incomplètes : on prévient que le fichier prend le relais.
       if (length(manque_odoo()) && length(manque_odoo()) < length(ODOO_ENV))
         cli::cli_alert_warning(paste(
           "Odoo API : il manque {.envvar {ODOO_ENV[manque_odoo()]}} —",
@@ -150,19 +113,13 @@ if (A_LIRE_ODOO) {
     ECRITURES_ODOO <- normalise_ecritures(BRUT_ODOO)
     cli::cli_alert_info("Odoo : {nrow(ECRITURES_ODOO)} écritures lues")
 
-    # Les écritures voyagent telles quelles jusqu'au dashboard, en plus de
-    # leur agrégat. Flèche simple, même raison que CONTROLE_ODOO juste en
-    # dessous : tryCatch() évalue dans l'environnement appelant, et un `<<-`
-    # sauterait par-dessus celui de l'import.
+    # Flèche simple dans le tryCatch() : un `<<-` sauterait l'environnement de
+    # l'import (R/connect.R), et la table manquerait au cache.
     DB_ECRITURES <- ECRITURES_ODOO
 
     cp <- compta_mensuelle(ECRITURES_ODOO)
 
-    # Les contrôles sont journalisés ICI, pas seulement disponibles : c'est au
-    # moment de l'import qu'on peut encore corriger un export tronqué.
-    # Flèche simple : tryCatch() évalue son bloc dans l'environnement appelant,
-    # et import.R est lui-même sourcé dans un environnement dédié (R/connect.R).
-    # Un `<<-` sauterait par-dessus, et CONTROLE_ODOO manquerait au cache.
+    # Contrôles journalisés dès l'import (même remarque sur la flèche).
     CONTROLE_ODOO <- controle_ecritures(ECRITURES_ODOO, cp,
                                         reprise = REPRISE_ODOO,
                                         n_brut = nrow(BRUT_ODOO))
@@ -178,8 +135,7 @@ if (A_LIRE_ODOO) {
     NULL
   })
 
-  # La couture ne se fait que s'il y a quelque chose à coudre. Sans ce garde,
-  # coud_compta() tronquerait DB_COMPTA à la bascule sans rien mettre après.
+  # Sans rien à coudre, coud_compta() tronquerait DB_COMPTA à la bascule.
   if (!is.null(COMPTA_ODOO) && nrow(COMPTA_ODOO)) {
     CONTROLE_COUTURE <- controle_couture(DB_COMPTA, COMPTA_ODOO)
     for (i in seq_len(nrow(CONTROLE_COUTURE))) {
@@ -203,16 +159,12 @@ if (A_LIRE_ODOO) {
       "Odoo API : il manque {.envvar {ODOO_ENV[manque_odoo()]}}")
 }
 
-# Les décisions prises sur les mois douteux
-#
-# Un journal, pas un état : une ligne par décision, jamais de modification
-# (cf. R/validation.R). Le dashboard y ajoute une ligne quand quelqu'un
-# tranche un mois ; l'import le relit, c'est tout. Son absence ne coûte rien —
-# le topo retrouve simplement ses verdicts calculés.
+# Les décisions prises sur les mois douteux (cf. R/validation.R) : un
+# journal relu tel quel ; son absence ne coûte rien.
 cli::cli_h3("Validations de mois")
 DB_VALIDATION_COMPTA <- lit_validations()
 
-# Import des réservations
+# Réservations
 
 cli::cli_h3("Drive Réservations")
 
@@ -227,7 +179,7 @@ IMPORT_RESA_EXT <- NULL
 try({IMPORT_RESA_SALLE <- calendar::ic_read(get_path("ICS_SALLE"))},silent=T)
 try({IMPORT_RESA_EXT <- calendar::ic_read(get_path("ICS_TERRASSE"))},silent=T)
 
-# Import des heures planifiées
+# Heures planifiées
 
 IMPORT_PLANNING <- calendar::ic_read(get_path("ICS_HEURES"))
 
@@ -235,8 +187,6 @@ DB_HEURES_PLANNING <- IMPORT_PLANNING |>
   filter(SUMMARY == "", substr(UID,1,5) == "shift", is.na(STATUS)) |> 
   transmute(
     INFOS = str_split(DESCRIPTION,"\\\\n"), 
-    # INDIVIDU = str_extract(DESCRIPTION,"werker: ([a-zA-Zéè ]+)", group = 1),
-    # SERVICE  = str_extract(DESCRIPTION,"Team: ([a-zA-Zéè ]+)", group = 1),
     INDIVIDU = str_remove(unlist(lapply(INFOS,function(x)x[1])),"Medewerker: "),
     SERVICE = str_remove(unlist(lapply(INFOS,function(x)x[3])),"Team: "),
     SERVICE = str_remove(SERVICE,"\\n "),
@@ -252,24 +202,17 @@ DB_HEURES_PLANNING <- DB_HEURES_PLANNING |>
   summarise(HEURES = sum(HEURES)) |> 
   ungroup()
 
-# Le calendrier de shifts ne garde que l'avenir : un jour passé en disparaît.
-# Sans archivage, ce volet n'aurait donc jamais de passé, et donc jamais de
-# médiane à laquelle se comparer. On fusionne ce que le calendrier donne
-# aujourd'hui avec l'historique accumulé dans le Google Sheet, puis on réécrit
-# le tout : à chaque import, un jour de plus est mis à l'abri avant de
-# s'effacer. Toute la logique (et le pourquoi du détail) vit dans R/planning.R.
+# Le calendrier de shifts ne garde que l'avenir : on l'archive dans un
+# Google Sheet à chaque import (cf. R/planning.R).
 SS_PLANNING <- get_path("PATH_HEURES_PLANNING")
 
 if (length(SS_PLANNING) == 1 && !is.na(SS_PLANNING) && nzchar(SS_PLANNING)) {
-  # googlesheets4 n'est pas attaché (cf. global.R) : il partage simplement le
-  # jeton du compte de service déjà obtenu par googledrive, plutôt que de
-  # relancer une authentification pour lui seul.
+  # googlesheets4 reprend le jeton du compte de service de googledrive.
   if (requireNamespace("googlesheets4", quietly = TRUE))
     try(googlesheets4::gs4_auth(token = googledrive::drive_token()),
         silent = TRUE)
 
-  # Un incident d'archivage ne doit jamais faire tomber l'import : le volet
-  # repartira du calendrier seul, sans passé, et le prochain passage rattrapera.
+  # Un incident d'archivage ne fait jamais tomber l'import.
   archive <- try(historise_planning(DB_HEURES_PLANNING, SS_PLANNING),
                  silent = TRUE)
   if (inherits(archive, "try-error"))
@@ -281,14 +224,8 @@ if (length(SS_PLANNING) == 1 && !is.na(SS_PLANNING) && nzchar(SS_PLANNING)) {
     "PATH_HEURES_PLANNING absent des PATHS : le planning reste sans historique")
 }
 
-# Import du fichier de paie (ONSS)
-#
-# Troisième source d'heures et de coût du travail, et la meilleure des trois
-# sur ces deux grandeurs : elle MESURE le coût employeur réel et les heures
-# réellement travaillées, ventilés par secteur, là où Horeko estime le coût et
-# où la comptabilité ne ventile rien. Elle ne descend pas au jour, en revanche,
-# d'où le recalage plus bas plutôt qu'un remplacement. Toute la logique (et le
-# pourquoi du détail) vit dans R/sources_travail.R.
+# Fichier de paie (ONSS) : coût employeur et heures travaillées, par secteur
+# et par mois (cf. R/sources_travail.R).
 SS_ONSS <- get_path("PATH_HEURES_ONSS")
 
 if (length(SS_ONSS) == 1 && !is.na(SS_ONSS) && nzchar(SS_ONSS)) {
@@ -298,9 +235,8 @@ if (length(SS_ONSS) == 1 && !is.na(SS_ONSS) && nzchar(SS_ONSS)) {
 
   IMPORT_ONSS <- lit_onss(SS_ONSS)
 
-  # Le contrôle de lecture est journalisé À L'IMPORT, pas seulement affiché
-  # dans le dashboard : c'est ici qu'on saura qu'une colonne a changé de nom,
-  # avant que le volet n'affiche une baisse d'heures qui n'existe pas.
+  # Contrôle de lecture journalisé dès l'import : une colonne renommée se voit
+  # ici avant de se lire comme une baisse d'heures.
   CONTROLE_ONSS <- controle_onss(IMPORT_ONSS)
   if (!is.null(CONTROLE_ONSS)) {
     if (CONTROLE_ONSS$COLONNES_VUES < CONTROLE_ONSS$COLONNES_ATTENDUES)
@@ -322,75 +258,33 @@ if (length(SS_ONSS) == 1 && !is.na(SS_ONSS) && nzchar(SS_ONSS)) {
     "PATH_HEURES_ONSS absent des PATHS : le coût du travail reste estimé par Horeko")
 }
 
-# Old Mazette 2023 à 2025
+# Archives de caisse, empilées sous les données du jour : chacune est lue dans
+# outputs/ si elle y est, sinon téléchargée depuis Drive (clé des PATHS).
+ARCHIVES_CAISSE <- c("IMPORT 2023-2024.RData" = "ID_MAZETTE_2023",
+                     "IMPORT 2025.RData"      = "ID_MAZETTE_2025")
 
+for (fichier in names(ARCHIVES_CAISSE)) {
+  lu <- try(load(file.path("outputs", fichier)), silent = TRUE)
+  if (inherits(lu, "try-error"))
+    try({
+      drive_download(drive_get(id = get_path(ARCHIVES_CAISSE[[fichier]])),
+                     overwrite = TRUE)
+      load(fichier)
+    }, silent = TRUE)
 
-
-# drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
-# load("IMPORT 2023-2024.RData")
-# 
-# IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-# IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-# IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-# IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
-# 
-# drive_download(drive_get(id=get_path("ID_MAZETTE_2025")),overwrite = TRUE)
-# load("IMPORT 2025.RData")
-# 
-# IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-# IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-# IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-# IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
-
-drive_mazette_2023 <- try(load("outputs/IMPORT 2023-2024.RData"),silent=TRUE)
-
-if (class(drive_mazette_2023)[1] == "try-error"){
   try({
-    drive_download(drive_get(id=get_path("ID_MAZETTE_2023")),overwrite = TRUE)
-    load("IMPORT 2023-2024.RData")
-  },silent=TRUE)
+    if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
+      IMPORT_DB_JOURS_OLD$BRUSSELS = 0
+    # Dates alignées avant d'empiler : rbind() ferait du texte d'une Date et
+    # d'une chaîne.
+    IMPORT_DB_JOURS_OLD$DATEVALUE <- parse_date_souple(IMPORT_DB_JOURS_OLD$DATEVALUE)
+    IMPORT_DB_JOURS$DATEVALUE     <- parse_date_souple(IMPORT_DB_JOURS$DATEVALUE)
+    IMPORT_DB_JOURS   <- rbind(IMPORT_DB_JOURS_OLD, IMPORT_DB_JOURS)
+    IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD, IMPORT_LIGHTSPEED)
+    IMPORT_TICKET     <- rbind(IMPORT_TICKET_OLD, IMPORT_TICKET)
+    IMPORT_CAISSE     <- rbind(IMPORT_CAISSE_OLD, IMPORT_CAISSE)
+  }, silent = TRUE)
 }
-
-try({
-  if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
-    IMPORT_DB_JOURS_OLD$BRUSSELS = 0
-  # rbind() fabrique UNE colonne a partir de deux : si l'archive porte ses
-  # dates en texte et l'import du jour en POSIXct, le resultat est du texte,
-  # et tout ce qui suit croit lire des dates. On aligne les deux cotes avant
-  # d'empiler, plutot que de reparer apres.
-  IMPORT_DB_JOURS_OLD$DATEVALUE <- parse_date_souple(IMPORT_DB_JOURS_OLD$DATEVALUE)
-  IMPORT_DB_JOURS$DATEVALUE     <- parse_date_souple(IMPORT_DB_JOURS$DATEVALUE)
-  IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-  IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-  IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-  IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
-},silent=TRUE)
-
-drive_mazette_2025 <- try(load("outputs/IMPORT 2025.RData"),silent=TRUE)
-
-# Chargement via environnement google
-
-if (class(drive_mazette_2025)[1] == "try-error"){
-  try({
-    drive_download(drive_get(id=get_path("ID_MAZETTE_2025")),overwrite = TRUE)
-    load("IMPORT 2025.RData")
-  },silent=TRUE)
-}
-
-try({
-  if (!"BRUSSELS" %in% colnames(IMPORT_DB_JOURS_OLD))
-    IMPORT_DB_JOURS_OLD$BRUSSELS = 0
-  # rbind() fabrique UNE colonne a partir de deux : si l'archive porte ses
-  # dates en texte et l'import du jour en POSIXct, le resultat est du texte,
-  # et tout ce qui suit croit lire des dates. On aligne les deux cotes avant
-  # d'empiler, plutot que de reparer apres.
-  IMPORT_DB_JOURS_OLD$DATEVALUE <- parse_date_souple(IMPORT_DB_JOURS_OLD$DATEVALUE)
-  IMPORT_DB_JOURS$DATEVALUE     <- parse_date_souple(IMPORT_DB_JOURS$DATEVALUE)
-  IMPORT_DB_JOURS <- rbind(IMPORT_DB_JOURS_OLD,IMPORT_DB_JOURS)
-  IMPORT_LIGHTSPEED <- rbind(IMPORT_LIGHTSPEED_OLD,IMPORT_LIGHTSPEED)
-  IMPORT_TICKET <- rbind(IMPORT_TICKET_OLD,IMPORT_TICKET)
-  IMPORT_CAISSE <- rbind(IMPORT_CAISSE_OLD,IMPORT_CAISSE)
-},silent=TRUE)
 
 #### Premiers traitements des données sources ####
 
@@ -398,9 +292,7 @@ try({
 
 cli::cli_h3("Import de la DB JOURS")
 
-# On PARSE avant de filtrer, et on filtre sur la date obtenue : filtrer sur
-# DATEVALUE laissait passer une cellule non vide mais illisible, qui tombait
-# plus loin sans dire d'où elle venait.
+# On parse avant de filtrer : une cellule illisible est écartée et comptée.
 DB_JOURS <- IMPORT_DB_JOURS  |>
   mutate(DATE = parse_date_souple(DATEVALUE)) |>
   filter(!is.na(DATE)) |>
@@ -414,8 +306,7 @@ DB_JOURS <- IMPORT_DB_JOURS  |>
     CA_TVAC  = `CA TVAC`
   )
 
-# Les lignes perdues se comptent : une colonne de dates qui bascule en texte
-# illisible ne doit pas vider la table en silence.
+# Les lignes perdues se comptent.
 controle_dates_jours <- function(brut, net) {
   perdues <- sum(!is.na(brut$DATEVALUE)) - nrow(net)
   if (perdues > 0)
@@ -475,9 +366,6 @@ DB_BRASSINS <- IMPORT_BRASSINS  |>
     DT_CONDI           = parse_date_souple(DT_CONDI),
     DT_FIN             = parse_date_souple(DT_FIN),
     DT_DECLA           = parse_date_souple(DT_DECLA),
-    # Les quatre dates sont déjà des Date : le second passage qui vivait ici
-    # rattrapait ce que correct_date() ne savait pas convertir, et n'a plus
-    # d'objet.
     DT_FIN             = if_else(is.na(DT_FIN),DT_DECLA,DT_FIN),
     DT_FIN             = if_else(is.na(DT_FIN),today(),DT_FIN),
     VOLUME_BRASSIN     = VOLUME_BRASSIN * 100,
@@ -547,11 +435,8 @@ DB_TICKET <- IMPORT_TICKET %>%
 
 cli::cli_h3("Import de la DB OBJECTIFS")
 
-DB_OBJECTIFS <- transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS`) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2025`)) %>%
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2026`)) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2023`)) |> 
-  add_row(transmute_objectifs(DB_sheets$`IMPORT OBJECTIFS 2022`)) |> 
+DB_OBJECTIFS <- bind_rows(lapply(DB_sheets[SHEETS_OBJECTIFS],
+                                 transmute_objectifs)) |> 
   select(ANNEE,MOIS,DATE_DEBUT,DATE_FIN,CA_TVAC,CA_HTVA,
          CA_HTVA_NOURRITURE_6,CA_HTVA_NOURRITURE_12,CA_HTVA_BOISSON_21) |> 
   mutate(DATE_DEBUT = ymd(as.character(DATE_DEBUT)),
@@ -573,20 +458,18 @@ NOMEN_BIERES <- IMPORT_BIERES_CORRESPONDANCE %>%
 
 cli::cli_h3("Import de la DB PASSWORD")
 
-# Colonnes de l'onglet des accès (SHEET_PASS, cf. en tête de fichier) :
+# Colonnes de l'onglet des accès :
 #
 #   Date_debut | Date_fin | pass | nom | role | onglets | actif
 #
 # Les quatre dernières sont facultatives (cf. colonne_optionnelle() dans
-# R/acces.R) : tant qu'elles n'existent pas dans le tableur, chaque mot de
-# passe garde les droits complets, exactement comme avant.
+# R/acces.R) ; absentes, chaque mot de passe a tous les droits.
 #
-#   nom     : à qui appartient ce mot de passe (affiché une fois connecté)
-#   role    : un profil de PROFILS — admin, gestion, equipe, salle, brasserie,
-#             invite. Un rôle inconnu ou vide ne donne que l'accueil.
-#   onglets : onglets supplémentaires, en plus du rôle. "compta, travail",
-#             ou "*" pour tout. Laisser vide dans le cas général.
-#   actif   : "non" coupe l'accès sans effacer la ligne (ni son historique).
+#   nom     à qui appartient ce mot de passe
+#   role    un profil de PROFILS (R/acces.R) ; inconnu ou vide = l'onglet de
+#           départ seulement
+#   onglets onglets en plus du rôle : "compta, travail", ou "*" pour tout
+#   actif   "non" coupe l'accès sans effacer la ligne
 DB_PASSWORD <- IMPORT_PASS |>
   transmute(
     DATE_DEBUT    = parse_date_souple(Date_debut),
@@ -597,8 +480,7 @@ DB_PASSWORD <- IMPORT_PASS |>
     ONGLETS_LISTE = colonne_optionnelle(IMPORT_PASS, "onglets", NA_character_),
     ACTIF         = oui_non(colonne_optionnelle(IMPORT_PASS, "actif", "oui"))
   ) |>
-  # Une ligne sans mot de passe (ou sans période) n'ouvre rien : autant ne pas
-  # la trimballer jusqu'au .RData.
+  # Une ligne sans mot de passe ou sans période n'ouvre rien.
   filter(!is.na(PASS), nzchar(PASS), !is.na(DATE_DEBUT), !is.na(DATE_FIN))
 
 ##### IMPORT_HEURES #####
@@ -651,10 +533,8 @@ colnames(IMPORT_COUT) <- c("CONTRAT","COUT_HEURE")
 DB_HEURES <- DB_HEURES %>% left_join(IMPORT_COUT) %>% 
   mutate(COUT = COUT_HEURE * NB_HEURES)
 
-# Un contrat pointé mais absent de l'onglet « Cout » n'a pas de taux : son
-# coût reste NA, et DB_COUTS_TRAVAIL somme sans na.rm — c'est donc tout le
-# groupe du jour qui devient NA, et la valorisation par contrat se tait sur
-# des mois entiers. On le dit ici plutôt que de le découvrir à l'écran.
+# Un contrat sans taux rend NA son coût et celui de tout le groupe du jour :
+# on le signale (cf. contrats_sans_taux()).
 sans_taux <- contrats_sans_taux(DB_HEURES)
 if (is.null(sans_taux)) {
   cli::cli_alert_success(
@@ -684,7 +564,6 @@ if (is.null(IMPORT_RESA_SALLE)){
 }else{
   DB_RESA_SALLE <- IMPORT_RESA_SALLE |> 
     transmute(
-      # HEURE_RESA = ymd_hms(DTSTAMP),
       NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
       HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
       HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
@@ -699,7 +578,6 @@ if (is.null(IMPORT_RESA_EXT)){
 
   DB_RESA_EXT <- IMPORT_RESA_EXT |> 
     transmute(
-      # HEURE_RESA = ymd_hms(DTSTAMP),
       NB_PERS = as.numeric(str_extract(SUMMARY, "([0-9]+) pax.*",group = 1)),
       HEURE_DEB = ymd_hms(`DTSTART;TZID=Europe/Brussels`),
       HEURE_FIN = ymd_hms(`DTEND;TZID=Europe/Brussels`),
@@ -719,10 +597,9 @@ cli::cli_h2("Création des tables intermédiaires")
 
 cli::cli_h3("Nomenclature Produits")
 
-# Correction faite ici : les product sont identifié par leur ID, et le PRODUCT
-# n'est qu'un nom sur le ticket. Ne stockons que l'ID, et créons une DB correspondance
+# Les produits sont identifiés par leur ID ; le libellé n'est qu'un nom sur
+# le ticket.
 
-# Un libellé par produit : le plus fréquent (cf. R/donnees.R).
 NOMEN_PRODUITS <- libelle_canonique(DB_TICKET) |> 
   mutate(PRODUIT = case_when(
     PRODUIT == "Cola maison" ~ "Cola maison 33cL",
@@ -731,7 +608,7 @@ NOMEN_PRODUITS <- libelle_canonique(DB_TICKET) |>
     TRUE ~ PRODUIT)) %>%
   from_product_to_boisson()
 
-# Pour récupérer le taux de tva
+# Le taux de TVA et la catégorie, depuis l'export produits.
 
 PRODUITS_REF <- DB_PRODUITS %>%
   filter(PRIX > 0) %>%
@@ -761,13 +638,9 @@ if (nrow(TVA_REMISES))
   cli::cli_alert_info("{nrow(TVA_REMISES)} remise{?s} rattachée{?s} au taux du produit remisé.")
 TVA_PAR_ID <- bind_rows(TVA_PAR_ID, TVA_REMISES)
 
-# On GARDE les produits dont aucun libellé n'a de taux, au lieu de les écarter.
-#
-# Les écarter ne les faisait pas disparaître des tickets : leurs lignes y
-# restaient sans nom propre, sans catégorie et sans CA HTVA. Les garder leur
-# rend au moins leur libellé, leur volume et leur famille de boisson. Leur
-# montant TVAC est connu — c'est de l'argent réellement encaissé ; c'est le
-# HTVA, et lui seul, qui ne se déduit pas.
+# Les produits sans taux sont gardés : leur libellé, leur volume et leur
+# famille restent utiles, et leur TVAC est de l'argent encaissé. Seul leur
+# HTVA est inconnu.
 NOMEN_PRODUITS <- NOMEN_PRODUITS |> 
   left_join(TVA_PAR_ID, by = "ID_PRODUIT")
 
@@ -790,7 +663,7 @@ cli::cli_h2("Création des tables finales")
 ##### DB_JOURS ####
 cli::cli_h3("Table DB_JOURS")
 
-# Ajout simplement la DB OLD
+# Avec l'historique (DB OLD).
 
 DB_JOURS <- DB_JOURS %>%
   add_row(DB_OLD) %>%
@@ -799,52 +672,39 @@ DB_JOURS <- DB_JOURS %>%
 ##### DB_DATE ####
 cli::cli_h3("Table DB_DATE")
 
-# Faire une DB date pour avoir toutes les dates, de min DB_JOURS à today()
+# Toutes les dates, du premier jour de DB_JOURS à aujourd'hui.
 
 DB_DATE <- creer_db_date(min(DB_JOURS$DATE))
 
 ##### DB_TICKETS_HEURES ####
 cli::cli_h3("Table DB_TICKETS_HEURES")
 
-# D'abord, pour chaque produit et chaque date d'ouverture de Mazette, le CA et le nombre vendu
+# La forme réduite (celle qui est stockée), puis son hydratation par
+# hydrate_donnees(), la même qu'au chargement du cache (cf. R/donnees.R).
 
-# On construit la forme réduite (celle qui sera stockée), puis on l'hydrate.
-# Passer par hydrate_donnees() garantit que la reconstruction complète est
-# définie à un seul endroit — cf. R/donnees.R — donc identique après un import
-# et après un simple chargement du .RData.
 
-# Garde-fou : une ligne par produit dans la nomenclature. Sinon la jointure
-# ci-dessous dupliquerait des lignes de caisse, et le CA avec elles.
+# Une ligne par produit dans la nomenclature, sinon la jointure dupliquerait
+# des ventes.
 if (anyDuplicated(NOMEN_PRODUITS$ID_PRODUIT))
   cli::cli_abort("NOMEN_PRODUITS porte plusieurs lignes pour un même ID_PRODUIT.")
 
-# Jointure sur le seul ID_PRODUIT, et non sur le couple (ID, libellé).
-#
-# Le libellé d'une ligne de caisse est libre : le même produit y apparaît sous
-# « Latte », « Latte deca », « Latte chaud »... Joindre sur le libellé laissait
-# toutes ces lignes sans TVA ni catégorie — d'où leur CA HTVA à NA, et leur
-# disparition des écrans qui découpent par secteur. Les attributs viennent donc
-# du produit ; le libellé de la ligne, lui, est conservé tel que la caisse l'a
-# enregistré.
+# Jointure sur ID_PRODUIT seul : les attributs viennent du produit, le
+# libellé de la ligne reste celui de la caisse.
 normalise <- normalise_tickets(
   DB_TICKET |> 
     rename(PRODUIT_FULL = PRODUIT) |> 
     left_join(NOMEN_PRODUITS |> select(-PRODUIT_FULL), by = "ID_PRODUIT") |> 
-    # Un produit absent de la nomenclature garde au moins son libellé de
-    # caisse : « NA » n'est le nom d'aucun produit.
+    # Un produit hors nomenclature garde son libellé de caisse.
     mutate(PRODUIT = coalesce(PRODUIT, PRODUIT_FULL)))
 DB_TICKET    <- normalise$DB_TICKET
 REF_PRODUITS <- normalise$REF_PRODUITS
 rm(normalise)
 
-# DB_TICKET reste sous sa forme réduite — c'est elle qu'on sauvegarde. Seul
-# DB_TICKETS_HEURES est nécessaire à la suite de ce fichier ; le DB_TICKET complet
-# sera reconstruit au chargement par hydrate_dans().
+# DB_TICKET reste sous forme réduite (c'est elle qu'on sauvegarde) ; la suite
+# n'a besoin que de DB_TICKETS_HEURES.
 hydrate <- hydrate_donnees(DB_TICKET, REF_PRODUITS)
 
-# L'hydratation doit rendre exactement la table réduite, ligne pour ligne :
-# c'est la propriété qui a manqué pendant plusieurs mois, chaque ligne de
-# caisse ressortant autant de fois que son produit avait connu de libellés.
+# L'hydratation doit rendre exactement la table réduite, ligne pour ligne.
 if (nrow(hydrate$DB_TICKET) != nrow(DB_TICKET))
   cli::cli_abort(paste0("La reconstruction des tickets duplique des lignes : ",
                         nrow(DB_TICKET), " avant, ",
@@ -852,13 +712,6 @@ if (nrow(hydrate$DB_TICKET) != nrow(DB_TICKET))
 
 DB_TICKETS_HEURES <- hydrate$TICKETS_HEURES
 rm(hydrate)
-
-# Synthèse par catégorie
-DB_CATEGORIES_JOURS <- DB_TICKETS_HEURES %>%
-  group_by(DATE,CD_HEURE,CATEGORIE) %>%
-  summarise(CA_HTVA = sum(CA_HTVA),QUANTITE = sum(QUANTITE),.groups = "drop") |> 
-  complete(DATE, CD_HEURE, CATEGORIE,
-           fill = list(CA_HTVA = 0, QUANTITE = 0))
 
 ##### DB_KPI ####
 cli::cli_h3("Table DB_KPI")
@@ -869,10 +722,9 @@ DB_KPI <- DB_TICKETS_HEURES %>%
   summarise(CA_HTVA = sum(CA_HTVA),CA_TVAC = sum(CA_TVAC),.groups = "drop") %>%
   filter(!is.na(DATE))
 
-#### Attention, ici problème, le CA_HTVA n'est pas identique à DB_JOURS
-# C'est parce qu'on a les factures en plus dans le CA de DB_JOURS
+# Le CA de DB_KPI diffère de celui de DB_JOURS (les factures n'y sont pas) :
+# DB_KPI_SIMPLE repart donc de DB_JOURS.
 
-# Normalement, c'est bon, car la DB_KPI_SIMPLE repart de DB_JOURS
 
 DB_KPI_JOUR <- DB_KPI %>%
   group_by(DATE,CD_PERIODE_JOUR) %>%
@@ -899,7 +751,7 @@ DB_KPI_SIMPLE <- DB_JOURS %>%
   left_join(DB_KPI_SECTEUR, by = "DATE") %>%
   mutate(CA_HTVA_KEEP = CA_HTVA)
 
-# Correction ici en règle de trois, afin que chaque paire corresponde au CA de DB_JOURS
+# Règle de trois : chaque répartition retombe sur le CA de DB_JOURS.
 
 DB_KPI_SIMPLE <- DB_KPI_SIMPLE %>%
   mutate(ratio = CA_HTVA/(Boisson + Nourriture),
@@ -912,7 +764,7 @@ DB_KPI_SIMPLE <- DB_KPI_SIMPLE %>%
 ##### DB_OBJECTIFS #####
 cli::cli_h3("Table DB_OBJECTIFS")
 
-# Transformer la DB objectifs en journalier
+# Objectifs mensuels répartis en objectifs journaliers.
 
 DB_OBJECTIFS <- bind_rows(
   lapply(1:nrow(DB_OBJECTIFS), function(i) {
@@ -927,8 +779,7 @@ cli::cli_h3("Table DB_BRASSINS")
 DB_BRASSINS <- DB_BRASSINS %>% 
   left_join(NOMEN_BIERES, by = "NOM_BRASSIN")
 
-# Une ligne par date*brassin, afin de déterminer quel brassin pour quel jour
-# S'il y a des doublons, je prends le nouveau brassin
+# Une ligne par date × brassin ; en cas de doublon, le brassin le plus récent.
 DB_BRASSINS_EXP <- DB_BRASSINS %>%
   filter(!is.na(DT_CONDI)) %>%
   mutate(DT_FIN = if_else(DT_FIN < DT_CONDI,DT_CONDI+1,DT_FIN)) %>%
@@ -947,7 +798,7 @@ DB_BRASSINS_EXP <- DB_BRASSINS %>%
 ##### DB_PRODUITS ####
 cli::cli_h3("Table DB_PRODUITS")
 
-# ADD BRASSINS
+# Rattache chaque vente de bière à son brassin.
 DB_PRODUITS <- DB_PRODUITS %>%
   left_join(DB_BRASSINS_EXP, by = c("DATE","BOISSON")) %>%
   left_join(DB_BRASSINS, by = c("BOISSON","ID_BRASSIN")) %>%
@@ -965,7 +816,7 @@ PRIX_BIERES <- DB_PRODUITS %>%
 ##### DB_BIERES ####
 cli::cli_h3("Table DB_BIERES")
 
-# Ajout des stats sur les ventes
+# Statistiques de ventes par brassin.
 DB_BIERES <- DB_PRODUITS %>%
   filter(CATEGORIE ==  "BIÈRES" & !is.na(ID_BRASSIN)) %>%
   left_join(PRIX_BIERES, by = "BOISSON") %>%
@@ -982,7 +833,6 @@ DB_BIERES <- DB_PRODUITS %>%
   mutate(VOLUME_TOT = cumsum(VOLUME_JOUR),
          CA_HTVA_TOT = cumsum(CA_HTVA),
          CA_TVAC_TOT = cumsum(CA_TVAC),
-         # NB_JOURS_VENTES = n()) %>%
          NB_JOURS_VENTES = sum(CA_HTVA > 0)) %>%
   ungroup() %>%
   mutate(DIFF = VOLUME_BRASSIN_AJUST - VOLUME_TOT,
@@ -1009,8 +859,7 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
   mutate(CD_HEURE = ifelse(JOUR_SEMAINE == "dimanche","Midi (<17h)", CD_HEURE)) %>% 
   ungroup() |> 
   mutate(
-    # La correspondance vit dans R/planning.R : le planning parle le même
-    # vocabulaire de départements, et deux copies auraient fini par diverger.
+    # Correspondance des départements dans R/planning.R (normalise_secteur()).
     SECTEUR = normalise_secteur(DEPARTEMENT),
     CRENEAU = case_when(
       SECTEUR != "Service" ~ "Journée",
@@ -1027,29 +876,10 @@ DB_COUTS_TRAVAIL <- DB_HEURES %>%
     .groups = "drop"
   )
 
-# Total mensuel des rémunérations, tel que la comptabilité le publie.
-#
-# On le rattache à DB_COUTS_TRAVAIL pour permettre la CONFRONTATION entre les
-# deux sources — Horeko d'un côté, comptabilité de l'autre — mais on ne s'en
-# sert plus pour corriger les coûts par secteur.
-#
-# La version précédente redressait chaque ligne par une règle de trois,
-# COUT_TRAVAIL * COUT_COMPTA / COUT_HOREKO, pour que le total Horeko retombe
-# sur le total comptable. C'était faux : cela suppose que l'écart entre les
-# deux sources se répartit proportionnellement aux heures de chaque secteur.
-# Or l'écart vient surtout de ce que la comptabilité contient (pécules,
-# provisions, charges patronales, personnel non pointé) et qui n'a aucune
-# raison de suivre les heures pointées. La règle de trois déplaçait donc du
-# coût d'un secteur vers un autre, sans fondement.
-#
-# COUT_COMPTA et COUT_HOREKO restent donc disponibles côte à côte, pour que
-# l'écran puisse afficher l'écart plutôt que de le masquer.
-#
-# À ce stade, COUT_TRAVAIL est encore l'estimation Horeko. C'est le recalage
-# juste en dessous qui lui substitue la paie quand elle est disponible — et là,
-# la règle de trois est légitime, parce qu'elle répartit un écart entre deux
-# mesures de la MÊME grandeur plutôt qu'entre deux périmètres différents
-# (cf. R/sources_travail.R).
+# Total mensuel des rémunérations selon la comptabilité, rattaché pour la
+# CONFRONTATION seulement : l'écart entre comptabilité et Horeko (pécules,
+# provisions, personnel non pointé) ne suit pas les heures, on ne s'en sert
+# donc pas pour corriger les coûts par secteur.
 DB_HEURES_COMPTA <- DB_COMPTA |> 
   filter(TYPE == "compte", CATEGORIE == "REMUNERATION") |> 
   group_by(ANNEE,MOIS) |> 
@@ -1062,16 +892,9 @@ DB_COUTS_TRAVAIL <- DB_COUTS_TRAVAIL |>
   mutate(COUT_HOREKO = sum(COUT_TRAVAIL,na.rm=TRUE)) |> 
   ungroup()
 
-# Recalage sur la paie, si elle est disponible.
-#
-# La paie fait autorité sur le TOTAL du mois et du secteur ; Horeko ne sert
-# plus qu'à répartir ce total sur les jours et les créneaux, qu'elle seule
-# connaît. HEURES et COUT_TRAVAIL portent en sortie les valeurs retenues, les
-# valeurs Horeko d'origine restant côte à côte sous HEURES_HOREKO et
-# COUT_HOREKO_LIGNE. Sans paie, c'est un passe-plat.
-#
-# COUT_HOREKO ci-dessus est calculé AVANT le recalage, et c'est voulu : c'est
-# le total Horeko d'origine, celui que le volet Sources confronte à la paie.
+# Recalage sur la paie, si elle est disponible (cf. R/sources_travail.R).
+# COUT_HOREKO est calculé avant : c'est le total Horeko d'origine, que le volet
+# Sources confronte à la paie.
 DB_COUTS_TRAVAIL <- recale_couts_travail(
   DB_COUTS_TRAVAIL, if (exists("DB_ONSS")) DB_ONSS else NULL)
 

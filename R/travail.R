@@ -1,59 +1,28 @@
-# Volet « Travail » : les heures posées et ce qu'elles coûtent.
+# Volet « Travail » : les heures posées et ce qu'elles coûtent. Deux
+# sous-onglets : le pilotage (heures, productivité, créneaux types) et les
+# sources (cf. R/sources_travail.R).
 #
-# Deux sous-onglets — le pilotage (heures, productivité, créneaux types) et
-# les sources, qui confrontent les trois origines des heures et du coût
-# (cf. R/sources_travail.R).
-# Suivi des heures et de la productivité.
+# Vocabulaire :
 #
-# Vocabulaire, volontairement ramené à deux catégories :
+#   Créneau        une demi-journée d'ouverture, Midi (<17h) ou Soir (>=17h).
+#                  Les mardis soir avec pizzas forment la Pizzwanze.
+#   Coût VARIABLE  le service : il suit l'ouverture.
+#   Coût FIXE      tout le reste (transformation, brasserie, support), au sens
+#                  du pilotage et non de la comptabilité.
 #
-#   Créneau        : une demi-journée d'ouverture — Midi (<17h) ou Soir
-#                    (>=17h). Les mardis soir avec vente de pizza forment un
-#                    créneau à part : la Pizzwanze.
-#   Coût VARIABLE  : le service. Il suit l'ouverture — un créneau de plus, des
-#                    heures de plus.
-#   Coût FIXE      : tout le reste (transformation alimentaire, brasserie,
-#                    support). Il ne suit pas l'ouverture d'un créneau, d'où
-#                    « fixe » au sens du pilotage, pas au sens comptable.
+# Les coûts hors service ne sont pas répartis entre créneaux : il n'y a donc
+# pas de marge par créneau.
 #
-# Le détail par secteur reste accessible là où on l'a (tableau de
-# décomposition) ; partout ailleurs on s'en tient à variable / fixe, qui est
-# ce qui se pilote.
-#
-# ---------------------------------------------------------------------------
-# Ce que ce volet ne fait PLUS, et pourquoi
-# ---------------------------------------------------------------------------
-# La « marge après travail » (CA − coûts) a été retirée. Elle reposait sur la
-# répartition des coûts indirects entre créneaux au prorata du CA : une
-# convention défendable pour une étude ponctuelle, trompeuse dans un tableau de
-# bord — elle faisait apparaître une marge par créneau qui n'existe pas, et
-# dont la valeur dépendait entièrement de la clé de répartition choisie.
-#
-# ---------------------------------------------------------------------------
-# D'où viennent les heures et les coûts
-# ---------------------------------------------------------------------------
-# De la PAIE dès qu'elle couvre le mois : elle mesure le coût employeur réel et
-# les heures réellement travaillées, ventilés par secteur. Horeko ne sert alors
-# qu'à répartir ces totaux sur les jours et les créneaux — c'est la seule
-# source qui descende à ce grain, et c'est désormais son seul rôle ici.
-#
-# Sans paie, on retombe sur l'estimation Horeko : un taux horaire par type de
-# contrat multiplié par les heures pointées. SOURCE_HEURES le dit ligne à
-# ligne, et table_decomposition_travail() affiche les deux côte à côte.
-#
-# Le total comptable des rémunérations reste affiché comme troisième repère.
-# L'écart entre les trois est une information — pécules, provisions, charges
-# patronales, personnel non pointé — pas une erreur à corriger par une règle de
-# trois sur la comptabilité (cf. R/sources_travail.R, qui explique pourquoi le
-# recalage sur la PAIE est légitime là où celui sur la comptabilité ne l'était
-# pas).
+# Heures et coûts viennent de la paie dès qu'elle couvre le mois ; Horeko ne
+# sert alors qu'à les répartir sur les jours et les créneaux. Sans paie, on
+# retombe sur l'estimation Horeko (heures pointées × taux horaire).
+# SOURCE_HEURES le dit ligne à ligne. Le total comptable reste affiché comme
+# troisième repère.
 
-CRENEAUX_ORDRE <- c("Midi", "Soir", "Pizzwanze")
 PAL_CRENEAU <- c("Midi" = "#e67e22", "Soir" = "#9b59b6", "Pizzwanze" = "#c0392b")
 
-# Toutes les fonctions de ce volet attendent une table AU GRAIN HORAIRE
-# (DATE x CD_HEURE x PRODUIT), c'est-à-dire TICKETS_HEURES — et non DB_PRODUITS,
-# qui est agrégée à la journée et n'a donc pas de colonne CD_HEURE.
+# Les fonctions de ce volet attendent une table au grain horaire
+# (TICKETS_HEURES), pas DB_PRODUITS.
 
 # Jours de Pizzwanze : mardi soir où l'on a vendu des pizzas.
 jours_pizzwanze <- function(db_ventes_heure) {
@@ -75,26 +44,16 @@ marque_pizzwanze <- function(db, dates_piz) {
 }
 
 # Jours sans service, au sens de wday(week_start = 1) : 1 = lundi.
-#
-# La règle vivait jusqu'ici en creux, dans le `filter(.wd != 1)` de
-# normalise_creneaux() : lisible pour qui lit cette fonction, invisible pour
-# tout le reste du dashboard. Le volet Planning l'a d'ailleurs manquée, et
-# comptait comme heures de service les heures de préparation du lundi.
-#
-# Elle est donc nommée ici, à l'endroit où elle a toujours vécu, pour que les
-# autres volets s'y réfèrent au lieu de la redécouvrir — ou de l'ignorer.
 JOURS_FERMES <- 1L
 
 # TRUE pour une date tombant un jour de fermeture.
 jour_ferme <- function(d) wday(as.Date(d), week_start = 1) %in% JOURS_FERMES
 
-# Normalisation des créneaux, reprise de l'étude de rentabilité :
-#   - les lundis (rares ouvertures exceptionnelles) sont exclus ;
-#   - le mardi est toujours un créneau « Soir » (ouverture à 17h) ;
-#   - le dimanche est toujours un créneau « Midi » (le CA résiduel de soirée y
-#     est rattaché, le service ferme à 18h).
-# Sans cela on obtient des créneaux fantômes : du CA sans aucune heure de
-# service en face, donc une productivité infinie.
+# Normalisation des créneaux :
+#   - les lundis (ouvertures exceptionnelles) sont exclus ;
+#   - le mardi est toujours « Soir » (ouverture à 17h) ;
+#   - le dimanche est toujours « Midi » (fermeture à 18h).
+# Sans cela, des créneaux auraient du CA sans heure de service en face.
 normalise_creneaux <- function(db) {
   db %>%
     filter(!jour_ferme(DATE)) %>%
@@ -121,16 +80,13 @@ ca_par_creneau <- function(db_ventes_heure, d1 = NULL, d2 = NULL) {
     filter(CA > 0)
 }
 
-# Base de travail : une ligne par (DATE, CRENEAU), avec le CA du créneau et les
-# heures de service qui lui sont directement imputables.
-#
-# Les heures HORS service ne sont PAS réparties entre les créneaux : elles ne
-# leur appartiennent pas. Elles sont agrégées à part, par heures_fixes().
+# Une ligne par (DATE, CRENEAU) : le CA du créneau et ses heures de service.
+# Les heures hors service sont agrégées à part, par heures_fixes().
 base_travail <- function(db_ventes_heure, db_travail, d1, d2) {
   d1 <- as.Date(d1); d2 <- as.Date(d2)
   piz <- jours_pizzwanze(db_ventes_heure)
 
-  # Ne garder que les jours pour lesquels on connaît aussi les heures travaillées
+  # Seulement les jours dont on connaît aussi les heures.
   db_ventes_heure <- db_ventes_heure |>
     filter(DATE %in% db_travail$DATE)
 
@@ -153,8 +109,7 @@ base_travail <- function(db_ventes_heure, db_travail, d1, d2) {
     arrange(DATE, CRENEAU)
 }
 
-# Heures et coûts HORS service, par jour. Gardés au grain secteur : c'est le
-# seul endroit où le détail existe, et le tableau de décomposition s'en sert.
+# Heures et coûts hors service, par jour, au grain secteur.
 heures_fixes <- function(db_travail, d1, d2) {
   db_travail %>%
     filter(SECTEUR != "Service", DATE >= as.Date(d1), DATE <= as.Date(d2)) %>%
@@ -164,11 +119,8 @@ heures_fixes <- function(db_travail, d1, d2) {
 }
 
 # Agrégat par période. `fixe` vient de heures_fixes(), `compta` porte le total
-# mensuel des rémunérations pour le point de contrôle.
-#
-# CA_PAR_HEURE se calcule sur les heures de SERVICE seules, comme avant : c'est
-# la productivité de l'ouverture. Rapporté au total, il mélangerait le service
-# et la structure, et bougerait à chaque brassin.
+# mensuel des rémunérations. CA_PAR_HEURE se calcule sur les heures de
+# service seules : c'est la productivité de l'ouverture.
 agrege_travail <- function(base, fixe = NULL, compta = NULL,
                            unite = c("mois", "trimestre", "annee")) {
   unite <- match.arg(unite)
@@ -191,8 +143,7 @@ agrege_travail <- function(base, fixe = NULL, compta = NULL,
     summarise(H_FIXE    = sum(H_FIXE, na.rm = TRUE),
               COUT_FIXE = sum(COUT_FIXE, na.rm = TRUE), .groups = "drop")
 
-  # Le total comptable est MENSUEL : on le somme sur les mois de la période,
-  # sans jamais le ventiler.
+  # Le total comptable est mensuel : sommé, jamais ventilé.
   c_a <- if (is.null(compta) || !nrow(compta))
     tibble(PERIODE = as.Date(character()), COUT_COMPTA = numeric())
   else compta %>%
@@ -224,8 +175,7 @@ agrege_travail_vide <- function() {
          ECART_COMPTA = numeric())
 }
 
-# Début de période. Le volet Travail n'offre plus la semaine : la comptabilité
-# à laquelle on se confronte est mensuelle, et une semaine ne s'y compare pas.
+# Début de période. Pas de semaine : la comptabilité est mensuelle.
 debut_periode_travail <- function(d, unite = c("mois", "trimestre", "annee")) {
   unite <- match.arg(unite)
   switch(unite,
@@ -234,12 +184,7 @@ debut_periode_travail <- function(d, unite = c("mois", "trimestre", "annee")) {
          annee     = floor_date(d, "year"))
 }
 
-# Statistiques par jour de semaine x créneau : moyennes par OUVERTURE.
-# C'est la table qui permet de comparer les créneaux à armes égales.
-#
-# Plus de marge ici : les coûts hors service ne sont pas répartis entre
-# créneaux, donc il n'existe pas de marge par créneau. On s'en tient au coût
-# variable, qui lui est bien imputable.
+# Statistiques par jour de semaine × créneau : moyennes par ouverture.
 stats_creneaux <- function(base) {
   if (is.null(base) || !nrow(base)) return(NULL)
   base %>%
@@ -261,14 +206,9 @@ stats_creneaux <- function(base) {
 
 ##### Rendus #####
 
-#' Productivité dans le temps, avec la décomposition des heures.
-#'
-#' Les barres empilent les heures VARIABLES (service) et FIXES (hors service) :
-#' on voit d'un coup combien d'heures ont été posées et dans quelle proportion
-#' elles suivent l'ouverture. La courbe donne le CA par heure de service, en
-#' pointillé sa moyenne sur la fenêtre.
-#'
-#' Cliquer une barre sélectionne la période pour le tableau de décomposition.
+#' Productivité dans le temps : heures variables et fixes en barres empilées,
+#' CA par heure de service en courbe. Cliquer une barre sélectionne la période
+#' pour le tableau de décomposition.
 graph_productivite_temps <- function(ag, unite = "mois",
                                      source = "trav_productivite_graph") {
   if (is.null(ag) || !nrow(ag))
@@ -277,12 +217,8 @@ graph_productivite_temps <- function(ag, unite = "mois",
   lbl <- etiquette_periode(ag$PERIODE, unite)
   ordre <- factor(lbl, levels = lbl)
 
-  # L'axe des x porte des LIBELLÉS et non des dates — sans quoi plotly dessine
-  # un axe temporel continu, illisible au trimestre et à l'année. Conséquence :
-  # le clic renvoie « T3 2026 », que as.Date() refuse. Chaque point transporte
-  # donc sa période dans customdata, qui est la seule identité fiable ici : elle
-  # survit au changement de libellé, et ne dépend d'aucune correspondance
-  # inverse entre texte affiché et donnée.
+  # L'axe porte des libellés (« T3 2026 ») : chaque point transporte donc sa
+  # période dans customdata, que le clic renvoie.
   cd <- as.character(ag$PERIODE)
 
   h_service <- sum(ag$H_VARIABLE, na.rm = TRUE)
@@ -370,7 +306,7 @@ graph_heatmap_creneaux <- function(stats,
   titre <- c(CA_PAR_HEURE   = "CA par heure de service (€/h)",
              CA_moyen       = "CA moyen par ouverture (€)",
              RATIO_VARIABLE = "Coût variable / CA (%)")[[var]]
-  # Pour le ratio de coût, une valeur basse est meilleure : on inverse l'échelle.
+  # Pour le ratio de coût, plus bas est meilleur : échelle inversée.
   echelle <- if (var == "RATIO_VARIABLE")
     list(c(0, COUL_VERT), c(1, COUL_ROUGE))
   else list(c(0, "#f2efe6"), c(1, COUL_TRAVAIL))
@@ -420,32 +356,15 @@ table_creneaux <- function(stats) {
 
 #' Décomposition des heures d'une période, par secteur et créneau.
 #'
-#' Le seul endroit où le détail par secteur existe : on le montre donc tel
-#' quel, plutôt que de le résumer en variable / fixe.
+#' `Heures` et `Coût` sont les valeurs retenues (la paie si elle existe,
+#' Horeko sinon) ; `Coût Horeko` donne l'estimation d'origine à côté.
 #'
-#' ---------------------------------------------------------------------------
-#' Trois sources, trois lignes de total
-#' ---------------------------------------------------------------------------
-#' Les colonnes `Heures` et `Coût` portent les valeurs RETENUES — celles que
-#' tout le dashboard consomme, c'est-à-dire la paie quand elle est disponible
-#' et Horeko sinon (cf. recale_couts_travail dans R/sources_travail.R).
-#'
-#' `Coût Horeko` donne l'estimation d'origine à côté, par secteur : c'est le
-#' seul endroit où l'écart entre les deux se lit AU GRAIN SECTEUR. Le volet
-#' Sources le montre par mois, jamais par secteur.
-#'
-#' Les trois totaux du bas sont le point de contrôle entre les sources. Chacun
-#' porte ses PROPRES heures et son propre coût, sur sa ligne, plutôt que de se
-#' partager une colonne :
-#'
-#'   - « Total retenu » est la somme des lignes au-dessus ;
-#'   - « Total paie » peut en différer, quand la paie porte des heures qu'aucun
-#'     jour pointé ne peut recevoir (cf. onss_non_rattache) ;
-#'   - « Total comptabilité » n'a pas d'heures du tout, et n'en aura jamais :
-#'     elle enregistre la paie, pas le temps.
-#'
-#' L'écart entre ces totaux est normal — pécules, provisions, charges
-#' patronales, personnel non pointé. C'est sa DÉRIVE qui est un signal.
+#' Trois lignes de total, chacune avec ses heures et son coût :
+#'   - « Total retenu », la somme des lignes ;
+#'   - « Total paie », qui peut porter des heures qu'aucun jour pointé ne
+#'     reçoit (cf. onss_non_rattache) ;
+#'   - « Total comptabilité », sans heures.
+#' L'écart entre eux est normal ; c'est sa dérive qui est un signal.
 table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_,
                                         db_onss = NULL) {
   if (is.null(db_couts) || !nrow(db_couts))
@@ -453,9 +372,7 @@ table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_,
   d <- db_couts %>% filter(DATE >= as.Date(d1), DATE <= as.Date(d2))
   if (!nrow(d)) return(tibble(Info = "Aucune heure sur la période."))
 
-  # Les colonnes de comparaison n'existent que depuis le recalage : sur un
-  # .RData enregistré avant, on retombe sur les valeurs retenues, et l'écart
-  # affiché est alors nul — ce qui est juste, puisqu'il n'y avait qu'une source.
+  # Sur un cache ancien, sans colonnes de comparaison : les valeurs retenues.
   d <- d %>% mutate(
     .H_HOR = if ("HEURES_HOREKO" %in% names(d)) HEURES_HOREKO else HEURES,
     .C_HOR = if ("COUT_HOREKO_LIGNE" %in% names(d)) COUT_HOREKO_LIGNE
@@ -468,9 +385,7 @@ table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_,
               Cout   = sum(COUT_TRAVAIL, na.rm = TRUE),
               H_HOR  = sum(.H_HOR, na.rm = TRUE),
               C_HOR  = sum(.C_HOR, na.rm = TRUE),
-              # Un secteur peut mélanger les deux sources si la paie ne couvre
-              # qu'une partie des mois de la période : on le dit plutôt que de
-              # choisir pour le lecteur.
+              # Un secteur peut mêler les deux sources sur une période : on l'affiche.
               Source = paste(sort(unique(.SRC)), collapse = " + "),
               .groups = "drop") %>%
     arrange(desc(Cout))
@@ -482,9 +397,7 @@ table_decomposition_travail <- function(db_couts, d1, d2, ca_periode = NA_real_,
     sum(unique(d[, c("ANNEE", "MOIS", "COUT_COMPTA")])$COUT_COMPTA, na.rm = TRUE)
   else NA_real_
 
-  # Le total de la paie vient de DB_ONSS et non de la somme des lignes : il
-  # inclut ainsi le « Non ventilé » et les secteurs sans pointage, qui sont
-  # justement ce qu'on veut voir apparaître ici.
+  # Le total de la paie vient de DB_ONSS : il inclut le « Non ventilé ».
   paie <- if (!is.null(db_onss) && is.data.frame(db_onss) && nrow(db_onss) &&
               all(c("ANNEE", "MOIS", "HEURES", "COUT") %in% names(db_onss))) {
     mois <- unique(floor_date(seq(as.Date(d1), as.Date(d2), by = "day"), "month"))

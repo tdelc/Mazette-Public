@@ -1,24 +1,10 @@
 # Plan comptable : classement des comptes par leur NUMÉRO.
 #
-# ---------------------------------------------------------------------------
-# Pourquoi le numéro et rien d'autre
-# ---------------------------------------------------------------------------
-# Le PCMN attribue une signification fixe aux deux premiers chiffres : 70 = ventes,
-# 62 = rémunérations, 63 = amortissements… Cette structure ne bouge pas, alors que
-# tout le reste bouge :
-#
-#   - la mise en page du rapport change (31 nombres de lignes différents sur les
-#     52 mois de DB_COMPTA) ;
-#   - les SECTION / RUBRIQUE de l'export dérivent : « Précompte immobilier »
-#     (640400) est tantôt sous « Services et Biens », tantôt sous « Autres
-#     charges d'exploitation » ; « Charges d'exploitation non récurrentes »
-#     (664000) tantôt sous « Services et Biens », tantôt sous « Charges non
-#     récurrentes » ;
-#   - des comptes apparaissent et disparaissent d'un exercice à l'autre.
-#
-# On classe donc sur le numéro, et on ne déduit plus rien des libellés ni des
-# totaux. Un compte inconnu du tableau ci-dessous tombe dans « Non classé » et se
-# voit, plutôt que de disparaître d'un total.
+# Le PCMN donne un sens fixe aux premiers chiffres (70 = ventes, 62 =
+# rémunérations, 63 = amortissements…). Tout le reste bouge d'un export à
+# l'autre : la mise en page, les SECTION / RUBRIQUE (640400 passe d'une
+# rubrique à l'autre), les comptes eux-mêmes. On classe donc sur le numéro
+# seulement. Un compte inconnu tombe dans « Non classé » et se voit.
 
 #' Correspondance préfixe de compte -> poste de gestion.
 #'
@@ -43,21 +29,13 @@ PLAN_PCMN <- tibble::tribble(
   "65",     "Charges financières",           "Résultat financier",           -1,     41,
   "67",     "Impôts",                        "Impôts",                       -1,     50,
   "77",     "Régularisations d'impôts",      "Impôts",                        1,     51,
-  # La classe 79 n'est pas du résultat : c'est son AFFECTATION — bénéfice ou
-  # perte à reporter, dotations aux réserves. 793000 « perte à reporter »
-  # arrive avec la pièce de reprise et porte, d'un coup, le résultat de tout
-  # l'exercice précédent. Classée ici, elle cesse d'être signalée comme un
-  # compte hors plan — et elle reste HORS des blocs de gestion, exactement
-  # comme les impôts : sa section n'est reconnue par aucun d'eux
-  # (cf. bloc_gestion dans R/exploitation.R). Le chiffre d'affaires ne bouge
-  # donc pas d'un centime ; seul le bruit disparaît.
+  # La classe 79 est l'affectation du résultat (793000, perte à reporter,
+  # arrive avec la pièce de reprise). Classée pour ne pas être signalée hors
+  # plan, elle reste hors des blocs de gestion, comme les impôts.
   "79",     "Affectation du résultat",       "Affectation du résultat",       1,     60
 )
 
 #' Soldes intermédiaires : chacun cumule les postes qui le précèdent.
-#'
-#' Déclaratif plutôt que déduit : c'est la définition comptable, elle ne dépend
-#' d'aucun fichier.
 SOLDES_PCMN <- tibble::tribble(
   ~SOLDE,                        ~JUSQU_A,
   "Marge brute d'exploitation",       21,
@@ -97,10 +75,7 @@ classe_comptes <- function(db, comptes_seuls = TRUE) {
                                         as.integer(ANNEE), as.integer(MOIS))))
 }
 
-#' Comptes que le plan ne sait pas classer.
-#'
-#' À regarder après chaque nouvel import : un compte non classé n'entre dans
-#' aucun total, et c'est visible ici plutôt que sous forme d'un écart inexpliqué.
+#' Comptes que le plan ne sait pas classer : à regarder après chaque import.
 comptes_non_classes <- function(db) {
   classe_comptes(db) %>%
     filter(POSTE == "Non classé") %>%
@@ -110,13 +85,8 @@ comptes_non_classes <- function(db) {
     arrange(desc(abs(TOTAL)))
 }
 
-#' Ramène PERIODE (mensuelle) à la granularité demandée.
-#'
-#' Toute la consolidation trimestre / année passe par ici, en AMONT du
-#' regroupement : les postes, les soldes et le détail des comptes se calculent
-#' ensuite sans rien savoir de la granularité. Consolider après coup, en
-#' sommant des soldes déjà calculés, donnerait le même total mais rendrait le
-#' détail des comptes incohérent avec lui.
+#' Ramène PERIODE (mensuelle) à la granularité demandée, AVANT tout
+#' regroupement : postes, soldes et détail des comptes restent cohérents.
 consolide_periode <- function(d, unite = c("mois", "trimestre", "annee")) {
   unite <- match.arg(unite)
   if (is.null(d) || !nrow(d)) return(d)
@@ -167,8 +137,7 @@ periodes_compta <- function(db, unite = "mois") {
     mutate(PERIODE = as.Date(sprintf("%04d-%02d-01",
                                      as.integer(ANNEE), as.integer(MOIS)))) %>%
     consolide_periode(unite) %>%
-    # N_MOIS dit combien de mois composent réellement la période : un trimestre
-    # à 2 mois sur 3 doit se voir dans la liste, pas seulement dans les totaux.
+    # N_MOIS : combien de mois composent réellement la période.
     count(PERIODE, name = "N_MOIS") %>%
     # Pas de %B : il suit la locale du serveur (cf. etiquette_periode()).
     mutate(LIBELLE = etiquette_periode(PERIODE, unite)) %>%
@@ -219,9 +188,7 @@ table_compte_resultat <- function(db, periodes, detail = FALSE, en_pct = FALSE,
     lignes <- lignes %>% left_join(base_ca, by = "PERIODE") %>%
       mutate(VALEUR = if_else(!is.na(CA) & CA > 0, 100 * VALEUR / CA, NA_real_))
 
-  # euro_compta() et non format_CA(x, -1) : un compte de résultat se lit au
-  # centime, c'est le seul moyen d'y vérifier qu'un total retombe sur ses
-  # pieds (cf. DECIMALES_COMPTA dans R/theme.R).
+  # euro_compta() : un compte de résultat se lit au centime.
   fmt <- if (en_pct) function(x) format_pct(x) else euro_compta
 
   lignes %>%

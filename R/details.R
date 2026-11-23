@@ -1,44 +1,15 @@
-# Volet « Détails » : la loupe sur UNE période, au grain le plus fin disponible.
+# Volet « Ventes » (Détails) : la loupe sur une période — un jour, une semaine,
+# un mois — en descendant de la vue d'ensemble au ticket.
 #
-# ---------------------------------------------------------------------------
-# Ce que ce volet est, et ce qu'il n'est plus
-# ---------------------------------------------------------------------------
-# Il répond à une seule question : « qu'est-ce qui s'est passé ce jour-là, cette
-# semaine-là, ce mois-là ? » — et il y répond en DESCENDANT, de la vue
-# d'ensemble au ticket.
-#
-# Tout ce qui relève du pilotage en a été retiré, parce que les mêmes chiffres
-# vivent ailleurs et mieux :
-#
-#   - les coûts, la marge et les ratios de gestion sont dans Compta, qui les
-#     donne au grain où ils sont VRAIS (le mois) ;
-#   - les heures et leur productivité sont dans Travail ;
-#   - la comparaison entre périodes est dans Comparaison.
-#
-# Les y laisser ici les dupliquait, et cette duplication coûtait deux fois :
-# une page dense où l'information utile se noyait, et un risque de divergence
-# entre deux écrans censés dire la même chose.
-#
-# ---------------------------------------------------------------------------
-# Pourquoi la comptabilité a disparu de ce volet
-# ---------------------------------------------------------------------------
-# La comptabilité est MENSUELLE. Pour l'afficher sur une semaine, la version
-# précédente étalait le mois au prorata des jours — et le signalait par un
-# bandeau. Mais un prorata affiché reste un chiffre lu : on retenait « la
-# semaine a coûté 4 200 € de matières » alors que personne ne l'a mesuré. Le
-# bandeau prévenait ; il ne suffisait pas.
-#
-# Un chiffre qu'on ne peut pas mesurer à cette maille ne s'affiche donc plus à
-# cette maille. On dit où le trouver, ce qui est plus utile qu'une estimation.
+# Les coûts, la marge et les heures payées n'y figurent pas : ils ne sont
+# mesurés qu'au mois et vivent dans Compta et Travail. Les afficher à la
+# semaine reviendrait à répartir un total.
 
 ##### Les trois mailles #####
 
-# Une maille définit tout : la barre du graphe d'ensemble, la période qu'un clic
-# sélectionne, et la façon dont cette période se décompose juste en dessous.
-#
-# FENETRE est le nombre de jours affichés par défaut dans la vue d'ensemble :
-# assez pour voir une tendance, pas au point de rendre les barres illisibles.
-# COMPOSITION est la maille d'un cran plus fine — celle du deuxième graphe.
+# Une maille définit la barre du graphe d'ensemble, la période qu'un clic
+# sélectionne, et sa décomposition juste en dessous. FENETRE : jours affichés
+# par défaut ; COMPOSITION : la maille d'un cran plus fine.
 MAILLES_DETAIL <- tibble::tribble(
   ~CLE,      ~LIBELLE,      ~ICONE,          ~FENETRE, ~COMPOSITION, ~COMPO_TITRE,
   "jour",    "Par jour",    "calendar-day",        56, "heure",      "Heure par heure",
@@ -54,9 +25,8 @@ maille_detail <- function(cle) {
   as.list(MAILLES_DETAIL[i, ])
 }
 
-# debut_periode() de R/helpers.R ne connaît pas le jour — il n'en a jamais eu
-# besoin. Ici si : la maille « jour » est une maille comme les autres, et tout
-# le volet serait truffé de cas particuliers sans ces deux enveloppes.
+# debut_periode() ne connaît pas le jour : ces deux enveloppes en font une
+# maille comme les autres.
 debut_maille <- function(d, maille) {
   d <- as.Date(d)
   if (identical(maille, "jour")) d else debut_periode(d, maille)
@@ -67,17 +37,9 @@ fin_maille <- function(d, maille) {
   if (identical(maille, "jour")) d else fin_periode(debut_maille(d, maille), maille)
 }
 
-# Libellé d'une période, indépendant de la locale du SERVEUR.
-#
-# label_periode() de R/helpers.R rend « September 2026 » sur une machine en
-# locale C — le cas courant d'un serveur Shiny — parce qu'il passe par %B. On
-# repasse donc par vecteur_mois_court et vecteur_jours, comme partout ailleurs
-# dans le dashboard depuis que le piège a été identifié.
+# Libellé d'une période, indépendant de la locale du serveur.
 libelle_maille <- function(d, maille) {
-  # On normalise à l'entrée : la fonction doit nommer la PÉRIODE qui contient
-  # cette date, pas la date elle-même. Sans cela, un jeudi passé à la maille
-  # « semaine » rendait « Semaine du 17/09 au 20/09 » — bornes fausses et
-  # durée de quatre jours.
+  # Normalisé à l'entrée : on nomme la période qui contient cette date.
   d <- debut_maille(d, maille)
   switch(maille,
          jour    = paste0(vecteur_jours[wday(d, week_start = 1)], " ",
@@ -99,12 +61,8 @@ libelle_maille_court <- function(d, maille) {
          format(d, "%d/%m"))
 }
 
-# La période précédente à laquelle se comparer.
-#
-# Pour un jour, c'est le MÊME JOUR DE LA SEMAINE une semaine plus tôt, et non
-# la veille : un lundi ne se compare pas à un dimanche. Pour une semaine ou un
-# mois, la période immédiatement précédente suffit — la saisonnalité y joue
-# déjà à l'intérieur.
+# La période précédente à laquelle se comparer : pour un jour, le même jour
+# une semaine plus tôt ; sinon la période immédiatement précédente.
 periode_precedente <- function(d, maille) {
   d <- as.Date(d)
   switch(maille,
@@ -125,11 +83,8 @@ libelle_precedente <- function(maille) {
 
 ##### Vue d'ensemble : la série de la fenêtre #####
 
-# Une ligne par période de la maille, avec son CA et son objectif.
-#
-# Les jours sans vente sont ÉCARTÉS à la maille « jour » (un jour de fermeture
-# n'est pas un mauvais jour), mais conservés dans l'agrégat des mailles
-# supérieures : une semaine avec un jour de fermeture reste une semaine.
+# Une ligne par période de la maille, avec son CA et son objectif. Les jours
+# sans vente sont écartés à la maille « jour », gardés dans les agrégats.
 serie_detail <- function(db_kpi, db_obj, d1, d2, maille = "jour") {
   if (is.null(db_kpi) || !nrow(db_kpi)) return(NULL)
   d1 <- as.Date(d1); d2 <- as.Date(d2)
@@ -146,10 +101,8 @@ serie_detail <- function(db_kpi, db_obj, d1, d2, maille = "jour") {
   d %>%
     mutate(PERIODE = debut_maille(DATE, maille)) %>%
     group_by(PERIODE) %>%
-    # JOURS est calculé AVANT CA, et l'ordre n'est pas cosmétique : summarise()
-    # évalue ses arguments dans l'ordre, et chacun voit les précédents. Placé
-    # après, `sum(CA > 0)` lisait le CA déjà agrégé — un scalaire — et rendait
-    # 1 pour toutes les périodes.
+    # JOURS avant CA : summarise() évalue dans l'ordre, et `CA > 0` lirait
+    # sinon le CA déjà agrégé.
     summarise(JOURS = sum(CA > 0, na.rm = TRUE),
               CA = sum(CA, na.rm = TRUE),
               OBJECTIF = sum(OBJECTIF, na.rm = TRUE), .groups = "drop") %>%
@@ -160,10 +113,7 @@ serie_detail <- function(db_kpi, db_obj, d1, d2, maille = "jour") {
 }
 
 # Le graphe d'ensemble : une barre par période, le trait de l'objectif.
-#
-# `customdata` porte la date en texte : c'est elle qui identifie la barre au
-# clic. L'axe affiche des libellés (« ven 11/09 »), et as.Date() sur un libellé
-# lève — le piège a déjà coûté un onglet cassé ailleurs dans ce dashboard.
+# `customdata` porte la date en texte, qui identifie la barre au clic.
 graph_serie_detail <- function(serie, maille = "jour", source = "det_serie") {
   if (is.null(serie) || !nrow(serie))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -200,12 +150,8 @@ graph_serie_detail <- function(serie, maille = "jour", source = "det_serie") {
 
 ##### La période choisie : le résumé #####
 
-# Tout ce qu'on veut savoir d'une période, en une liste.
-#
-# Le nombre de tickets et le panier moyen ne sont calculables que si DB_TICKET
-# porte ID_TICKET (cf. R/donnees.R). Quand il manque, les deux valent NA et
-# l'écran le dit — plutôt que d'afficher un zéro qui se lirait comme « aucun
-# ticket ».
+# Tout ce qu'on veut savoir d'une période, en une liste. Tickets et panier
+# moyen valent NA si DB_TICKET ne porte pas ID_TICKET.
 resume_detail <- function(db_kpi, db_obj, db_ticket, periode, maille = "jour") {
   if (is.null(db_kpi) || !nrow(db_kpi)) return(NULL)
   d1 <- debut_maille(periode, maille); d2 <- fin_maille(periode, maille)
@@ -242,8 +188,7 @@ resume_detail <- function(db_kpi, db_obj, db_ticket, periode, maille = "jour") {
              else act$CA / n_tickets)
 }
 
-# Les tuiles de la période. Tout y est en ÉCART ou en niveau simple : aucune
-# grandeur dérivée d'une autre dérivée, aucune estimation.
+# Les tuiles de la période : des écarts ou des niveaux, aucune estimation.
 kpi_detail <- function(res) {
   if (is.null(res))
     return(div(class = "text-muted small p-2",
@@ -276,20 +221,14 @@ kpi_detail <- function(res) {
              "Tickets", COUL_AMBRE, "receipt",
              sous_titre = if (is.na(res$N_TICKETS)) "identifiant absent du cache"
                           else "lignes de caisse regroupées")
-    # kpi_tile(if (is.na(res$PANIER)) "—" else format_CA(res$PANIER, 2),
-    #          "Panier moyen", COUL_MATIERE, "basket-shopping",
-    #          sous_titre = "CA / ticket")
   )
 }
 
 ##### Comment la période se compose #####
 
 # Un cran plus fin que la maille choisie : les heures d'un jour, les jours
-# d'une semaine, les semaines d'un mois.
-#
-# Les heures viennent de DB_TICKET, les jours et semaines de db_kpi : c'est la
-# même grandeur, mais db_kpi porte le CA corrigé du jour (cf. import.R) et fait
-# donc foi dès qu'on peut l'utiliser.
+# d'une semaine, les semaines d'un mois. Heures depuis DB_TICKET, jours et
+# semaines depuis db_kpi, qui fait foi.
 composition_detail <- function(db_kpi, db_obj, db_ticket, periode,
                                maille = "jour", unite_tva = "HTVA") {
   d1 <- debut_maille(periode, maille); d2 <- fin_maille(periode, maille)
@@ -301,11 +240,8 @@ composition_detail <- function(db_kpi, db_obj, db_ticket, periode,
     if (!col %in% names(db_ticket)) col <- "PRIX_TOTAL"
     d <- db_ticket %>% filter(DATE >= d1, DATE <= d2, .data[[col]] > 0)
     if (!nrow(d)) return(NULL)
-    # Une heure est toujours entière : COMPLET vaut TRUE, mais la colonne doit
-    # exister pour que le graphe n'ait pas à connaître la maille.
-    #
-    # OBJECTIF vaut NA et non zéro : aucun objectif n'est fixé à l'heure. Zéro
-    # se lirait « objectif dépassé » et peindrait la journée en vert.
+    # COMPLET doit exister pour le graphe. OBJECTIF vaut NA : aucun objectif
+    # n'est fixé à l'heure.
     return(d %>%
       group_by(HEURE) %>%
       summarise(CA = sum(.data[[col]], na.rm = TRUE), .groups = "drop") %>%
@@ -323,38 +259,22 @@ composition_detail <- function(db_kpi, db_obj, db_ticket, periode,
   d %>%
     mutate(CLE = debut_maille(DATE, compo)) %>%
     group_by(CLE) %>%
-    # L'objectif ne compte que les jours OUVERTS, comme dans resume_detail() :
-    # un jour de fermeture n'a pas d'objectif à rater. Et il est tronqué de la
-    # même façon que le CA — une semaine à cheval compare donc bien ses trois
-    # jours affichés à l'objectif de ces trois jours-là.
-    #
-    # OBJECTIF est calculé AVANT CA : summarise() évalue ses arguments dans
-    # l'ordre et chacun voit les précédents. Placé après, `CA > 0` lirait le CA
-    # déjà agrégé — un scalaire — et l'objectif du jour de fermeture rentrerait
-    # dans le total. Le piège a déjà coûté une colonne fausse dans ce fichier.
+    # L'objectif ne compte que les jours ouverts, tronqué comme le CA. Calculé
+    # avant CA, pour la même raison que dans serie_detail().
     summarise(OBJECTIF = sum(OBJECTIF[CA > 0], na.rm = TRUE),
               CA = sum(CA, na.rm = TRUE),
               .groups = "drop") %>%
     relocate(CLE, CA, OBJECTIF) %>%
-    # Une semaine à cheval sur deux mois n'est comptée QUE pour ses jours du
-    # mois affiché — c'est le seul calcul juste. Mais l'étiquette « S 31/08 »
-    # se lit alors comme la semaine entière, et on comparerait 3 jours à 7.
-    # On marque donc les périodes tronquées plutôt que de laisser croire.
+    # Une semaine à cheval sur deux mois n'est comptée que pour ses jours du
+    # mois affiché : on la marque comme tronquée.
     mutate(COMPLET = CLE >= d1 & fin_maille(CLE, compo) <= d2,
            LABEL = paste0(libelle_maille_court(CLE, compo),
                           if_else(COMPLET, "", " *"))) %>%
     arrange(CLE)
 }
 
-# La décomposition, barre par barre.
-#
-# La couleur dit l'atteinte de l'objectif, exactement comme dans le graphe
-# d'ensemble : deux graphes qui montrent la même grandeur ne peuvent pas avoir
-# deux conventions de couleur.
-#
-# La troncature ne peut donc plus être un gris — il est déjà pris par « sans
-# objectif ». Elle passe en hachure et en transparence, qui se superposent à
-# n'importe quelle couleur sans en changer la lecture.
+# La décomposition, barre par barre. Couleur selon l'objectif, comme le
+# graphe d'ensemble ; une période tronquée est hachurée.
 graph_composition_detail <- function(comp, maille = "jour") {
   if (is.null(comp) || !nrow(comp))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -364,9 +284,7 @@ graph_composition_detail <- function(comp, maille = "jour") {
   part <- ratio_pct(comp$CA, sum(comp$CA, na.rm = TRUE))
   obj <- if ("OBJECTIF" %in% names(comp)) comp$OBJECTIF else rep(NA_real_, nrow(comp))
 
-  # Sans aucun objectif à cette finesse (les heures d'une journée), la couleur
-  # ne dirait rien : une seule teinte vaut mieux qu'un gris « sans objectif »
-  # répété, qui se lirait comme un jugement.
+  # Sans objectif à cette finesse, une seule teinte.
   couleurs <- if (all(is.na(obj))) rep(COUL_BRUN, nrow(comp))
               else couleur_objectif(comp$CA, obj)
   atteinte <- if (all(is.na(obj))) rep("", nrow(comp))
@@ -391,11 +309,8 @@ graph_composition_detail <- function(comp, maille = "jour") {
            paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Le CA de la période coupé selon les deux axes que db_kpi porte déjà :
+# Le CA de la période selon les deux axes que db_kpi porte déjà :
 # boisson / nourriture, et midi / soir.
-#
-# Deux axes et pas un de plus : ce sont les seuls que la table donne SANS
-# recalcul, et donc les seuls qui ne puissent pas diverger d'un autre écran.
 repartition_detail <- function(db_kpi, periode, maille = "jour") {
   d1 <- debut_maille(periode, maille); d2 <- fin_maille(periode, maille)
   if (is.null(db_kpi) || !nrow(db_kpi)) return(NULL)
@@ -440,9 +355,7 @@ graph_repartition_detail <- function(rep) {
                paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)")
 }
 
-# Petit utilitaire : `a %|% b` rend b quand a est NA ou vide. Les palettes
-# nommées rendent NA sur une clé inconnue, et un NA de couleur fait tomber
-# plotly sans message utile.
+# `a %|% b` rend b quand a est NA ou vide : une couleur NA fait tomber plotly.
 `%|%` <- function(a, b) if (length(a) == 0 || is.na(a)) b else a
 
 ##### Le grain fin : produits, heures, tickets #####
@@ -487,11 +400,8 @@ table_produits_detail <- function(prod, unite_tva = "HTVA") {
 
 ##### Les tickets #####
 
-# DB_TICKET ne porte ID_TICKET que depuis qu'il a été ajouté aux colonnes
-# conservées (cf. TICKET_COLONNES dans R/donnees.R). Un .RData plus ancien n'en
-# a pas, et le volet doit alors se taire proprement plutôt que d'inventer un
-# regroupement — deux lignes de la même minute ne sont pas forcément le même
-# ticket.
+# Sans ID_TICKET (cache ancien), le volet se tait plutôt que d'inventer un
+# regroupement.
 tickets_disponibles <- function(db_ticket) {
   !is.null(db_ticket) && is.data.frame(db_ticket) &&
     "ID_TICKET" %in% names(db_ticket) && nrow(db_ticket) > 0
@@ -510,13 +420,9 @@ tickets_detail <- function(db_ticket, d1, d2, unite_tva = "HTVA") {
     group_by(ID_TICKET) %>%
     summarise(DATE = min(DATE), HEURE = min(HEURE, na.rm = TRUE),
               LIGNES = n(), ARTICLES = sum(QUANTITE, na.rm = TRUE),
-              # NA et non zéro quand AUCUNE ligne n'a de montant : « on ne sait
-              # pas » et « le ticket était gratuit » ne se lisent pas pareil, et
-              # c'est le second que na.rm affichait (cf. tva_inconnue).
+              # NA quand aucune ligne n'a de montant : inconnu n'est pas gratuit.
               CA = if (all(is.na(.data[[col]]))) NA_real_
                    else sum(.data[[col]], na.rm = TRUE),
-              # Le ticket se lit par son contenu, pas par son numéro : on
-              # compose donc son résumé ici, une fois, plutôt qu'au rendu.
               CONTENU = paste(head(unique(PRODUIT), 4), collapse = " · "),
               AUTRES = max(0L, n_distinct(PRODUIT) - 4L), .groups = "drop") %>%
     arrange(DATE, HEURE, ID_TICKET)
@@ -537,8 +443,7 @@ table_tickets <- function(tk, unite_tva = "HTVA") {
                      tronque_nom(CONTENU, 60)),
     Articles = ARTICLES,
     !!ca := trimws(format_CA(CA, -1)),
-    # Les jumelles de tri : sans elles, « 31/01 » se classe par son jour et
-    # « 90€ » passe devant « 1.234€ » (cf. defs_tri dans R/theme.R).
+    # Les jumelles de tri (cf. defs_tri dans R/theme.R).
     !!col_tri("Jour") := as.numeric(DATE),
     !!col_tri(ca) := CA)
 }
@@ -552,32 +457,22 @@ lignes_ticket <- function(db_ticket, id, unite_tva = "HTVA") {
   if (!nrow(d)) return(tibble(Info = "Ticket introuvable."))
   d %>%
     arrange(desc(.data[[col]])) %>%
-    # PRODUIT_FULL et non PRODUIT : le ticket se lit tel que la caisse l'a
-    # enregistré, avec ses libellés libres. Le nom canonique, lui, sert aux
-    # agrégats (« Ce qui s'est vendu »), où il regroupe les variantes.
+    # PRODUIT_FULL : le ticket tel que la caisse l'a enregistré.
     transmute(Produit = tronque_nom(PRODUIT_FULL, 55),
               Catégorie = CATEGORIE,
               Quantité = QUANTITE,
               !!paste("CA", unite_tva) := trimws(format_CA(.data[[col]], -1)))
 }
 
-# Les lignes dont le taux de TVA est inconnu, sur la période.
-#
-# Leur montant TVAC est connu — c'est ce que le client a payé —, mais le HTVA
-# ne s'en déduit pas : il vaut NA, et compte donc pour zéro dans tout total
-# HTVA. Un ticket entièrement composé de ces lignes s'affiche alors à zéro
-# euro, ce qui se lit comme un ticket offert. Il faut le dire.
-#
-# La cause est en amont : le libellé de la ligne de caisse n'existe dans aucun
-# export produits, d'où l'absence de taux (cf. CONTROLE_TVA dans import.R).
+# Les lignes dont le taux de TVA est inconnu, sur la période. Leur HTVA vaut
+# NA et compte pour zéro dans les totaux : un ticket qui n'en contient que
+# celles-là s'afficherait à zéro euro. Cf. CONTROLE_TVA dans import.R.
 tva_inconnue <- function(db_ticket, d1, d2) {
   if (is.null(db_ticket) || !nrow(db_ticket) ||
       !all(c("CA_HTVA", "CA_TVAC") %in% names(db_ticket))) return(NULL)
   d <- db_ticket %>% filter(DATE >= as.Date(d1), DATE <= as.Date(d2))
   if (!nrow(d)) return(NULL)
 
-  # is.na(CA_HTVA) suffit : une ligne sans montant TVAC non plus est encore
-  # plus abîmée, et doit d'autant plus être signalée.
   trou <- is.na(d$CA_HTVA)
   if (!any(trou)) return(NULL)
 
@@ -590,8 +485,7 @@ tva_inconnue <- function(db_ticket, d1, d2) {
        EXEMPLES = head(sort(noms), 3))
 }
 
-# L'alerte du volet Tickets : une seule place pour les deux choses qui peuvent
-# manquer, l'identifiant de ticket et le taux de TVA.
+# L'alerte du volet Tickets : identifiant de ticket ou taux de TVA manquant.
 alerte_tickets <- function(db_ticket, d1, d2) {
   if (!tickets_disponibles(db_ticket))
     return(bandeau_alerte(
@@ -611,8 +505,8 @@ alerte_tickets <- function(db_ticket, d1, d2) {
 
   bandeau_alerte(
     TRUE,
-    # tagList et non paste0 : coller une balise dans une chaîne l'afficherait
-    # en toutes lettres.
+    # tagList et non paste0 : une balise collée dans une chaîne s'afficherait en
+    # toutes lettres.
     tagList(
       paste0(t$LIGNES, " ligne", pluriel(t$LIGNES), " de caisse sur la période",
              " — ", t$PRODUITS, " produit", pluriel(t$PRODUITS), ", ",
@@ -631,11 +525,8 @@ alerte_tickets <- function(db_ticket, d1, d2) {
     icone = "circle-info")
 }
 
-# Ce que la distribution des paniers montre, en trois chiffres.
-#
-# Un histogramme se lit mal dans ses extrêmes : la barre d'un ticket unique à
-# 1 200 € fait un pixel. Donner le plus gros ticket en toutes lettres permet de
-# le confronter à la caisse, ce qu'aucune forme de courbe ne permet.
+# Ce que la distribution des paniers montre, en trois chiffres, dont le plus
+# gros ticket : un histogramme le réduirait à un pixel.
 resume_paniers <- function(tk) {
   if (is.null(tk) || !nrow(tk)) return("")
   paste0(nrow(tk), " ticket", if (nrow(tk) > 1) "s" else "",
@@ -644,11 +535,7 @@ resume_paniers <- function(tk) {
          " · plus gros ", trimws(format_CA(max(tk$CA, na.rm = TRUE), -1)))
 }
 
-# Distribution des tickets par tranche de montant : où se situe le panier.
-#
-# Une moyenne de panier cache tout : deux services à 18 € de moyenne peuvent
-# être « beaucoup de petits tickets » ou « quelques gros ». L'histogramme le
-# dit, la moyenne non.
+# Distribution des tickets par tranche de montant.
 graph_paniers <- function(tk) {
   if (is.null(tk) || !nrow(tk))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
@@ -667,13 +554,9 @@ graph_paniers <- function(tk) {
 
 ##### Les heures pointées #####
 
-# Les heures POINTÉES du jour, par secteur — pas les heures recalées.
-#
-# Depuis le recalage sur la paie (cf. R/sources_travail.R), HEURES porte un
-# total mensuel réparti sur les jours. À la maille du jour, cette valeur est
-# une répartition et non une mesure : afficher « 12,4 h le mardi » lui donnerait
-# une précision qu'elle n'a pas. HEURES_HOREKO, lui, est ce que le pointage a
-# enregistré ce jour-là. C'est la seule des deux qui ait un sens ici.
+# Les heures pointées du jour, par secteur. HEURES est un total mensuel
+# réparti sur les jours (cf. R/sources_travail.R) ; HEURES_HOREKO est ce que
+# le pointage a enregistré ce jour-là, la seule mesure au jour.
 heures_pointees <- function(db_couts, periode, maille = "jour") {
   if (is.null(db_couts) || !nrow(db_couts)) return(NULL)
   d1 <- debut_maille(periode, maille); d2 <- fin_maille(periode, maille)
@@ -703,18 +586,10 @@ table_heures_pointees <- function(h, ca = NA_real_) {
 
 ##### Les heures réelles, au mois #####
 
-# Au MOIS, et au mois seulement, les heures cessent d'être une estimation.
-#
-# Le pointage est la seule mesure quotidienne, mais il n'est qu'un pointage :
-# il ignore les heures payées sans être pointées (congés, maladie, solde) et
-# son coût est un tarif horaire supposé. La paie, elle, donne des heures
-# réellement payées et un coût employeur réel, par mois et par secteur ; la
-# comptabilité donne le coût du mois, sans secteur ni heures. Ces deux-là ne
-# se découpent pas plus fin — les afficher à la semaine reviendrait à répartir
-# un total, c'est-à-dire à inventer.
-#
-# D'où la règle de ce volet : jour et semaine montrent le pointage, le mois
-# montre les trois sources côte à côte.
+# Au mois, les trois sources côte à côte : le pointage (quotidien, sans
+# congés ni maladie, à un tarif supposé), la paie (heures payées et coût réel,
+# par secteur) et la comptabilité (le coût total). Jour et semaine ne montrent
+# que le pointage.
 heures_mois <- function(db_couts, db_onss = NULL, periode = NULL) {
   m <- debut_maille(periode, "mois")
   sect <- sources_par_secteur(db_couts, db_onss)
@@ -731,9 +606,7 @@ heures_mois <- function(db_couts, db_onss = NULL, periode = NULL) {
               COUT_PAIE  = sum(COUT[SOURCE == "paie"], na.rm = TRUE),
               .groups = "drop")
 
-  # Sans fichier de paie pour ce mois, les colonnes correspondantes valent NA
-  # et non zéro : « la paie ne dit rien » et « la paie dit zéro heure » se
-  # lisent de deux façons opposées.
+  # Sans paie pour ce mois : NA et non zéro.
   if (!paie_la) res <- res %>% mutate(H_PAYEES = NA_real_, COUT_PAIE = NA_real_)
 
   res %>% filter(H_POINTEES > 0 | replace_na(H_PAYEES, 0) > 0 |
@@ -741,8 +614,7 @@ heures_mois <- function(db_couts, db_onss = NULL, periode = NULL) {
     arrange(SECTEUR)
 }
 
-# Le coût comptable du mois, s'il est connu. Il ne se ventile pas : c'est un
-# total, et il figure comme tel — une ligne à part, sans secteur ni heures.
+# Le coût comptable du mois, sur une ligne à part : il ne se ventile pas.
 cout_compta_mois <- function(db_couts, periode = NULL) {
   if (is.null(db_couts) || !nrow(db_couts) ||
       !"COUT_COMPTA" %in% names(db_couts)) return(NA_real_)
@@ -759,16 +631,14 @@ table_heures_mois <- function(h, compta = NA_real_, ca = NA_real_) {
     return(tibble(Info = "Aucune heure sur ce mois."))
 
   euro <- function(x) ifelse(is.na(x), "—", trimws(format_CA(x, -1)))
-  # sprintf et non format() : format() aligne sur la plus large valeur du
-  # vecteur, et rend « 12,0 » a cote de «  1 234,0 » avec des blancs devant.
+  # sprintf et non format() : format() aligne les largeurs avec des blancs.
   heure <- function(x) ifelse(is.na(x), "—", sprintf("%.1f", x))
 
   tot_p <- sum(h$H_POINTEES, na.rm = TRUE)
   tot_y <- if (all(is.na(h$H_PAYEES))) NA_real_ else sum(h$H_PAYEES, na.rm = TRUE)
   tot_c <- if (all(is.na(h$COUT_PAIE))) NA_real_ else sum(h$COUT_PAIE, na.rm = TRUE)
 
-  # Le CA par heure se calcule sur les heures PAYÉES dès qu'elles existent :
-  # ce sont celles que l'entreprise a effectivement supportées.
+  # Le CA par heure se calcule sur les heures payées dès qu'elles existent.
   base <- if (!is.na(tot_y) && tot_y > 0) tot_y else tot_p
 
   corps <- h %>% transmute(
@@ -801,13 +671,9 @@ table_heures_periode <- function(db_couts, db_onss, periode, maille = "jour",
   table_heures_pointees(heures_pointees(db_couts, periode, maille), ca)
 }
 
-##### Ce qui n'est plus ici #####
+# ##### Renvoi vers les autres onglets #####
 
-# Le renvoi vers les onglets qui portent les chiffres retirés de ce volet.
-#
-# Un onglet qui se contente de ne plus afficher quelque chose laisse l'utilisateur
-# croire que le chiffre n'existe pas. Dire où il est coûte trois lignes et
-# évite la question.
+# Où trouver les chiffres que ce volet ne montre pas.
 bandeau_ailleurs <- function(maille = "jour") {
   motif <- switch(
     maille,
@@ -819,9 +685,7 @@ bandeau_ailleurs <- function(maille = "jour") {
     paste0("Les coûts et la marge du mois sont réels, mais l'onglet Compta les ",
            "donne avec leur historique et leurs contrôles. "))
 
-  # tagList et non paste0 : coller une balise Shiny dans une chaîne la rend
-  # par as.character(), et div() échappe ensuite le HTML — on lirait
-  # « <b>Compta</b> » en toutes lettres à l'écran.
+  # tagList et non paste0 : sinon le HTML s'afficherait en toutes lettres.
   bandeau_alerte(
     TRUE,
     tagList(motif,
@@ -832,11 +696,7 @@ bandeau_ailleurs <- function(maille = "jour") {
     icone = "circle-info")
 }
 
-##### Sous-onglet « Par produit » #####
-#
-# L'autre axe du volet : un produit, suivi semaine après semaine. Ces trois
-# fonctions viennent telles quelles de la version précédente — elles n'avaient
-# aucun défaut, et la refonte ne portait pas sur cet axe.
+# ##### Sous-onglet « Par produit » #####
 
 # Les produits vendus sur une période, du plus gros au plus petit.
 liste_produits_periode <- function(db_produits, d1, d2, unite_tva = "HTVA") {
@@ -849,12 +709,9 @@ liste_produits_periode <- function(db_produits, d1, d2, unite_tva = "HTVA") {
     arrange(desc(CA))
 }
 
-# Évolution hebdomadaire d'un produit, avec ce qu'il pèse dans le CA total et
-# dans sa propre catégorie.
-#
-# Les deux parts ne disent pas la même chose, et c'est la seconde qui compte :
-# un produit dont la part totale baisse pendant que sa part de catégorie monte
-# ne perd pas de terrain — c'est sa famille qui recule.
+# Évolution hebdomadaire d'un produit, avec sa part dans le CA total et dans
+# sa catégorie : une part de catégorie qui monte pendant que la part totale
+# baisse signale une famille qui recule.
 evolution_un_produit <- function(db_produits, produit, d1, d2, unite_tva = "HTVA") {
   col <- colonne_ca(db_produits, unite_tva)
   db_produits %>%
@@ -874,8 +731,7 @@ evolution_un_produit <- function(db_produits, produit, d1, d2, unite_tva = "HTVA
     arrange(SEMAINE)
 }
 
-# CA en barres, quantité en ligne sur un second axe : les deux ne bougent pas
-# ensemble dès qu'une promotion passe, et c'est l'écart qui est informatif.
+# CA en barres, quantité en ligne sur un second axe.
 graph_evolution_produit <- function(evo, produit) {
   if (is.null(evo) || !nrow(evo))
     return(plotly_empty(type = "scatter", mode = "markers") %>%
