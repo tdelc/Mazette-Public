@@ -306,3 +306,25 @@ produits_sans_tva <- function(db_ticket, tva_par_id) {
     # derrière cent lignes à 0 € et la liste n'en montrait que les zéros.
     arrange(desc(abs(CA_TVAC)))
 }
+
+##### Les répartitions du CA journalier #####
+
+# Recale chaque répartition du CA (boisson/nourriture, semaine/week-end,
+# jour/soir) sur le CA_HTVA du jour, par règle de trois.
+#
+# Les répartitions viennent des tickets ; le CA du jour vient de DB_JOURS, qui
+# compte en plus les factures. Chaque paire est donc remise à l'échelle pour
+# retomber exactement sur CA_HTVA. Les trois sur la MÊME base : jour/soir
+# était recalé sur CA_TVAC, si bien que ses montants valaient le CA TVA
+# comprise quand les deux autres valaient le CA hors TVA — invisible dans les
+# parts en %, faux dès qu'on les additionnait en euros (repartition_detail()).
+recaler_repartitions <- function(db) {
+  paires <- list(c("Boisson", "Nourriture"), c("Week-end", "Semaine"),
+                 c("Jour", "Soir"))
+  for (p in paires) {
+    ratio <- db$CA_HTVA / (db[[p[1]]] + db[[p[2]]])
+    db[[p[1]]] <- db[[p[1]]] * ratio
+    db[[p[2]]] <- db[[p[2]]] * ratio
+  }
+  db
+}

@@ -107,3 +107,21 @@ ok("le controle trie par poids, signe ignore",
                    PRIX_TOTAL = c(0, -300), QUANTITE = 1)
      produits_sans_tva(tk3, tva_id[0, ])$PRODUIT[1] == "b" })
 
+
+# ---------- les repartitions du CA journalier ----------
+# Jour/soir etait recale sur CA_TVAC, les deux autres paires sur CA_HTVA : en
+# euros, l'axe « Moment » depassait l'axe « Nature » de toute la TVA.
+kpi <- tibble(DATE = as.Date("2026-09-10") + 0:1,
+              CA_HTVA = c(1000, 800), CA_TVAC = c(1150, 920),
+              Boisson = c(300, 200), Nourriture = c(600, 500),
+              `Week-end` = c(0, 700), Semaine = c(900, 0),
+              Jour = c(450, 100), Soir = c(450, 600))
+rk <- recaler_repartitions(kpi)
+ok("boisson + nourriture = CA_HTVA",
+   isTRUE(all.equal(rk$Boisson + rk$Nourriture, kpi$CA_HTVA)))
+ok("semaine + week-end = CA_HTVA",
+   isTRUE(all.equal(rk$Semaine + rk$`Week-end`, kpi$CA_HTVA)))
+ok("jour + soir = CA_HTVA, et non CA_TVAC",
+   isTRUE(all.equal(rk$Jour + rk$Soir, kpi$CA_HTVA)))
+ok("le recalage garde les parts",
+   isTRUE(all.equal(rk$Jour / (rk$Jour + rk$Soir), kpi$Jour / (kpi$Jour + kpi$Soir))))
