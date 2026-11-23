@@ -204,6 +204,27 @@ ok("trois variables sur quatre ne suffisent pas, et on dit laquelle manque",
    { withr <- Sys.getenv(ODOO_ENV); on.exit(do.call(Sys.setenv, as.list(withr)))
      do.call(Sys.setenv, as.list(setNames(c("u", "b", "l", ""), ODOO_ENV)))
      is.null(identifiants_odoo()) && identical(manque_odoo(), "cle") })
+ok("espaces, retour a la ligne et guillemets colles sont retires",
+   { withr <- Sys.getenv(ODOO_ENV); on.exit(do.call(Sys.setenv, as.list(withr)))
+     do.call(Sys.setenv, as.list(setNames(
+       c(" https://x.odoo.com\n", '"mazette"', "'l@x.be' ", "k\r\n"), ODOO_ENV)))
+     i <- identifiants_odoo()
+     i$url == "https://x.odoo.com" && i$base == "mazette" &&
+       i$login == "l@x.be" && i$cle == "k" })
+ok("une valeur faite d'espaces compte comme absente",
+   { withr <- Sys.getenv(ODOO_ENV); on.exit(do.call(Sys.setenv, as.list(withr)))
+     do.call(Sys.setenv, as.list(setNames(c("u", "  ", "l", "k"), ODOO_ENV)))
+     is.null(identifiants_odoo()) && identical(manque_odoo(), "base") })
+ok("une base inconnue du serveur est nommee, pas noyee dans psycopg2",
+   { pg <- toJSON(list(jsonrpc = "2.0", id = 1, error = list(
+       code = 200, message = "Odoo Server Error",
+       data = list(name = "psycopg2.OperationalError",
+                   message = paste("connection to server on socket",
+                                   "\"/var/run/postgresql/.s.PGSQL.5432\" failed")))),
+       auto_unbox = TRUE)
+     r <- try(odoo_connexion(IDS, transport(list(pg))$poste), silent = TRUE)
+     inherits(r, "try-error") && grepl("ne trouve pas la base « mazette »", r) &&
+       grepl("ODOO_DB", r) && !grepl("SECRET", r) })
 ok("une barre finale en trop dans l'URL est retiree",
    { withr <- Sys.getenv(ODOO_ENV); on.exit(do.call(Sys.setenv, as.list(withr)))
      do.call(Sys.setenv, as.list(setNames(c("https://x.odoo.com/", "b", "l", "k"),
