@@ -826,11 +826,17 @@ ui_exploitation <- function() {
       selectInput("expl_periode", "Période analysée", choices = NULL),
       sliderInput("expl_nb", "Périodes affichées", min = 4, max = 36,
                   value = 12, step = 1, ticks = FALSE),
+      # Avant amortissements par défaut : c'est la marge de gestion de tout le
+      # dashboard. L'option ajoute l'amortissement comme une charge de plus,
+      # partout dans l'onglet à la fois (cf. marge_gestion(), R/exploitation.R).
+      radioButtons("expl_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
           tags$b("Marge avant amortissements"), tags$br(),
           "= CA + autres produits − matières − rémunérations −",
-          " frais généraux + résultat financier", tags$br(), tags$br(),
+          " frais généraux + résultat financier", tags$br(),
+          tags$b("Marge après amortissements"), tags$br(),
+          "= la même, moins les amortissements", tags$br(), tags$br(),
           "Chiffres HTVA. Pourcentages rapportés au CA seul.")
     ),
     # class = "zone-alerte" : sans elle, un uiOutput vide reste un div, et la
@@ -886,6 +892,9 @@ ui_compta_ecarts <- function() {
       div(class = "small text-muted",
           "Coché, huit mois de 2026 se comparent à janvier-août 2025, pas à",
           " l'année entière."),
+      # Après amortissements, ceux-ci deviennent une ligne du pont et un
+      # poste du forage par compte.
+      radioButtons("eca_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
           tags$b("Pont de marge"), " : il sépare ce qui vient du volume",
@@ -957,6 +966,9 @@ ui_compta_evolution <- function() {
                   value = 18, step = 1, ticks = FALSE),
       checkboxInput("evo_raboter",
                     "Raboter à la taille de la dernière période", TRUE),
+      # Change la colonne derrière « marge » et « marge en % du CA », et ajoute
+      # les amortissements à la liste des indicateurs.
+      radioButtons("evo_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
           "La granularité ne vaut que pour la tendance : la saisonnalité est",

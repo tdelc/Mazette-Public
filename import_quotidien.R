@@ -90,6 +90,27 @@ if (inherits(res, "error")) {
         " (", nrow(jours), " jours)")
   }
 
+  # D'où viennent les écritures, et jusqu'où elles vont. Le 14 novembre, la
+  # question « les écritures se sont-elles importées ? » n'avait pas de
+  # réponse dans ce journal : le nombre de lignes de DB_ECRITURES bougeait,
+  # sans dire ni par quel chemin (API ou export collé sur Drive) ni jusqu'à
+  # quelle date. Des dates et des décomptes, jamais un montant.
+  ecr <- tryCatch(get("DB_ECRITURES", envir = globalenv()), error = function(e) NULL)
+  ids <- tryCatch(get("IDS_ODOO", envir = globalenv()), error = function(e) NULL)
+  if (is.data.frame(ecr) && nrow(ecr) && "DATE" %in% names(ecr)) {
+    d <- as.Date(ecr$DATE)
+    passees <- d[!is.na(d) & d <= Sys.Date()]
+    dit("")
+    dit("DB_ECRITURES : lues par ",
+        if (!is.null(ids)) "l'API Odoo" else "le fichier d'export sur Drive",
+        " (écritures comptabilisées seulement, pas les brouillons) ; ",
+        "dernière écriture passée le ",
+        if (length(passees)) format(max(passees)) else "—",
+        if (any(d > Sys.Date(), na.rm = TRUE))
+          paste0(", plus ", sum(d > Sys.Date(), na.rm = TRUE),
+                 " lignes datées du futur") else "")
+  }
+
   # Les contrôles de l'import, sujet et verdict. Jamais le détail : il porte
   # des montants, et ce journal est public.
   for (nom in c("CONTROLE_ODOO", "CONTROLE_ONSS", "CONTROLE_COUTURE")) {
