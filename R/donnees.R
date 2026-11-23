@@ -219,6 +219,77 @@ tva_par_produit <- function(db_ticket, produits_ref) {
     select(ID_PRODUIT, TAUX_TVA, CATEGORIE)
 }
 
+# Les remises de la caisse, et leur taux de TVA.
+#
+# Une remise accordée sur une ligne sort de la caisse comme une ligne à part,
+# à montant NÉGATIF, nommée d'après le produit remisé : « 20% sur produit :
+# Espresso ». Ce libellé n'existe évidemment pas dans l'export produits : la
+# remise restait donc sans taux, hors de tout total HTVA — 167 libellés et
+# −2 % du CA TVAC en novembre 2026. Le CA HTVA était ainsi SURÉVALUÉ du
+# montant des remises.
+#
+# Une remise porte le taux du produit qu'elle remise : c'est la même vente,
+# moins chère. On cherche donc ce produit, d'abord dans l'export produits,
+# puis parmi les libellés de caisse dont le taux est connu. Faute de le
+# trouver — un libellé renommé, une variante (« Flat White AVOINE ») —, la
+# remise prend le taux normal, 21 % : chez Mazette, les remises portent
+# presque toujours sur des boissons.
+#
+# La CATÉGORIE, elle, n'est pas reprise : une remise n'est pas un produit
+# vendu, et la compter parmi les « SALÉ » ou les « BIÈRE » ajouterait une
+# unité fantôme à chaque comptage par catégorie. Le taux suffit à la ranger
+# du bon côté des secteurs (cf. TAUX_NOURRITURE).
+MOTIF_REMISE <- "^\\s*[0-9]+(?:[.,][0-9]+)?\\s*%\\s*sur\\s+produit\\s*:\\s*"
+TAUX_REMISE_DEFAUT <- 0.21
+
+# Le produit visé par une remise, ou NA si le libellé n'est pas une remise.
+produit_remise <- function(libelle) {
+  est <- grepl(MOTIF_REMISE, libelle, ignore.case = TRUE, perl = TRUE)
+  cible <- trimws(sub(MOTIF_REMISE, "", libelle, ignore.case = TRUE, perl = TRUE))
+  ifelse(est & nzchar(cible), cible, NA_character_)
+}
+
+# Le taux des produits « remise » encore sans taux, sous la forme de
+# tva_par_produit() — de quoi s'y ajouter par bind_rows().
+#
+# Les libellés se comparent sans casse ni espaces en trop : la caisse écrit
+# « Flat white » ici et « Flat White » là.
+tva_remises <- function(db_ticket, produits_ref, tva_par_id,
+                        defaut = TAUX_REMISE_DEFAUT) {
+  vide <- tibble(ID_PRODUIT = db_ticket$ID_PRODUIT[0], TAUX_TVA = numeric(),
+                 CATEGORIE = character())
+  cle <- function(x) tolower(trimws(x))
+
+  restants <- db_ticket %>%
+    anti_join(tva_par_id, by = "ID_PRODUIT") %>%
+    count(ID_PRODUIT, PRODUIT) %>%
+    mutate(CIBLE = cle(produit_remise(PRODUIT))) %>%
+    filter(!is.na(CIBLE))
+  if (!nrow(restants)) return(vide)
+
+  # Un taux par libellé : l'export produits d'abord, la caisse ensuite.
+  par_libelle <- bind_rows(
+    produits_ref %>% filter(!is.na(TAUX_TVA)) %>%
+      transmute(CIBLE = cle(PRODUIT_FULL), TAUX_TVA, RANG = 1L),
+    db_ticket %>% distinct(ID_PRODUIT, PRODUIT) %>%
+      inner_join(tva_par_id %>% select(ID_PRODUIT, TAUX_TVA), by = "ID_PRODUIT") %>%
+      transmute(CIBLE = cle(PRODUIT), TAUX_TVA, RANG = 2L)) %>%
+    arrange(CIBLE, RANG) %>%
+    distinct(CIBLE, .keep_all = TRUE) %>%
+    select(CIBLE, TAUX_TVA)
+
+  restants %>%
+    left_join(par_libelle, by = "CIBLE") %>%
+    mutate(TAUX_TVA = coalesce(TAUX_TVA, defaut)) %>%
+    # Un même ID_PRODUIT peut porter plusieurs libellés : le plus vendu
+    # tranche, comme dans tva_par_produit().
+    arrange(ID_PRODUIT, desc(n)) %>%
+    group_by(ID_PRODUIT) %>%
+    slice(1) %>%
+    ungroup() %>%
+    transmute(ID_PRODUIT, TAUX_TVA, CATEGORIE = NA_character_)
+}
+
 # Ce qui reste sans taux, avec ce que ça pèse.
 #
 # À regarder après chaque import : un produit qui apparaît ici ne compte dans
@@ -231,5 +302,7 @@ produits_sans_tva <- function(db_ticket, tva_par_id) {
     group_by(ID_PRODUIT, PRODUIT) %>%
     summarise(LIGNES = n(), QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA_TVAC = sum(PRIX_TOTAL, na.rm = TRUE), .groups = "drop") %>%
-    arrange(desc(CA_TVAC))
+    # Par POIDS, signe ignoré : trié par montant, une remise de −300 € passait
+    # derrière cent lignes à 0 € et la liste n'en montrait que les zéros.
+    arrange(desc(abs(CA_TVAC)))
 }
