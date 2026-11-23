@@ -1,17 +1,11 @@
 # `docs/`
 
-| Fichier | Ce qu'on y trouve |
+| Vignette | Contenu |
 |---|---|
-| `index.html` | la documentation complète, autonome : elle s'ouvre par double-clic, sans serveur ni build. Deux niveaux de lecture — « j'ai cinq minutes » et « je veux tout savoir » — et un volet *Administration* qui explique comment remonter le dashboard de zéro |
-| `acces.md` | les mots de passe, les profils, et ce qui se passe côté serveur quand un onglet est interdit |
-| `odoo.md` | brancher la comptabilité Odoo : quoi exporter, le contrat que `DB_COMPTA` doit respecter, et l'API |
-| `automatisation.md` | l'import de la nuit : pourquoi il ne tourne plus au démarrage, où il tourne maintenant, et ce qui dira qu'il a cassé |
-| `validation-mois.md` | trancher un mois douteux : le bouton, le classeur de décisions, et pourquoi une validation tombe quand les chiffres bougent |
+| [`utilisation.md`](utilisation.md) | chaque onglet, ce qu'il montre, comment le lire, et les astuces |
+| [`developpement.md`](developpement.md) | l'architecture, comment les tables se fabriquent, les conventions, les pièges connus et les tests |
+| [`maintenance.md`](maintenance.md) | Google Drive et Sheets, Odoo, l'import quotidien (GitHub Actions et Apps Script), Posit Connect, les accès, le dépannage et l'installation |
 
-`index.html` est aussi la mémoire des **pièges** : les défauts qui n'ont été
-trouvés qu'au navigateur, ceux qu'aucun test ne pouvait voir, et la raison de
-chaque choix qui a l'air arbitraire. C'est là qu'ils sont racontés — pas dans
-l'interface, où ils alourdiraient chaque écran.
-
-Pour publier en ligne : *Settings → Pages*, source *Deploy from a branch*,
-dossier `/docs`.
+Le dépôt est public : ces documents ne contiennent aucun identifiant, aucune
+URL de fichier et aucun mot de passe, seulement des noms de variables.
+Gardez-les ainsi.

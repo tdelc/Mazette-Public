@@ -1,108 +1,53 @@
 # Mazette
 
-Tableau de bord de la brasserie Mazette, en R / Shiny. Il répond à quatre
-questions, dans cet ordre : **qu'est-ce qui se passe maintenant**, **qu'est-ce
-qui s'est passé**, **combien ça a rapporté**, et **qu'est-ce qu'on prévoit**.
+Le tableau de bord de la brasserie Mazette, en R / Shiny. Il répond à quatre
+questions : **qu'est-ce qui se passe maintenant**, **qu'est-ce qui s'est
+passé**, **combien ça a rapporté**, et **qu'est-ce qu'on prévoit**.
 
-## Comment ça tourne
+## La documentation
 
-```
-global.R   charge les paquets, les couleurs, puis TOUT le contenu de R/
-             ↓
-import.R   lit les sources (Google Sheets, Drive, Odoo) et construit les DB_*
-             (chaque nuit, sur GitHub Actions — plus au démarrage)
-             ↓
-ui.R       une fonction ui_*() par onglet ; R/acces.R décide lesquels insérer
-server.R   une section par onglet, dans le même ordre que la barre
-```
-
-Les données ne sont **jamais** calculées dans le serveur : l'import produit des
-tables `DB_*`, le serveur ne fait que les lire et les mettre en forme. Un
-chiffre qui change doit donc se corriger dans `import.R` ou dans `R/`, jamais
-dans un `render*`.
-
-`R/connect.R` décide de ce qui survit entre deux sessions : `TABLES_DASHBOARD`
-est le contrat minimum, `TABLES_OPTIONNELLES` le sas par lequel une nouvelle
-source entre sans bloquer l'import de tout le reste.
-
-Au démarrage, le dashboard charge le **dernier** cache disponible, quelle que
-soit sa date : il s'ouvre en quelques secondes au lieu de quelques minutes. En
-échange, la date des données est affichée en permanence dans la barre, et un
-clic dessus permet de reprendre l'import de la nuit ou de tout relire — voir
-[`docs/automatisation.md`](docs/automatisation.md).
-
-## Les onglets
-
-| Onglet | Ce qu'on y cherche |
+| Vignette | Pour qui |
 |---|---|
-| **Maintenant** | la veille, la semaine en cours, l'avancement du mois |
-| **Ventes** | la loupe sur une période : tickets, produits, paniers, heures |
-| **Historique** / **Année** | la série longue, et l'année face à son objectif |
-| **Boissons** / **Nourriture** | la consommation par catégorie, les fûts, les focaccias |
-| **Simulation** | l'effet d'une variation de prix |
-| **Compta** | sept sous-onglets, dans l'ordre des questions — voir ci-dessous |
-| **Travail** | heures posées, productivité, et les trois sources de coût |
-| **Planning** | les heures à venir, face aux heures habituelles et à l'objectif |
-| **Réservations** / **Comparaison** | salle et terrasse ; comparaison libre de périodes |
+| [Utilisation](docs/utilisation.md) | qui consulte le dashboard : chaque onglet, ce qu'il montre, les astuces |
+| [Développement](docs/developpement.md) | qui modifie le code : architecture, fabrication des tables, conventions, pièges, tests |
+| [Maintenance](docs/maintenance.md) | qui le fait tourner : Google Drive et Sheets, Odoo, import quotidien, Posit Connect, accès, dépannage |
 
-Le volet **Compta** suit son propre fil : *Contrôle* (puis-je me fier à ces
-chiffres), *Exploitation* (combien), *Écarts* (pourquoi ça a bougé),
-*Évolution* (où ça va), *Comptabilité générale* (le compte de résultat),
-*Écritures* (d'où ça sort). Une alerte du premier mène d'un clic au dernier.
-En dernier, *Projection* complète les mois dont la comptabilité n'est pas
-encore entière — le seul écran du dashboard qui affiche des chiffres qui
-n'existent pas, et rien de ce qu'il calcule n'en sort.
+## En bref
 
-## Lancer
+```
+global.R   paquets, puis tout R/, puis les constantes partagées
+import.R   lit les sources (Google Drive, Odoo, calendriers) et construit les DB_*
+ui.R       une fonction ui_*() par onglet
+server.R   charge le dernier cache, puis une section par onglet
+R/         toute la logique, un fichier par volet ou par sujet
+```
+
+L'import tourne chaque matin sur GitHub Actions et dépose un fichier de
+données sur Drive ; le dashboard ouvre le plus récent et affiche sa date dans
+la barre de navigation.
 
 ```sh
-Rscript -e 'shiny::runApp()'      # l'application
-Rscript tests/lancer.R            # toute la suite de tests
-Rscript tests/lancer.R analyse    # seulement les fichiers « analyse »
+Rscript -e 'shiny::runApp()'      # lancer l'application (variables dans .Renviron)
+Rscript tests/lancer.R            # la suite de tests
 Rscript essai_odoo_api.R          # vérifier la connexion Odoo, sans rien écrire
 ```
 
-## Les répertoires
-
-| Dossier | Contenu | Détail |
-|---|---|---|
-| [`R/`](R/) | toute la logique, un fichier par volet ou par sujet | [`R/README.md`](R/README.md) |
-| [`tests/`](tests/) | la suite de tests, sans framework | [`tests/README.md`](tests/README.md) |
-| [`docs/`](docs/) | la documentation longue | [`docs/README.md`](docs/README.md) |
-| [`www/`](www/) | la feuille de style servie au navigateur | [`www/README.md`](www/README.md) |
-| [`outputs/`](outputs/) | le cache local des données — jamais versionné | [`outputs/README.md`](outputs/README.md) |
-| `logos/` | les images de l'interface |
-
-## Pour aller plus loin
-
-- **[`docs/index.html`](docs/index.html)** — la documentation complète : ce que
-  fait l'application, d'où viennent ses données, et un volet *Administration*
-  qui explique comment la remonter de zéro. Elle s'ouvre par double-clic, sans
-  serveur ni build, et propose deux niveaux de lecture.
-- **[`docs/acces.md`](docs/acces.md)** — les mots de passe, les profils, et ce
-  qui se passe côté serveur quand un onglet est interdit.
-- **[`docs/odoo.md`](docs/odoo.md)** — brancher la comptabilité Odoo : ce qu'il
-  faut exporter, le contrat que `DB_COMPTA` doit respecter, et l'API.
-- **[`docs/validation-mois.md`](docs/validation-mois.md)** — trancher un mois
-  douteux : le bouton, le classeur de décisions, et pourquoi une validation
-  cesse de s'appliquer quand les chiffres du mois changent.
-- **[`docs/automatisation.md`](docs/automatisation.md)** — l'import quotidien :
-  pourquoi il a quitté le démarrage du dashboard, où il tourne maintenant, ce
-  qu'il faut configurer, et les trois filets qui diront qu'il a cassé.
+| Dossier | Contenu |
+|---|---|
+| [`R/`](R/README.md) | la logique |
+| [`tests/`](tests/README.md) | la suite de tests, sans framework |
+| [`docs/`](docs/README.md) | les trois vignettes |
+| [`www/`](www/README.md) | feuille de style, icônes, manifeste d'application |
+| [`outputs/`](outputs/README.md) | le cache local des données, jamais versionné |
+| `logos/` | les logos des brassins |
 
 ## Intégration continue
 
-`.github/workflows/tests.yml` lance la suite à chaque poussée et à chaque pull
-request. Elle prend une douzaine de secondes : une branche rouge se voit donc
-avant d'être mergée, sans avoir à penser à lancer les tests.
-
-`.github/workflows/import.yml` y lance aussi l'import, chaque matin avant
-l'ouverture. Les journaux de ce dépôt sont publics : le script n'y publie
-qu'un résumé choisi, et le `.RData` n'en sort jamais.
+- `.github/workflows/tests.yml` lance la suite à chaque poussée.
+- `.github/workflows/import.yml` refait l'import, déclenché chaque matin par
+  Apps Script (cf. [maintenance](docs/maintenance.md#limport-quotidien)).
 
 ## Les branches
 
-`main` est la branche par défaut sur GitHub, `dev` porte le
-développement en cours. Une fonctionnalité vit sur sa propre branche le temps
-d'être éprouvée, puis rejoint la branche de développement, puis la branche
-principale.
+`main` est la branche publiée, `dev` porte le développement en cours ; une
+fonctionnalité vit sur sa propre branche, rejoint `dev`, puis `main`.
