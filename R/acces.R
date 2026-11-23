@@ -1,45 +1,24 @@
 # Gestion des accès : catalogue des onglets, profils, et lecture des droits
-# déclarés dans le Google Sheet « IMPORT PASS ».
+# déclarés dans le Google Sheet des mots de passe.
 #
-# Trois idées, et une seule table qui fait autorité :
+#   ONGLETS  les onglets de l'application ; ajouter un onglet = ajouter une
+#            ligne ici.
+#   PROFILS  un rôle (« admin », « service »…) traduit en liste d'onglets.
 #
-#   1. ONGLETS liste les onglets de l'application (clé, titre, icône, et le
-#      nom du constructeur d'interface). ui.R en tire la barre de navigation,
-#      l'accueil en tire ses cartes, et les droits s'expriment avec ses clés.
-#      Ajouter un onglet = ajouter une ligne, ici et nulle part ailleurs.
+# Le droit se joue à l'onglet entier : un onglet interdit n'est jamais inséré
+# (cf. server.R), son HTML ne quitte pas le serveur.
 #
-#   2. PROFILS traduit un rôle (« salle », « gestion », …) en liste d'onglets.
-#      C'est le vocabulaire qu'on écrit dans le Sheet : une colonne `role`
-#      plutôt que quatorze colonnes de cases à cocher.
+# À SAVOIR — les inputs d'un onglet n'existent qu'une fois l'onglet inséré,
+# après la connexion ; avant, ils valent NULL. Les observateurs, eux, tournent
+# dès le premier flush. D'où deux règles :
 #
-#   3. Le droit se joue à l'onglet entier, jamais à l'intérieur d'un onglet.
-#      Un onglet interdit n'est pas masqué côté navigateur : il n'est tout
-#      simplement jamais inséré dans la barre (cf. server.R), donc son HTML ne
-#      quitte pas le serveur et ses sorties ne sont jamais calculées.
+#   LIRE un input d'onglet dans un observe() : le protéger (req(input$x) ou
+#   une valeur de repli).
 #
-# CONSÉQUENCE À CONNAÎTRE — les inputs d'un onglet n'existent qu'une fois
-# l'onglet inséré, c'est-à-dire après la connexion. Avant, ils valent NULL.
-#
-# Les sorties (render*) ne s'en aperçoivent pas : Shiny ne les calcule que
-# lorsqu'elles sont visibles. Les observateurs, eux, tournent dès le premier
-# flush, donc AVANT la connexion. D'où deux règles, selon le sens :
-#
-#   LIRE un input d'onglet dans un observe() -> le protéger : req(input$x), ou
-#   une valeur de repli explicite comme le fait sim_periode_val(). Sans quoi le
-#   calcul part sur NULL, ce qui donne des erreurs de longueur bien loin de
-#   leur cause (`1 + NULL/100` vaut numeric(0), et non NA).
-#
-#   GARNIR un input d'onglet (update*Input) -> attendre ONGLETS_PRETS(), le
-#   drapeau posé par server.R. Sinon le message vise un champ qui n'existe pas
-#   encore : il est perdu SANS ERREUR, et l'observateur, n'ayant plus de raison
-#   d'être invalidé, ne rejoue jamais — le sélecteur reste vide pour de bon.
-#   Le drapeau ne bascule qu'au flush suivant l'insertion : côté navigateur,
-#   Shiny traite « inputMessages » (3e gestionnaire) avant « shiny-insert-tab »
-#   (19e), donc garnir dans le même flush arriverait encore trop tôt.
-#
-#   Dans un observeEvent, ce garde-fou va dans l'EXPRESSION DÉCLENCHANTE et non
-#   dans le corps : le corps est isolé, une dépendance posée là ne rejouerait
-#   jamais l'observateur quand le drapeau bascule.
+#   GARNIR un input d'onglet (update*Input) : attendre ONGLETS_PRETS(), posé
+#   par server.R au flush qui suit l'insertion. Sinon le message est perdu sans
+#   erreur et le sélecteur reste vide. Dans un observeEvent, ce garde-fou va
+#   dans l'expression déclenchante, pas dans le corps (isolé).
 
 #### Catalogue des onglets ####
 
@@ -59,16 +38,11 @@ ONGLETS <- tibble::tribble(
   "tab_comparaison",  "Comparaison",        "code-compare",            "ui_comparaison"
 )
 
-# L'accueil est la page d'atterrissage : quiconque a un mot de passe valide y
-# arrive. Ce sont ses cartes qui sont filtrées, pas l'onglet lui-même.
+# L'onglet livré avec la page, ouvert à tout mot de passe valide.
 ONGLET_DEPART <- "tab_maintenant"
 
-#### Profils ####
-# "*" = tous les onglets. Un profil absent de cette liste ne donne aucun droit :
-# une faute de frappe dans le Sheet ferme la porte, elle ne l'ouvre pas.
-#
-# C'est ici qu'on ajuste la politique d'accès — sans toucher au Sheet, et sans
-# toucher au reste du code.
+# #### Profils ####
+# "*" = tous les onglets. Un profil inconnu ne donne aucun droit.
 
 PROFILS <- list(
   # Les associés : tout, compta et coûts du personnel compris.
@@ -89,15 +63,14 @@ PROFILS <- list(
   # Public : pour présenter à l'extérieur
   public = c("tab_maintenant", "tab_historique", "tab_annee"),
 
-  # Un accès de courtoisie : l'accueil et rien d'autre.
+  # Aucun onglet au-delà de l'onglet de départ.
   invite    = character(0)
 )
 
 #### Lecture des colonnes du Sheet ####
 
-# Colonne éventuellement absente du Sheet. Tant que les nouvelles colonnes
-# n'ont pas été ajoutées, `defaut` s'applique à toutes les lignes — ce qui
-# permet de déployer le code avant de toucher au tableur.
+# Colonne éventuellement absente du Sheet : `defaut` s'applique alors à
+# toutes les lignes.
 colonne_optionnelle <- function(db, nom, defaut) {
   if (nom %in% names(db)) as.character(db[[nom]]) else rep(defaut, nrow(db))
 }
@@ -148,11 +121,9 @@ droits_ligne <- function(ligne) {
   ))
 }
 
-# Vérifie une saisie contre DB_PASSWORD à une date donnée.
-# Renvoie NULL en cas de refus, sinon l'identité et les droits associés.
-#
-# La comparaison reste sensible à la casse (comme avant), mais on rogne les
-# espaces : un clavier de téléphone en ajoute un derrière le dernier caractère.
+# Vérifie une saisie contre DB_PASSWORD à une date donnée. Renvoie NULL en
+# cas de refus, sinon l'identité et ses droits. Sensible à la casse ; les
+# espaces autour sont ignorés.
 verifie_acces <- function(db_password, saisie, date = today()) {
   if (is.null(saisie) || length(saisie) != 1 || is.na(saisie)) return(NULL)
   saisie <- trimws(as.character(saisie))
@@ -162,8 +133,7 @@ verifie_acces <- function(db_password, saisie, date = today()) {
     filter(ACTIF, DATE_DEBUT <= date, DATE_FIN >= date, PASS == saisie)
   if (nrow(candidats) == 0) return(NULL)
 
-  # Deux lignes pour un même mot de passe : on prend la première, en ayant
-  # laissé une trace dans les logs plutôt que de choisir en silence.
+  # Deux lignes pour un même mot de passe : la première, avec un avertissement.
   if (nrow(candidats) > 1)
     cli::cli_alert_warning(
       "Mot de passe partag\u00e9 par {nrow(candidats)} lignes d'IMPORT PASS ; la premi\u00e8re l'emporte.")
@@ -175,12 +145,10 @@ verifie_acces <- function(db_password, saisie, date = today()) {
 }
 
 
-#### Construction des onglets ####
+# #### Construction des onglets ####
 #
-# ui.R et server.R sont évalués par Shiny dans deux environnements distincts :
-# les constructeurs `ui_*()` définis dans ui.R ne sont pas visibles depuis
-# server.R, qui doit pourtant les appeler pour insérer un onglet après la
-# connexion. ui.R les dépose donc ici, dans un environnement du global.
+# Les constructeurs `ui_*()` de ui.R ne sont pas visibles depuis server.R
+# (environnements distincts). ui.R les dépose donc ici.
 CONSTRUCTEURS_ONGLETS <- new.env(parent = emptyenv())
 
 # Appelé une fois depuis ui.R, avec son propre environnement.
@@ -199,12 +167,10 @@ panneau_onglet <- function(cle) {
             icon = icon(ONGLETS$ICONE[i]), constructeur())
 }
 
-#### Compatibilité des .RData déjà enregistrés ####
+# #### Caches anciens ####
 
-# Un .RData antérieur à la gestion des accès ne contient que DATE_DEBUT,
-# DATE_FIN et PASS. On complète les colonnes manquantes au chargement plutôt
-# que d'imposer un réimport complet : sans elles, plus personne ne se connecte.
-# Les valeurs par défaut reproduisent l'ancien comportement (tous les droits).
+# Un cache antérieur à la gestion des accès n'a que DATE_DEBUT, DATE_FIN et
+# PASS : on complète les colonnes, avec tous les droits par défaut.
 normalise_password <- function(db) {
   if (is.null(db)) return(NULL)
   if (!"NOM"           %in% names(db)) db$NOM           <- NA_character_

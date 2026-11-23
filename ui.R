@@ -26,27 +26,19 @@ theme_mazette_ui <- bs_theme(
   "body-bg" = MZ_CREME
 )
 
-#### Constructeurs d'interface ####
-# (les constructeurs sont définis d'abord ; `ui` est assemblé tout en bas)
+# #### Constructeurs d'interface ####
+# Un constructeur ui_*() par onglet ; `ui` est assemblé tout en bas.
 
-# Ajoute un numéro de version à une feuille de style, tiré de sa date de
-# modification. Sans cela le navigateur ressert indéfiniment sa copie en
-# cache et les retouches de style passent inaperçues.
+# Une feuille de style versionnée par sa date de modification, pour que le
+# navigateur ne garde pas une copie périmée.
 feuille_versionnee <- function(fichier, dossier = "www") {
   v <- suppressWarnings(as.integer(file.mtime(file.path(dossier, fichier))))
   if (is.na(v)) fichier else paste0(fichier, "?v=", v)
 }
 
-# En-tête « application installable ». Deux choses distinctes s'y jouent :
-#
-#   - le manifest, qu'Android lit pour fabriquer le raccourci. Sans lui (ou avec
-#     des icônes de moins de 192 px) Chrome dessine une tuile avec la première
-#     lettre du nom d'hôte — d'où le « P » de Posit ;
-#   - apple-touch-icon, qu'iOS utilise à la place : Safari ignore le manifest.
-#
-# Tous les chemins sont RELATIFS. Posit Connect sert l'app sous /content/<id>/ :
-# un "/icone-192.png" pointerait à la racine du serveur, et un start_url absolu
-# sortirait du scope, ce qui fait échouer l'installation sans message d'erreur.
+# En-tête « application installable » : le manifest pour Android,
+# apple-touch-icon pour iOS. Chemins RELATIFS : Posit Connect sert l'app
+# sous /content/<id>/.
 entete_application <- function() {
   tags$head(
     tags$link(rel = "manifest", href = feuille_versionnee("manifest.webmanifest")),
@@ -55,9 +47,7 @@ entete_application <- function() {
     tags$link(rel = "apple-touch-icon", href = feuille_versionnee("apple-touch-icon.png")),
     tags$meta(name = "theme-color", content = "#732c02"),
     tags$meta(name = "apple-mobile-web-app-capable", content = "yes"),
-    # "default" et non "black-translucent" : ce dernier fait passer le contenu
-    # SOUS la barre d'état de l'iPhone, ce qui masque le haut de la navbar tant
-    # qu'on n'a pas ajouté de padding env(safe-area-inset-top) en CSS.
+    # "default" : "black-translucent" passerait le contenu sous la barre d'état.
     tags$meta(name = "apple-mobile-web-app-status-bar-style", content = "default"),
     tags$meta(name = "apple-mobile-web-app-title", content = "Mazette"),
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1")
@@ -89,14 +79,11 @@ ui_app <- function() {
                  img(src = "mazette-blanc.png", height = 30, width = 30)),
     id = "nav",
     fillable = FALSE,
-    # Un seul onglet part avec la page : l'accueil. Les autres sont insérés
-    # après la connexion, selon les droits du mot de passe saisi (server.R).
-    # Ce n'est pas qu'un masquage : le HTML d'un onglet interdit ne quitte
-    # jamais le serveur, et ses sorties ne sont jamais calculées.
+    # Un seul onglet part avec la page ; les autres sont insérés après la
+    # connexion, selon les droits (server.R).
     panneau_onglet(ONGLET_DEPART),
     nav_spacer(),
-    # La date des données, avant le nom de la personne : c'est la première
-    # chose à savoir en arrivant (cf. R/fraicheur.R).
+    # La date des données, avant le nom de la personne (cf. R/fraicheur.R).
     nav_item(uiOutput("badge_fraicheur", inline = TRUE)),
     nav_item(uiOutput("badge_utilisateur", inline = TRUE)),
     nav_item(
@@ -107,19 +94,8 @@ ui_app <- function() {
   )
 }
 
-# Onglet "Planning" : les heures qu'on s'apprête à poser, face au CA qu'elles
-# devront produire. Seul volet tourné vers l'avant — d'où un onglet à part
-# plutôt qu'un ajout à « Maintenant », qui raconte ce qui s'est passé.
-#
-# Deux graphiques, une seule grammaire : la barre est ce qui est prévu, le
-# trait est la référence. Le premier ne parle qu'en heures, le second qu'en
-# euros. Aucun ne mélange les deux.
-# Confrontation des trois sources d'heures et de coût du travail.
-#
-# Trois sources, trois périmètres, et aucune qui domine les autres sur tous les
-# axes : ce volet existe pour que l'écart soit LU plutôt que découvert. Il
-# n'affiche aucun indicateur de gestion — rien que des chiffres et leurs
-# différences.
+# Confrontation des trois sources d'heures et de coût du travail : rien que
+# des chiffres et leurs écarts.
 ui_travail_sources <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -271,11 +247,8 @@ ui_planning <- function() {
   )
 }
 
-# Onglet "Travail" : productivité et coût du travail, dans le temps puis
-# créneau par créneau (midi / soir / Pizzwanze).
-# Deux sous-onglets : le pilotage (heures, productivité, créneaux) et la
-# confrontation des sources. Le second n'a rien à faire dans le premier — on
-# n'y va pas pour piloter mais pour vérifier d'où viennent les chiffres.
+# Onglet « Travail » : le pilotage (heures, productivité, créneaux) et la
+# confrontation des sources.
 ui_travail <- function() {
   navset_card_tab(
     id = "travail_tabs",
@@ -296,9 +269,7 @@ ui_travail_pilotage <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Travail", width = 300,
-      # Même logique que la compta : la granularité d'abord, les périodes
-      # ensuite. Plus de semaine ici — la comptabilité à laquelle on se
-      # confronte est mensuelle.
+      # La granularité d'abord ; pas de semaine (la comptabilité est mensuelle).
       radioButtons("trav_unite", "Granularité",
                    c("Par mois" = "mois", "Par trimestre" = "trimestre",
                      "Par année" = "annee"), selected = "mois"),
@@ -359,8 +330,7 @@ ui_travail_pilotage <- function() {
       card_header(
         div(class = "d-flex flex-wrap gap-3 align-items-center justify-content-between",
             span("Créneaux types"),
-            # Le sélecteur vit dans la carte : c'est lui qui pilote cette
-            # vue-là, et personne d'autre.
+            # Le sélecteur qui ne pilote que cette carte vit dans la carte.
             div(class = "flex-shrink-0",
                 selectInput("cren_indicateur", NULL,
                             c("CA par heure de service" = "CA_PAR_HEURE",
@@ -522,7 +492,7 @@ ui_comparaison <- function() {
   )
 }
 
-# Le volet Compta, dans l'ordre des questions qu'on se pose.
+# Le volet Compta, dans l'ordre des questions qu'on se pose :
 #
 #   Contrôle     — puis-je me fier à ces chiffres ?
 #   Exploitation — combien, sur cette période ?
@@ -530,18 +500,12 @@ ui_comparaison <- function() {
 #   Évolution    — où ça va ?
 #   Comptabilité — le compte de résultat
 #   Écritures    — d'où ça sort
-#
-# Une progression, pas un empilement : chaque onglet répond à UNE question, et
-# celui d'avant conditionne celui d'après. L'ancien onglet « Analyse » en
-# portait deux — comparer deux périodes, et suivre une série — ce qui faisait
-# huit cartes dans un même écran.
+#   Projection   — ce qui manque encore
 ui_compta <- function() {
   navset_card_tab(
     id = "compta_tabs",
     nav_panel(
-      # Le compteur d'alertes dans le titre : sans lui, un écran d'audit
-      # traversé chaque matin devient un écran qu'on ne traverse plus. Tout
-      # vert, on passe ; trois alertes, on ne peut pas les manquer.
+      # Le compteur d'alertes dans le titre.
       title = tagList("Contrôle", uiOutput("ctrl_badge", inline = TRUE)),
       icon = icon("clipboard-check"),
       value = "controle",
@@ -577,9 +541,7 @@ ui_compta <- function() {
       value = "ecritures",
       ui_compta_ecritures()
     ),
-    # En dernier, et c'est voulu : les cinq onglets précédents lisent ce qui
-    # s'est passé, celui-ci dit ce qui manque encore. On ne projette pas
-    # avant d'avoir regardé.
+    # En dernier : on ne projette qu'après avoir regardé.
     nav_panel(
       title = "Projection",
       icon = icon("wand-magic-sparkles"),
@@ -589,11 +551,7 @@ ui_compta <- function() {
   )
 }
 
-# L'onglet de l'analyste : tout ce qui met en doute les chiffres, au même
-# endroit. Il y en avait CINQ auparavant — la vue d'ensemble, le bandeau de
-# contrôle de l'Exploitation, deux sous-onglets de la Comptabilité générale,
-# et une carte perdue en bas de l'Analyse — plus deux contrôles d'import qui
-# n'étaient affichés nulle part.
+# Tout ce qui met en doute les chiffres, au même endroit.
 ui_compta_controle <- function() {
   tagList(
     uiOutput("topo_resume"),
@@ -616,9 +574,8 @@ ui_compta_controle <- function() {
         actionButton("topo_tout_garder", "Tout réintégrer",
                      icon = icon("rotate-left"),
                      class = "btn btn-sm btn-outline-secondary"),
-        # Écarter est une décision de lecture, perdue à la fermeture. Trancher
-        # est un constat de vérification, qui part dans un classeur et survit
-        # à tout le monde (cf. R/validation.R).
+        # Écarter : une décision de lecture, perdue à la fermeture. Trancher : un
+        # constat enregistré dans un classeur (cf. R/validation.R).
         actionButton("topo_valider", "Trancher un mois",
                      icon = icon("clipboard-check"),
                      class = "btn btn-sm btn-outline-success"),
@@ -641,8 +598,7 @@ ui_compta_controle <- function() {
         "Les mois écartés disparaissent des autres onglets."
       )
     ),
-    # À LA SUITE, et non derrière un sous-onglet : un contrôle qu'il faut
-    # penser à aller ouvrir est un contrôle qu'on rate.
+    # À la suite et non derrière un sous-onglet.
     card(
       full_screen = TRUE,
       card_header("Comptes hors plan"),
@@ -661,10 +617,8 @@ ui_compta_controle <- function() {
   )
 }
 
-# Le grand livre. Un seul jeu de filtres pilote les KPI, les deux graphes et
-# le tableau — la recherche propre de DataTables est désactivée exprès : deux
-# filtres indépendants afficheraient un total et une liste qui ne parlent pas
-# de la même chose, et personne ne saurait lequel croire.
+# Le grand livre. Un seul jeu de filtres pilote tuiles, récapitulatif et
+# tableau ; la recherche propre de DataTables est désactivée.
 ui_compta_ecritures <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -677,21 +631,12 @@ ui_compta_ecritures <- function() {
           "Le fichier reprend la sélection telle qu'elle est affichée,",
           " colonnes brutes comprises.")
     ),
-    # class = "zone-alerte" : ce bandeau est vide dès que les écritures sont
-    # là, et un uiOutput vide garde quand même son gap dans la grille bslib.
-    # La classe le masque — et impose de l'inscrire dans ZONES_ALERTE, sans
-    # quoi Shiny le suspendrait pour toujours (cf. R/helpers.R).
+    # class = "zone-alerte" : masqué quand vide, et inscrit dans ZONES_ALERTE
+    # (cf. R/helpers.R).
     uiOutput("ecr_absent", class = "zone-alerte"),
     uiOutput("ecr_kpi"),
     uiOutput("ecr_recap"),
-    # Cette carte est LE volet : les deux graphiques qui occupaient le haut
-    # sont partis — ils faisaient joli sans rien apprendre, et le
-    # récapitulatif par poste ci-dessus dit la même chose en une ligne, en
-    # plus d'être un filtre.
-    #
-    # C'est le TABLEAU qui décide de sa hauteur, pas la carte : cf. la règle
-    # `#ecr_table` dans www/style.css, qui explique pourquoi il a fallu le
-    # dire en CSS et pas ici.
+    # La hauteur est décidée par le tableau (cf. #ecr_table dans www/style.css).
     card(
       full_screen = TRUE,
       card_header("Le détail"),
@@ -701,12 +646,9 @@ ui_compta_ecritures <- function() {
 }
 
 
-# Compléter un mois dont la comptabilité n'est pas encore entière.
-#
-# Le seul écran du volet qui affiche des chiffres QUI N'EXISTENT PAS. D'où la
-# discipline, tenue par R/projection.R : chaque montant modélisé porte sa
-# méthode et sa base, le signe « ≈ » le distingue partout d'un montant réel,
-# et rien de ce qui est calculé ici ne ressort de cet onglet.
+# Compléter un mois dont la comptabilité n'est pas encore entière. Le seul
+# écran qui affiche des chiffres modélisés (cf. R/projection.R) : « ≈ » les
+# distingue, et rien n'en sort.
 ui_compta_projection <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -722,8 +664,7 @@ ui_compta_projection <- function() {
       hr(),
       sliderInput("proj_nref", "Mois de référence", min = 3, max = 18,
                   value = PROJ_DEFAUT_REF, step = 1, ticks = FALSE),
-      # Les hypothèses sont repliées : le modèle doit d'abord être lu tel
-      # qu'il est. On ne tord un chiffre qu'après l'avoir regardé.
+      # Les hypothèses sont repliées : on lit d'abord le modèle.
       accordion(
         open = FALSE,
         accordion_panel(
@@ -757,9 +698,7 @@ ui_compta_projection <- function() {
     card(
       full_screen = TRUE,
       card_header(textOutput("proj_titre_cascade", inline = TRUE)),
-      # Le sélecteur EST dans la carte, pas dans la barre latérale : il ne
-      # pilote que ce graphe, et une commande rangée loin de ce qu'elle
-      # change se cherche.
+      # Ce sélecteur ne pilote que ce graphe.
       div(class = "d-flex align-items-center gap-2",
           span(class = "small text-muted", "Mois détaillé"),
           div(class = "mb-0", style = "width:170px;",
@@ -797,24 +736,19 @@ ui_compta_projection <- function() {
   )
 }
 
-# Du chiffre d'affaires à la marge d'exploitation, mois par mois.
-# Tout provient de DB_COMPTA : pas de données simulées, donc un mois sans
-# comptabilité reste vide plutôt que d'être comblé.
+# Du chiffre d'affaires à la marge, à la granularité choisie.
 ui_exploitation <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Période", width = 300,
-      # La granularité vient EN PREMIER : elle vaut pour tout l'onglet, et
-      # c'est elle qui détermine la liste des périodes juste en dessous.
+      # La granularité d'abord : elle détermine la liste des périodes.
       radioButtons("expl_unite", "Granularité",
                    c("Par mois" = "mois", "Par trimestre" = "trimestre",
                      "Par année" = "annee"), selected = "mois"),
       selectInput("expl_periode", "Période analysée", choices = NULL),
       sliderInput("expl_nb", "Périodes affichées", min = 4, max = 36,
                   value = 12, step = 1, ticks = FALSE),
-      # Avant amortissements par défaut : c'est la marge de gestion de tout le
-      # dashboard. L'option ajoute l'amortissement comme une charge de plus,
-      # partout dans l'onglet à la fois (cf. marge_gestion(), R/exploitation.R).
+      # Avant amortissements par défaut (cf. marge_gestion(), R/exploitation.R).
       radioButtons("expl_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
@@ -825,11 +759,8 @@ ui_exploitation <- function() {
           "= la même, moins les amortissements", tags$br(), tags$br(),
           "Chiffres HTVA. Pourcentages rapportés au CA seul.")
     ),
-    # class = "zone-alerte" : sans elle, un uiOutput vide reste un div, et la
-    # grille bslib lui accorde quand même son gap — d'où une bande blanche
-    # quand il n'y a rien à signaler (cf. www/style.css).
-    # Au-dessus de tout le reste : un chiffre invraisemblable rend faux tout ce
-    # qui en dérive, il doit donc se lire AVANT les graphes, pas à côté.
+    # class = "zone-alerte" (cf. R/helpers.R). Au-dessus de tout : un chiffre
+    # invraisemblable rend faux ce qui en dérive.
     uiOutput("expl_vraisemblance", class = "zone-alerte"),
     uiOutput("expl_alerte_periode", class = "zone-alerte"),
     uiOutput("expl_kpi"),
@@ -857,10 +788,7 @@ ui_exploitation <- function() {
   )
 }
 
-# « Pourquoi ça a bougé ? » — une période CONTRE une référence.
-#
-# Rien d'autre. La tendance et la saisonnalité, qui répondaient à une question
-# différente — « où ça va ? » — sont parties dans l'onglet Évolution.
+# « Pourquoi ça a bougé ? » — une période contre une référence.
 ui_compta_ecarts <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -871,15 +799,13 @@ ui_compta_ecarts <- function() {
       selectInput("eca_periode", "Période analysée", choices = NULL),
       selectInput("eca_ref", "Comparée à", choices = MODES_REFERENCE,
                   selected = "precedente"),
-      # Coché par défaut : sur une période complète le rabotage ne retire rien,
-      # il n'a donc d'effet que là où la comparaison était fausse.
+      # Coché par défaut : sur une période complète, le rabotage ne retire rien.
       checkboxInput("eca_raboter",
                     "Raboter la référence à la même taille", TRUE),
       div(class = "small text-muted",
           "Coché, huit mois de 2026 se comparent à janvier-août 2025, pas à",
           " l'année entière."),
-      # Après amortissements, ceux-ci deviennent une ligne du pont et un
-      # poste du forage par compte.
+      # Après amortissements : une ligne de plus dans le pont et le forage.
       radioButtons("eca_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
@@ -916,9 +842,7 @@ ui_compta_ecarts <- function() {
       nav_panel(
         title = "Décomposition du pont",
         icon = icon("bridge"),
-        # Le graphe montre le résultat, cet onglet montre l'arithmétique.
-        # L'explication vient AVANT les tableaux : on lit la règle, puis on la
-        # vérifie sur les chiffres, jamais l'inverse.
+        # L'explication avant les tableaux.
         uiOutput("eca_pont_explication"),
         DTOutput("eca_pont_table")
       )
@@ -931,12 +855,7 @@ ui_compta_ecarts <- function() {
   )
 }
 
-# « Où ça va ? » — la série dans le temps, et rien d'autre.
-#
-# Pas de sélecteur de période : une tendance se lit jusqu'à aujourd'hui. La
-# profondeur se règle au curseur, et le gabarit de rabotage est celui de la
-# dernière période — sans quoi, au grain annuel, une année en cours se
-# comparerait à des années entières.
+# « Où ça va ? » — la série dans le temps, jusqu'à aujourd'hui.
 ui_compta_evolution <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -952,8 +871,7 @@ ui_compta_evolution <- function() {
                   value = 18, step = 1, ticks = FALSE),
       checkboxInput("evo_raboter",
                     "Raboter à la taille de la dernière période", TRUE),
-      # Change la colonne derrière « marge » et « marge en % du CA », et ajoute
-      # les amortissements à la liste des indicateurs.
+      # Change « marge » et « marge en % », et ajoute les amortissements.
       radioButtons("evo_marge", "Marge", CHOIX_MARGE, selected = "avant"),
       hr(),
       div(class = "small text-muted",
@@ -983,16 +901,12 @@ ui_compta_evolution <- function() {
   )
 }
 
-# Compte de résultat détaillé, mois par mois, plusieurs mois côte à côte.
-# La hiérarchie du plan comptable est reconstruite depuis l'indentation de
-# TX_DESCRIPTION (cf. R/plan_comptable.R).
+# Compte de résultat, plusieurs périodes côte à côte (cf. R/plan_comptable.R).
 ui_compta_generale <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Périodes", width = 310,
-      # Même logique que le compte d'exploitation : la granularité vient en
-      # premier, et la liste des périodes en dépend. Les comptes sont
-      # consolidés directement au niveau choisi.
+      # La granularité d'abord ; les comptes sont consolidés à ce niveau.
       radioButtons("cg_unite", "Granularité",
                    c("Par mois" = "mois", "Par trimestre" = "trimestre",
                      "Par année" = "annee"), selected = "mois"),
@@ -1035,9 +949,7 @@ ui_compta_generale <- function() {
 
 ui_annee <- function() {
   tagList(
-    # La marge affichée ici vient de la comptabilité, et ce volet-ci ne dit
-    # rien de sa fiabilité. Le bandeau s'en charge : il n'apparaît que si des
-    # mois récents de l'année regardée sont douteux, ou écartés.
+    # Bandeau si des mois récents de l'année regardée sont douteux ou écartés.
     uiOutput("annee_compta_alerte", class = "zone-alerte"),
     card(
       card_header("Suivi de l'année en cours (à date)"),
@@ -1133,14 +1045,12 @@ ui_simulation <- function() {
   )
 }
 
-# Onglet "Fûts" : suivi des fûts en cours (niveaux, prédiction de fin,
-# rapport de brassin). La consommation de bières est dans l'onglet "Bières".
+# Fûts en cours : niveaux, prédiction de fin, rapport de brassin.
 ui_futs <- function() {
   tagList(
     card(
       card_header("Niveau des bières en cours"),
-      # Cartes HTML plutôt qu'une grille plotly : la hauteur suit le nombre de
-      # fûts et les colonnes s'adaptent à la largeur de l'écran.
+      # Cartes HTML : la grille suit la largeur de l'écran.
       uiOutput("bieres_niveaux")
     ),
     card(
@@ -1162,7 +1072,7 @@ ui_futs <- function() {
   )
 }
 
-# Onglet "Boisson" : consommation, à la semaine, comparée à S-1.
+# Consommation de boissons, à la semaine, comparée à S-1.
 ui_conso_boissons <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -1206,8 +1116,6 @@ ui_conso_boissons <- function() {
       full_screen = TRUE,
       card_header("Historique hebdomadaire"),
       plotlyOutput("conso_evo", height = "320px")
-      # div(class = "small text-muted",
-      #     "La semaine sélectionnée est mise en avant.")
     ),
     card(
       full_screen = TRUE,
@@ -1217,7 +1125,7 @@ ui_conso_boissons <- function() {
   )
 }
 
-# Onglet "Nourriture"
+# Onglet « Nourriture »
 ui_nourriture <- function() {
   navset_card_tab(
     id = "nourriture_tabs",
@@ -1234,7 +1142,7 @@ ui_nourriture <- function() {
   )
 }
 
-# Onglet "Boisson"
+# Onglet « Boissons »
 ui_boissons <- function() {
   navset_card_tab(
     id = "boissons_tabs",
@@ -1251,21 +1159,15 @@ ui_boissons <- function() {
   )
 }
 
-# Onglet "Pizzwanze" : suivi des soirées pizza, soirée par soirée.
+# Onglet « Pizzwanze » : les soirées pizza, soirée par soirée.
 ui_pizzwanze <- function() {
   layout_sidebar(
     sidebar = sidebar(
       title = "Soirée",
       width = 280,
       selectInput("pizz_soiree", "Soirée analysée", choices = NULL),
-      # selectInput("pizz_profondeur", "Historique de la carte",
-      #             c("Toutes les soirées" = "0", "12 dernières" = "12",
-      #               "24 dernières" = "24"),
-      #             selected = "0"),
       hr(),
       div(class = "small text-muted",
-          # "Tout est comparé à la ", tags$b("soirée précédente"), ".",
-          # tags$br(), tags$br(),
           "Les pizzas sont repérées par leur ", tags$b("nom"),
           " (aucune catégorie dédiée), Khachapuri compris.", tags$br(), tags$br(),
           "Une soirée pizza se reconnaît à sa carte : au moins deux pizzas ",
@@ -1278,8 +1180,6 @@ ui_pizzwanze <- function() {
       card(full_screen = TRUE,
            card_header(textOutput("pizz_titre")),
            plotlyOutput("pizz_soiree", height = "380px")),
-           # div(class = "small text-muted",
-           #     "Couleur selon la présence historique de la pizza.")),
       card(full_screen = TRUE,
            card_header("Ventes par heure"),
            plotlyOutput("pizz_heure", height = "380px"))
@@ -1288,15 +1188,11 @@ ui_pizzwanze <- function() {
       full_screen = TRUE,
       card_header("Par type de pizza"),
       plotlyOutput("pizz_carte", height = "420px")
-      # div(class = "small text-muted",
-      #     "Les pizzas les plus fidèles sont en haut, les passagères en bas.")
     ),
     card(
       full_screen = TRUE,
       card_header("Historique des soirées"),
       plotlyOutput("pizz_evo", height = "330px")
-      # div(class = "small text-muted",
-      #     "Les losanges verts indiquent le nombre de nouveautés de la soirée.")
     ),
     card(
       full_screen = TRUE,
@@ -1306,14 +1202,10 @@ ui_pizzwanze <- function() {
   )
 }
 
-# Carte "Production" : combien préparer de chaque ingrédient pour la semaine.
-# Les champs sont préremplis par le serveur (moyenne des dernières semaines
-# complètes) et restent entièrement modifiables ; la dernière ligne est libre.
+# Carte « Production » : combien préparer de chaque ingrédient. Préremplie
+# par le serveur, entièrement modifiable ; la dernière ligne est libre.
 ui_production_focaccias <- function() {
-  # Un vrai tableau plutôt qu'une grille CSS : l'alignement des colonnes est
-  # garanti par le navigateur, sans dépendre de www/style.css (que le
-  # navigateur garde volontiers en cache). Les classes utilisées viennent de
-  # Bootstrap, livré par bslib, donc toujours à jour.
+  # Un vrai tableau, avec les classes de Bootstrap, pour l'alignement.
   champ <- function(id, pas) {
     numericInput(id, NULL, value = NA, min = 0, step = pas, width = "100%")
   }
@@ -1341,8 +1233,7 @@ ui_production_focaccias <- function() {
   card(
     full_screen = TRUE,
     card_header("Production"),
-    # Feuille de style locale : embarquée dans la page, donc jamais servie
-    # depuis le cache, contrairement à un fichier externe.
+    # Style embarqué dans la page : jamais servi depuis le cache.
     tags$style(HTML(paste0(
       ".prod-table th{font-size:.78rem;font-weight:700;vertical-align:bottom;",
       "color:", MZ_BRUN, ";}",
@@ -1397,7 +1288,7 @@ ui_production_focaccias <- function() {
   )
 }
 
-# Onglet "Focaccias" : suivi du produit phare et de ses options.
+# Onglet « Focaccias » : le produit phare et ses options.
 ui_focaccias <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -1457,21 +1348,13 @@ ui_historique <- function() {
 }
 
 
-
-# Volet « Détails » : la loupe sur UNE période, au grain le plus fin.
+# Onglet « Ventes » : deux sous-onglets, le TEMPS (une période qu'on
+# détaille) et le PRODUIT (un produit suivi dans le temps).
 #
-# La lecture descend, et c'est toute la structure : la fenêtre d'ensemble, puis
-# la période qu'on y choisit, puis sa composition, puis ce qui s'est vendu,
-# puis — repliés — le grain fin et les tickets.
-#
-# Les trois mailles ne sont plus trois sous-onglets mais un bouton de la barre
-# latérale, comme la granularité de Compta et de Travail. Un seul chemin de
-# lecture au lieu de trois presque identiques, et le même geste partout dans le
-# dashboard.
-# Deux axes, deux sous-onglets : le TEMPS (une période qu'on détaille) et le
-# PRODUIT (un produit qu'on suit dans le temps). Ils ne se lisent pas ensemble
-# et ne partagent aucun réglage — les mêler dans une seule page était une part
-# de la densité qu'on cherche à réduire.
+# La lecture d'une période descend : la fenêtre d'ensemble, la période
+# choisie, sa composition, ce qui s'est vendu, puis — repliés — le grain fin
+# et les tickets. La maille (jour, semaine, mois) se choisit dans la barre
+# latérale.
 ui_detail <- function() {
   navset_card_tab(
     id = "detail_tabs",
@@ -1529,9 +1412,7 @@ ui_detail_periodes <- function() {
     uiOutput("det_bandeau", class = "zone-alerte"),
     div(class = "section-sub mt-2", textOutput("det_titre_periode", inline = TRUE)),
     uiOutput("det_kpi"),
-    # L'accordéon EST la progressivité : ce qui répond à « comment ça s'est
-    # passé » reste ouvert, ce qui répond à « pourquoi, dans le détail » se
-    # déplie à la demande. Sans lui, la page redeviendrait le mur qu'elle était.
+    # Ouvert : « comment ça s'est passé ». Replié : le détail.
     accordion(
       id = "det_sections",
       open = c("compo", "vendu"),
@@ -1567,9 +1448,6 @@ ui_detail_periodes <- function() {
               DTOutput("det_tickets")),
           div(h6("Distribution des paniers", class = "section-sub"),
               plotlyOutput("det_paniers", height = "260px"),
-              # Un histogramme se lit mal dans ses extrêmes : la barre d'un
-              # ticket unique à 1 200 € fait un pixel. Les trois chiffres, eux,
-              # se confrontent à la caisse.
               div(class = "small text-muted",
                   textOutput("det_resume_paniers", inline = TRUE)),
               h6(textOutput("det_titre_ticket", inline = TRUE),
@@ -1592,9 +1470,7 @@ ui_detail_periodes <- function() {
   )
 }
 
-# Un produit, suivi semaine après semaine. Le seul écran du dashboard qui
-# prenne le PRODUIT comme axe principal : Boissons et Nourriture regardent des
-# familles, Comparaison regarde des périodes.
+# Un produit, suivi semaine après semaine.
 ui_detail_produit <- function() {
   layout_sidebar(
     sidebar = sidebar(
@@ -1628,11 +1504,7 @@ ui_detail_produit <- function() {
 }
 
 
-# Drill-down "Par semaine" / "Par mois" de l'onglet Détail : même principe que
-# "Par jour" — on clique une barre pour détailler la période.
-# Périmètre : ce volet reste centré sur les VENTES (répartition, produits).
-# Le résultat financier de la période (coûts, marge, KPI) est dans l'onglet
-# Compta, qui offre la même granularité semaine / mois.
+# Onglet « Maintenant » : la veille, la semaine, le mois.
 
 ui_maintenant <- function() {
   tagList(
@@ -1640,9 +1512,7 @@ ui_maintenant <- function() {
     layout_columns(
       fill = FALSE,
       col_widths = c(4, 4, 4),
-      # uiOutput(inline = TRUE) et non textOutput : le titre porte désormais une
-      # pastille d'unité, donc du HTML. bslib conserve la classe
-      # value-box-title et le showcase (vérifié sur le rendu).
+      # uiOutput et non textOutput : le titre porte une pastille d'unité (HTML).
       value_box(uiOutput("title_vb_veille", inline = TRUE), textOutput("vb_ca_veille"),
                 showcase = icon("calendar-day"), theme = "primary"),
       value_box(uiOutput("title_vb_semaine", inline = TRUE), textOutput("vb_ca_semaine"),
@@ -1653,8 +1523,7 @@ ui_maintenant <- function() {
                 theme = value_box_theme(bg = "#efe7d8", fg = MZ_BRUN))
     ),
     # --- Veille ---
-    # Sur petit écran, le total passe sous la semaine plutôt que d'être
-    # comprimé dans une colonne de 2/12.
+    # Sur petit écran, le total passe sous la semaine.
     card(
       full_screen = TRUE,
       card_header("Semaine en cours"),
@@ -1665,8 +1534,7 @@ ui_maintenant <- function() {
       )
     ),
     # --- Semaines précédentes ---
-    # Vue condensée : le CA de chaque jour, coloré selon son objectif. Le
-    # détail complet est en infobulle, ce qui évite d'empiler cinq grilles.
+    # Le CA de chaque jour, coloré selon son objectif ; le détail en infobulle.
     card(
       full_screen = TRUE,
       card_header("5 dernières semaines"),
@@ -1674,11 +1542,6 @@ ui_maintenant <- function() {
       legende_objectif()
     ),
     # --- Semaine en cours ---
-    # card(
-    #   card_header("Cette semaine"),
-    #   
-    #   div(class = "mt-2", style = "max-width: 230px;", uiOutput("box_semaine_total"))
-    # ),
     card(
       card_header("Progression du mois vs objectif"),
       layout_columns(
@@ -1704,27 +1567,18 @@ ui_maintenant <- function() {
   )
 }
 
-#### Coquille ####
-# UI statique : navbar + grilles construites dès le chargement (toutes les
-# dépendances bslib sont livrées au démarrage). Le login est un simple overlay
-# masqué/affiché via shinyjs depuis le serveur — fini le swap renderUI, qui
-# empêchait les dépendances (grille, navbar) d'arriver côté client.
-#
-# Seul l'accueil est livré avec la page. Les autres onglets sont insérés un à
-# un après la connexion (nav_insert), ce qui laisse intacte la logique
-# ci-dessus : la coquille bslib, elle, est bien construite au chargement.
+# #### Coquille ####
+# UI statique : barre de navigation et onglet de départ construits au
+# chargement, avec toutes les dépendances bslib. Le login est un overlay
+# affiché ou masqué par shinyjs ; les autres onglets sont insérés après la
+# connexion (nav_insert).
 
-# ui.R et server.R sont évalués par Shiny dans deux environnements frères :
-# les constructeurs ui_*() définis ici sont invisibles depuis server.R, qui
-# doit pourtant les appeler pour insérer un onglet. On les publie donc dans le
-# registre prévu à cet effet (R/acces.R).
+# Les constructeurs ui_*() sont publiés pour server.R (cf. R/acces.R).
 enregistre_constructeurs_onglets(environment())
 
 ui <- page_fluid(
-  # `title` alimente le <title> du document : c'est le libellé de l'onglet du
-  # navigateur et le nom proposé par défaut à la mise en favori. À ne pas
-  # confondre avec le `title` de navset_bar(), qui est la marque affichée dans
-  # la barre de navigation.
+  # `title` : le titre de l'onglet du navigateur (la marque de la barre est
+  # celle de navset_bar()).
   title = "Mazette",
   lang  = "fr",
   useShinyjs(),

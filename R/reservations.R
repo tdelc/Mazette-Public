@@ -1,34 +1,26 @@
-# Volet "Réservations".
+# Volet « Réservations ».
 #
-# DB_RESA ne porte que trois colonnes : HEURE_DEB, HEURE_FIN, NB_PERS. Tout le
-# reste — jour, créneau, durée, taille de groupe — s'en déduit, et rien d'autre
-# n'est inventé. Il n'y a notamment ni nom, ni statut, ni annulation : on ne peut
-# donc pas parler de taux de no-show, seulement de réservations enregistrées.
+# DB_RESA ne porte que HEURE_DEB, HEURE_FIN, NB_PERS (plus le lieu) : tout le
+# reste s'en déduit. Ni nom, ni statut, ni annulation : pas de taux de
+# no-show possible.
 
-# Un groupe change de nature à partir de 6 : au-delà, il occupe plusieurs tables
-# et se prépare. Les seuils sont ici pour pouvoir être ajustés d'un seul endroit.
+# Tailles de groupe : les seuils sont réglables ici.
 SEUILS_GROUPE <- c(2, 4, 6, 10)
 
 TAILLES_GROUPE <- c("1-2 pers.", "3-4 pers.", "5-6 pers.",
                     "7-10 pers.", "11 et +")
 
-# Salle et terrasse ne se pilotent pas pareil : la terrasse dépend de la météo et
-# ferme l'hiver, la salle est la capacité stable. Les distinguer partout sauf
-# dans le lien avec le CA, où seul le total compte.
+# Salle et terrasse se distinguent partout, sauf dans le lien avec le CA.
 LIEUX <- c("SALLE", "TERRASSE")
 COUL_LIEU <- c("SALLE" = "#732c02", "TERRASSE" = "#5B7B5A",
                "Non précisé" = "#8d7b68")
 
-#' Normalise DB_RESA et en dérive les dimensions d'analyse.
-#'
-#' Le service du soir déborde après minuit : une réservation à 00h30 appartient
-#' au service de la veille. On rattache donc au jour de service, pas au jour
-#' calendaire — même convention que CD_HEURE côté tickets.
+#' Normalise DB_RESA et en dérive les dimensions d'analyse. Une réservation
+#' après minuit appartient au service de la veille.
 prepare_resa <- function(db) {
   if (is.null(db) || !nrow(db)) return(resa_vide())
 
-  # LOCATION et A_VENIR peuvent manquer sur un ancien export : on retombe alors
-  # sur des valeurs neutres plutôt que d'échouer.
+  # LOCATION et A_VENIR peuvent manquer sur un ancien export.
   if (!"LOCATION" %in% names(db)) db$LOCATION <- NA_character_
   if (!"A_VENIR"  %in% names(db)) db$A_VENIR  <- NA
 
@@ -37,7 +29,6 @@ prepare_resa <- function(db) {
            NB_PERS = as.numeric(NB_PERS),
            LOCATION = toupper(trimws(as.character(LOCATION))),
            LOCATION = if_else(LOCATION %in% LIEUX, LOCATION, "Non précisé"),
-           # A_VENIR absent : on retombe sur la date, faute de mieux.
            A_VENIR  = if_else(is.na(A_VENIR), DEB >= now(), as.logical(A_VENIR))) %>%
     filter(!is.na(DEB))
 
@@ -46,18 +37,13 @@ prepare_resa <- function(db) {
   d %>%
     mutate(
       HEURE   = as.integer(hour(DEB)),
-      # as.Date() sur un POSIXct bascule en UTC et recule d'un jour tout ce qui
-      # est entre minuit et l'écart horaire. On passe donc par la représentation
-      # locale, la seule qui corresponde à l'heure notée sur la réservation.
+      # as.Date() sur un POSIXct bascule en UTC : on passe par l'heure locale.
       DATE    = as.Date(format(DEB, "%Y-%m-%d")) - if_else(HEURE < 6, 1, 0),
-      # Une réservation à 0 h 30 est la queue du service du soir, pas un midi :
-      # le test sur l'heure seule la rangeait du mauvais côté.
+      # Après minuit, c'est le soir.
       CRENEAU = if_else(HEURE >= 6 & HEURE < 17, "Midi", "Soir"),
       JOUR    = wday(DATE, label = TRUE, abbr = FALSE, week_start = 1),
       SEMAINE = floor_date(DATE, "week", week_start = 1),
       MOIS    = floor_date(DATE, "month"),
-      # Une fin manquante ou antérieure au début ne donne pas de durée : on la
-      # laisse à NA plutôt que d'imposer une valeur par défaut.
       DUREE_MIN = if_else(!is.na(FIN) & FIN > DEB,
                           as.numeric(difftime(FIN, DEB, units = "mins")),
                           NA_real_),
@@ -77,8 +63,7 @@ resa_vide <- function() {
          LOCATION = character(), LIEU = factor(), A_VENIR = logical())
 }
 
-# Dimension de répartition d'un graphe empilé. Un seul point d'entrée pour que
-# les trois volets proposent exactement les mêmes découpages.
+# Dimension de répartition d'un graphe empilé, commune aux trois volets.
 dimension_resa <- function(d, par = c("lieu", "creneau", "taille")) {
   par <- match.arg(par)
   switch(par,
@@ -277,9 +262,6 @@ historique_resa <- function(resa, unite = c("semaine", "mois")) {
 }
 
 #' Historique empilé salle / terrasse, avec la taille moyenne en courbe.
-#'
-#' L'empilement par lieu est le plus parlant ici : il montre d'un coup la
-#' saisonnalité de la terrasse, que le total seul masque.
 graph_historique_resa <- function(hist, unite = "semaine") {
   if (!nrow(hist)) return(plotly_empty(type = "scatter", mode = "markers") %>%
                             layout(title = list(text = "Aucun historique")))
@@ -306,11 +288,9 @@ graph_historique_resa <- function(hist, unite = "semaine") {
 
 ##### Lien réservations / chiffre d'affaires #####
 
-#' Croise les couverts réservés et le CA, jour par jour.
-#'
-#' Attention à ce que ce croisement dit et ne dit pas : la réservation ne couvre
-#' qu'une partie de la clientèle — le reste entre sans réserver. La relation
-#' mesure donc l'apport des résas au CA, pas le remplissage de la salle.
+#' Croise les couverts réservés et le CA, jour par jour. La réservation ne
+#' couvre qu'une partie de la clientèle : on mesure l'apport des résas au CA,
+#' pas le remplissage.
 resa_vs_ca <- function(resa, db_kpi, d1 = NULL, d2 = NULL) {
   if (!nrow(resa)) return(tibble())
   r <- resa %>%
@@ -330,8 +310,7 @@ resa_vs_ca <- function(resa, db_kpi, d1 = NULL, d2 = NULL) {
   if (!is.null(d1)) d <- filter(d, DATE >= as.Date(d1))
   if (!is.null(d2)) d <- filter(d, DATE <= as.Date(d2))
 
-  # On ne garde que la période où les réservations existent : avant, l'absence
-  # de résa est un défaut de collecte, pas un jour sans réservation.
+  # Seulement depuis la première réservation enregistrée.
   debut <- min(resa$DATE, na.rm = TRUE)
   d %>% filter(DATE >= debut) %>%
     mutate(CA_PAR_COUVERT = if_else(COUVERTS > 0, CA / COUVERTS, NA_real_))
@@ -351,8 +330,7 @@ graph_resa_ca <- function(rc) {
                                        "<br>CA : ", format_CA(CA, -1),
                                        "<extra></extra>"))
 
-  # Régression simple : la pente s'interprète en euros de CA par couvert
-  # réservé. Elle n'a de sens que si les couverts varient assez.
+  # Régression simple : la pente est en euros de CA par couvert réservé.
   if (n_distinct(rc$COUVERTS) >= 5) {
     fit <- lm(CA ~ COUVERTS, data = rc)
     xs <- seq(min(rc$COUVERTS), max(rc$COUVERTS), length.out = 50)

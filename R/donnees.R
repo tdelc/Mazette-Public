@@ -1,71 +1,28 @@
 # Stockage normalisé des tickets, et reconstruction au chargement.
 #
-# Le fichier .RData ne contient qu'une forme réduite de DB_TICKET :
+# Le cache ne contient qu'une forme réduite de DB_TICKET :
 #
 #   DB_TICKET    : DATE, DATE_TS, HEURE, ID_TICKET, ID_REF, QUANTITE, PRIX_TOTAL
 #   REF_PRODUITS : ID_REF -> ID_PRODUIT, PRODUIT, PRODUIT_FULL, BOISSON,
 #                  CATEGORIE, TAUX_TVA, VOLUME_CL
 #
-# Ces six colonnes sont entièrement déterminées par la ligne du référentiel :
-# les répéter sur 245 000 lignes coûtait 1,2 Mo, alors que le référentiel tient
-# en quelques milliers de lignes et qu'une jointure au démarrage rend la table
-# d'origine.
+# Les attributs du produit vivent une fois dans le référentiel, et une
+# jointure au démarrage rend la table complète.
 #
-# Pourquoi DATE *et* DATE_TS : sur 3,2 % des lignes le TIMESTAMP ne tombe pas le
-# même jour que DATE — les tickets d'après minuit sont rattachés au service de la
-# veille, et quelques centaines de lignes portent un horodatage antérieur de
-# plusieurs mois (bons cadeaux honorés plus tard). Or CD_PERIODE_SEMAINE se
-# calcule sur le jour du TIMESTAMP : le déduire de DATE donnerait 2 136 lignes
-# fausses. On garde donc les deux dates, qui coûtent 3 Ko chacune, au lieu du
-# TIMESTAMP en texte qui en coûtait 124.
+# DATE et DATE_TS diffèrent sur quelques pour cent des lignes : DATE est le
+# jour de service (un ticket après minuit appartient à la veille), DATE_TS le
+# jour de l'horodatage, sur lequel se calcule CD_PERIODE_SEMAINE.
+#
+# La clé du référentiel est ID_REF, une par combinaison d'attributs observée,
+# et non ID_PRODUIT : la caisse laisse renommer une ligne, un même ID_PRODUIT
+# porte plusieurs libellés, et une jointure sur lui dupliquerait les ventes.
 
-# Pourquoi ID_TICKET y est revenu
-#
-# Il avait été écarté avec le reste, et c'était cohérent : rien ne s'en servait.
-# Le volet Détails en a désormais besoin — sans lui, deux lignes de la même
-# minute sont indiscernables d'un même ticket, et « nombre de tickets » comme
-# « panier moyen » ne se calculent pas du tout.
-#
-# Le coût a été mesuré plutôt que supposé : sur 245 000 lignes, la colonne
-# ajoute 60 Ko au .RData compressé, soit 6 % de sa taille. Les identifiants
-# croissent avec le temps, donc xz les réduit très bien. À ce prix-là, la
-# question ne se pose pas.
-#
-# NB_CLIENTS coûterait 68 Ko de plus et donnerait le panier PAR PERSONNE. Il
-# est resté dehors faute d'usage : le jour où un écran en aura besoin, il se
-# rajoutera de la même façon.
-
-# Pourquoi la clé du référentiel n'est PAS l'ID_PRODUIT
-#
-# La caisse laisse renommer une ligne : le même ID_PRODUIT y apparaît sous
-# « Latte », « Latte deca », « Latte chaud »... Le référentiel portait alors
-# plusieurs lignes pour cet ID, et la jointure de reconstruction, faite sur le
-# seul ID_PRODUIT, rendait CHAQUE ligne de caisse autant de fois qu'il existait
-# de libellés — un latte vendu une fois ressortait en six exemplaires, cinq
-# d'entre eux sans TVA ni catégorie. Quantités et CA TVAC s'en trouvaient
-# gonflés ; le CA HTVA, lui, survivait par accident, les lignes fantômes étant
-# à NA et écartées par na.rm.
-#
-# La clé est donc un identifiant de LIGNE DU RÉFÉRENTIEL (ID_REF), une par
-# combinaison d'attributs observée. La jointure redevient un à un, et
-# hydrate_donnees() est de nouveau l'inverse exact de normalise_tickets().
-# ID_REF remplace ID_PRODUIT dans la table stockée au lieu de s'y ajouter :
-# l'ID du produit se relit dans le référentiel.
 
 # Attributs déterminés par le produit vendu, et non par la vente elle-même.
 REF_COLONNES <- c("ID_PRODUIT", "PRODUIT", "PRODUIT_FULL", "BOISSON",
                   "CATEGORIE", "TAUX_TVA", "VOLUME_CL")
 
-# Taux de TVA qui désignent de la nourriture.
-#
-# Le test ne portait que sur le 12 % (nourriture sur place), et tout le reste
-# tombait dans « Boisson » — 6 % compris. Or le 6 % est de la nourriture à
-# emporter, et rien d'autre : chez Mazette, le compte de vente correspondant
-# (700100) ne porte que ça. Aucune de ces ventes n'arrivait donc du bon côté.
-#
-# Le cas n'est pas théorique : import.R force explicitement « Pain à emporter »
-# à 6 %. Les volumes sont faibles aujourd'hui, mais une règle fausse ne devient
-# pas juste en portant sur peu.
+# Taux de TVA de la nourriture : 12 % sur place, 6 % à emporter.
 TAUX_NOURRITURE <- c(0.06, 0.12)
 
 # Colonnes conservées dans le .RData (le reste se recalcule).
@@ -77,10 +34,8 @@ TICKET_COLONNES <- c("DATE", "DATE_TS", "HEURE", "ID_TICKET", "ID_REF",
 normalise_tickets <- function(db_ticket) {
   cols <- intersect(REF_COLONNES, names(db_ticket))
 
-  # La clé de regroupement est la combinaison complète des attributs, collée
-  # avec un séparateur qu'aucun nom de produit ne contient. paste() rend "NA"
-  # pour un NA, et c'est le comportement voulu : deux lignes également
-  # inconnues appartiennent bien à la même entrée du référentiel.
+  # Clé = combinaison complète des attributs. paste() rend "NA" pour un NA :
+  # deux lignes également inconnues partagent la même entrée.
   cle <- do.call(paste, c(unname(as.list(db_ticket[cols])), sep = "\u001f"))
   premiere <- !duplicated(cle)
 
@@ -89,8 +44,7 @@ normalise_tickets <- function(db_ticket) {
       mutate(DATE_TS = as_date(ymd_hms(TIMESTAMP, quiet = TRUE)),
              HEURE   = as.integer(hour(ymd_hms(TIMESTAMP, quiet = TRUE))),
              ID_REF  = match(cle, cle[premiere])) %>%
-      # any_of et non all_of : une source d'où ID_TICKET serait absent doit
-      # produire un cache amputé plutôt que faire tomber tout l'import.
+      # any_of : une source sans ID_TICKET donne un cache amputé, pas une erreur.
       select(any_of(TICKET_COLONNES)),
     REF_PRODUITS = db_ticket[premiere, cols, drop = FALSE] %>%
       as_tibble() %>%
@@ -98,13 +52,9 @@ normalise_tickets <- function(db_ticket) {
   )
 }
 
-# Rattache chaque ligne de caisse à sa ligne de référentiel.
-#
-# Le cas normal est la jointure sur ID_REF, un à un par construction. Un .RData
-# enregistré avant ID_REF ne porte que l'ID_PRODUIT : on ne peut alors joindre
-# que sur lui, et il faut d'abord ramener le référentiel à une ligne par
-# produit — sans quoi on reproduit exactement la duplication décrite plus haut.
-# On retient la ligne la mieux renseignée : celle qui porte un taux de TVA.
+# Rattache chaque ligne de caisse à sa ligne de référentiel : sur ID_REF
+# (un à un), ou sur ID_PRODUIT pour un cache ancien, après avoir ramené le
+# référentiel à une ligne par produit (celle qui porte un taux de TVA).
 joint_referentiel <- function(db_ticket, ref_produits) {
   if ("ID_REF" %in% names(db_ticket) && "ID_REF" %in% names(ref_produits))
     return(left_join(db_ticket, ref_produits, by = "ID_REF"))
@@ -118,16 +68,13 @@ joint_referentiel <- function(db_ticket, ref_produits) {
   left_join(db_ticket, ref1, by = "ID_PRODUIT")
 }
 
-# Reconstruit DB_TICKET dans sa forme complète, puis TICKETS_HEURES qui s'en
-# déduit. Appelée après chaque chargement ET à la fin de l'import : une seule
-# définition de la forme complète, donc aucun risque que les deux divergent.
-# Fonction pure : elle renvoie les deux tables, l'appelant les assigne.
+# Reconstruit DB_TICKET dans sa forme complète, puis TICKETS_HEURES. Appelée
+# après chaque chargement et à la fin de l'import. Fonction pure.
 hydrate_donnees <- function(db_ticket, ref_produits) {
   complet <- db_ticket %>%
     joint_referentiel(ref_produits) %>%
     mutate(
-      # heure_service() et hour() n'ont besoin que de l'heure : on recompose un
-      # POSIXct à la minute près nulle, ce qui suffit à tous les appelants.
+      # Un POSIXct à l'heure près suffit aux appelants.
       TIMESTAMP          = as.POSIXct(DATE_TS) + hours(HEURE),
       CD_HEURE           = if_else(HEURE < 17, "Midi (<17h)", "Soir (>=17h)"),
       CD_SECTEUR         = if_else(TAUX_TVA %in% TAUX_NOURRITURE,
@@ -145,12 +92,11 @@ hydrate_donnees <- function(db_ticket, ref_produits) {
   list(DB_TICKET = complet, TICKETS_HEURES = tickets_heures(complet))
 }
 
-# Applique l'hydratation dans un environnement donné : utilisé après chaque
-# chargement de .RData, où les tables arrivent sous leur forme réduite.
+# Applique l'hydratation dans un environnement donné, après un load().
 hydrate_dans <- function(envir) {
   ticket <- get0("DB_TICKET", envir = envir, inherits = FALSE)
   if (is.null(ticket)) return(invisible(FALSE))
-  # Un .RData d'avant la normalisation contient déjà la forme complète.
+  # Un cache ancien contient déjà la forme complète.
   if ("TIMESTAMP" %in% names(ticket)) return(invisible(FALSE))
 
   h <- hydrate_donnees(ticket, get("REF_PRODUITS", envir = envir))
@@ -159,8 +105,7 @@ hydrate_dans <- function(envir) {
   invisible(TRUE)
 }
 
-# Ventes agrégées par jour x créneau x produit. Recalculée au démarrage plutôt
-# que stockée : 70 000 lignes de plus dans le fichier pour ~150 ms de calcul.
+# Ventes agrégées par jour × créneau × produit, recalculées au démarrage.
 tickets_heures <- function(db_ticket) {
   db_ticket %>%
     filter(PRIX_TOTAL > 0) %>%
@@ -172,23 +117,11 @@ tickets_heures <- function(db_ticket) {
     mutate(CA_HTVA = CA_TVAC / (1 + TAUX_TVA))
 }
 
-##### La nomenclature des produits #####
+# ##### La nomenclature des produits #####
 
-# Ces trois fonctions vivent ici, et non dans import.R, parce qu'elles portent
-# les deux décisions qui ont fait perdre leur TVA à des produits entiers. Une
-# décision qu'on peut éprouver seule vaut mieux qu'une décision noyée dans
-# huit cents lignes d'import.
 
-# Le libellé canonique d'un produit : le plus FRÉQUENT.
-#
-# La caisse laisse renommer une ligne : un même ID_PRODUIT porte « Latte »
-# quatre mille fois et « Latte AVOINE » trois fois. Retenir le premier dans
-# l'ordre alphabétique faisait gagner la variante rare — et c'est ce libellé-là
-# qui sert ensuite à retrouver le taux de TVA dans l'export produits, où la
-# variante rare ne figure pas.
-#
-# À égalité de fréquence, l'ordre alphabétique tranche : le résultat doit être
-# le même d'un import à l'autre.
+# Le libellé canonique d'un produit : le plus fréquent (« Latte » plutôt que
+# « Latte AVOINE »), l'ordre alphabétique départageant les égalités.
 libelle_canonique <- function(db_ticket) {
   db_ticket %>%
     count(ID_PRODUIT, PRODUIT) %>%
@@ -199,14 +132,8 @@ libelle_canonique <- function(db_ticket) {
     select(ID_PRODUIT, PRODUIT)
 }
 
-# Le taux de TVA d'un produit, cherché sur TOUS ses libellés.
-#
-# L'export produits est indexé par libellé, pas par identifiant. Il suffit donc
-# qu'un seul des libellés d'un ID_PRODUIT y figure pour que son taux soit
-# connu ; le chercher sur le seul libellé canonique privait de taux — et donc
-# de catégorie et de CA HTVA — toutes les lignes du produit.
-#
-# En cas de désaccord entre deux libellés, le plus vendu tranche.
+# Le taux de TVA d'un produit, cherché sur tous ses libellés : l'export
+# produits est indexé par libellé. En cas de désaccord, le plus vendu tranche.
 tva_par_produit <- function(db_ticket, produits_ref) {
   db_ticket %>%
     count(ID_PRODUIT, PRODUIT_FULL = PRODUIT) %>%
@@ -221,24 +148,14 @@ tva_par_produit <- function(db_ticket, produits_ref) {
 
 # Les remises de la caisse, et leur taux de TVA.
 #
-# Une remise accordée sur une ligne sort de la caisse comme une ligne à part,
-# à montant NÉGATIF, nommée d'après le produit remisé : « 20% sur produit :
-# Espresso ». Ce libellé n'existe évidemment pas dans l'export produits : la
-# remise restait donc sans taux, hors de tout total HTVA — 167 libellés et
-# −2 % du CA TVAC en novembre 2026. Le CA HTVA était ainsi SURÉVALUÉ du
-# montant des remises.
+# Une remise sort de la caisse comme une ligne négative nommée d'après le
+# produit remisé (« 20% sur produit : Espresso »), libellé absent de l'export
+# produits. Elle prend le taux du produit remisé, cherché dans l'export puis
+# parmi les libellés de caisse ; à défaut, 21 %.
 #
-# Une remise porte le taux du produit qu'elle remise : c'est la même vente,
-# moins chère. On cherche donc ce produit, d'abord dans l'export produits,
-# puis parmi les libellés de caisse dont le taux est connu. Faute de le
-# trouver — un libellé renommé, une variante (« Flat White AVOINE ») —, la
-# remise prend le taux normal, 21 % : chez Mazette, les remises portent
-# presque toujours sur des boissons.
-#
-# La CATÉGORIE, elle, n'est pas reprise : une remise n'est pas un produit
-# vendu, et la compter parmi les « SALÉ » ou les « BIÈRE » ajouterait une
-# unité fantôme à chaque comptage par catégorie. Le taux suffit à la ranger
-# du bon côté des secteurs (cf. TAUX_NOURRITURE).
+# Pas de CATÉGORIE : une remise n'est pas un produit vendu, et compterait
+# sinon dans les comptages par catégorie. Le taux suffit à la ranger du bon
+# côté des secteurs.
 MOTIF_REMISE <- "^\\s*[0-9]+(?:[.,][0-9]+)?\\s*%\\s*sur\\s+produit\\s*:\\s*"
 TAUX_REMISE_DEFAUT <- 0.21
 
@@ -249,11 +166,8 @@ produit_remise <- function(libelle) {
   ifelse(est & nzchar(cible), cible, NA_character_)
 }
 
-# Le taux des produits « remise » encore sans taux, sous la forme de
-# tva_par_produit() — de quoi s'y ajouter par bind_rows().
-#
-# Les libellés se comparent sans casse ni espaces en trop : la caisse écrit
-# « Flat white » ici et « Flat White » là.
+# Le taux des remises encore sans taux, sous la forme de tva_par_produit().
+# Libellés comparés sans casse ni espaces en trop.
 tva_remises <- function(db_ticket, produits_ref, tva_par_id,
                         defaut = TAUX_REMISE_DEFAUT) {
   vide <- tibble(ID_PRODUIT = db_ticket$ID_PRODUIT[0], TAUX_TVA = numeric(),
@@ -281,8 +195,7 @@ tva_remises <- function(db_ticket, produits_ref, tva_par_id,
   restants %>%
     left_join(par_libelle, by = "CIBLE") %>%
     mutate(TAUX_TVA = coalesce(TAUX_TVA, defaut)) %>%
-    # Un même ID_PRODUIT peut porter plusieurs libellés : le plus vendu
-    # tranche, comme dans tva_par_produit().
+    # Le plus vendu des libellés d'un ID_PRODUIT tranche.
     arrange(ID_PRODUIT, desc(n)) %>%
     group_by(ID_PRODUIT) %>%
     slice(1) %>%
@@ -290,19 +203,14 @@ tva_remises <- function(db_ticket, produits_ref, tva_par_id,
     transmute(ID_PRODUIT, TAUX_TVA, CATEGORIE = NA_character_)
 }
 
-# Ce qui reste sans taux, avec ce que ça pèse.
-#
-# À regarder après chaque import : un produit qui apparaît ici ne compte dans
-# aucun total HTVA ni dans aucun découpage par secteur. Son montant TVAC, lui,
-# est réel — c'est de l'argent encaissé. Le remède est en amont : que le
-# libellé du ticket existe aussi dans l'export produits.
+# Ce qui reste sans taux, avec ce que ça pèse : hors de tout total HTVA. Le
+# remède est en amont, dans l'export produits.
 produits_sans_tva <- function(db_ticket, tva_par_id) {
   db_ticket %>%
     anti_join(tva_par_id, by = "ID_PRODUIT") %>%
     group_by(ID_PRODUIT, PRODUIT) %>%
     summarise(LIGNES = n(), QUANTITE = sum(QUANTITE, na.rm = TRUE),
               CA_TVAC = sum(PRIX_TOTAL, na.rm = TRUE), .groups = "drop") %>%
-    # Par POIDS, signe ignoré : trié par montant, une remise de −300 € passait
-    # derrière cent lignes à 0 € et la liste n'en montrait que les zéros.
+    # Par poids, signe ignoré : les remises sont négatives.
     arrange(desc(abs(CA_TVAC)))
 }

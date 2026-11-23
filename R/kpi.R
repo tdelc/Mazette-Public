@@ -1,12 +1,7 @@
-# Les tuiles de synthèse, partagées par tous les volets.
-#
-# Une tuile porte un chiffre, un intitulé, une couleur et parfois un
-# sous-titre. La couleur dit le verdict — c'est ici que vit le contrôle de
-# gestion des ratios (SEUILS_RATIOS est dans R/exploitation.R, à côté des
-# tuiles d'exploitation qui l'affichent).
+# Les tuiles de synthèse, partagées par tous les volets. La couleur porte le
+# verdict ; les seuils des ratios de gestion sont dans R/exploitation.R
+# (SEUILS_RATIOS).
 
-# Les tuiles du volet Travail vivent désormais dans R/travail.R
-# (kpi_travail), avec le reste du volet.
 
 ##### Tuiles KPI #####
 
@@ -22,8 +17,7 @@ couleur_seuil_haut <- function(x, bon, moyen) {
   if (x >= bon) COUL_VERT else if (x >= moyen) COUL_AMBRE else COUL_ROUGE
 }
 
-# Vectorisé : `if` prendrait la première valeur sur un vecteur, et lève une
-# erreur depuis R 4.2. Les appels scalaires sont inchangés.
+# Vectorisé : un `if` ne prendrait que la première valeur.
 format_pct <- function(x, nb = 1) ifelse(is.na(x), "—", paste0(round(x, nb), " %"))
 
 # Une tuile KPI (grand chiffre + libellé + icône en filigrane)

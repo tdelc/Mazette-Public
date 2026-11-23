@@ -64,8 +64,8 @@ ok("le compte d'exploitation s'arrête au mois en cours",
 
 #### Le garde-fou : aucun autre chemin vers DB_COMPTA ####
 
-# server.R lit DB_COMPTA à quatre endroits — coûts matière, accueil, socle du
-# volet Compta, comparaison de périodes. Un cinquième ajouté sans la coupe
+# server.R lit DB_COMPTA à plusieurs endroits — coûts matière, socle du
+# volet Compta, comparaison de périodes. Un passage de plus sans la coupe
 # ferait rentrer juin 2027 par la fenêtre, et personne ne le verrait : les
 # montants sont justes, c'est leur DATE qui ne l'est pas.
 srv <- readLines("server.R", encoding = "UTF-8", warn = FALSE)

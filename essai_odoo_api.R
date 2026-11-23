@@ -2,21 +2,10 @@
 #
 #   Rscript essai_odoo_api.R
 #
-# ---------------------------------------------------------------------------
-# Pourquoi ce script existe
-# ---------------------------------------------------------------------------
-# R/odoo_api.R a été écrit sans accès à la documentation d'Odoo. Le protocole
-# qu'il met en œuvre est donc une hypothèse — solide, mais une hypothèse.
-#
-# Ce script la met à l'épreuve point par point, du plus bête au plus engageant,
-# et S'ARRÊTE au premier qui tombe en disant lequel. L'ordre n'est pas
-# cosmétique : il sépare les causes. Si l'étape 2 passe et la 3 échoue, le
-# réseau et l'URL sont bons et le problème est la clé ; si la 4 échoue, les
-# identifiants sont bons et c'est un nom de champ qui est faux. Un seul appel
-# « qui ne marche pas » ne dirait rien de tout cela.
-#
-# Il ne modifie RIEN : que des lectures, et aucun fichier écrit sauf si tu
-# passes --csv.
+# Vérifie le protocole de R/odoo_api.R point par point, du plus simple au
+# plus engageant, et s'arrête au premier qui tombe en le nommant : l'étape
+# qui échoue sépare les causes (réseau, URL, clé, nom de champ). Ne modifie
+# rien.
 #
 # Options :
 #   --depuis=2026-07-01   ne lire qu'à partir de cette date (défaut : tout)
@@ -61,16 +50,14 @@ if (length(absents))
         "\n          ODOO_LOGIN=ton.adresse@mazette.be",
         "\n          ODOO_CLE_API=la-cle-generee-dans-Odoo")
 ids <- identifiants_odoo()
-# La clé n'est jamais affichée, même tronquée : un bout de secret dans un log
-# reste un bout de secret.
+# La clé n'est jamais affichée, même tronquée.
 vert("url =", ids$url, "| base =", ids$base, "| login =", ids$login,
      "| clé = définie (", nchar(ids$cle), "caractères )")
 
 # ---------------------------------------------------------------------------
 etape(2, "Le serveur répond (sans authentification)")
 # ---------------------------------------------------------------------------
-# Premier appel volontairement anonyme : s'il échoue, le problème est l'URL ou
-# le réseau, et surtout PAS la clé. C'est la moitié du temps de débogage gagnée.
+# Appel anonyme : s'il échoue, c'est l'URL ou le réseau, pas la clé.
 v <- tryCatch(odoo_version(ids$url), error = function(e)
   rouge(paste0("impossible de joindre ", ids$url, "/jsonrpc"),
         "\n          ", conditionMessage(e),
@@ -91,8 +78,7 @@ vert("connecté, uid =", uid)
 # ---------------------------------------------------------------------------
 etape(4, "Les champs demandés existent sur account.move.line")
 # ---------------------------------------------------------------------------
-# Un nom de champ faux ne rend pas une colonne vide : il fait échouer tout
-# l'appel, avec un message qui ne dit pas lequel. On demande donc d'abord.
+# Un nom de champ faux fait échouer tout l'appel : on demande d'abord.
 abs_champs <- tryCatch(champs_absents(ids, uid), error = function(e)
   rouge("fields_get a échoué : ", conditionMessage(e)))
 if (length(abs_champs))
@@ -123,8 +109,7 @@ vert(format(n_attendu, big.mark = " "), "écritures comptabilisées",
 # ---------------------------------------------------------------------------
 etape(6, "Une ligne, en détail")
 # ---------------------------------------------------------------------------
-# Avant de tirer 40 000 lignes, on en regarde UNE. C'est là qu'on voit si
-# « Compte » arrive bien en « 600100 Libellé » et non en identifiant nu.
+# Une ligne d'abord : « Compte » doit arriver en « 600100 Libellé ».
 une <- odoo_search_read(ids, uid, "account.move.line", DOMAINE_ODOO(DEPUIS),
                         names(CHAMPS_ODOO), taille = 1, max_pages = 1,
                         exige_complet = FALSE)
@@ -155,8 +140,7 @@ brut <- range_lignes(lignes)
 duree <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 1)
 vert(nrow(brut), "lignes en", duree, "s")
 
-# Le seul contrôle qui attrape une page perdue au milieu : search_count a
-# annoncé un nombre, on doit en ranger exactement autant.
+# search_count a annoncé un nombre : on doit en ranger exactement autant.
 if (MAXLIG == 0 && nrow(brut) != n_attendu)
   rouge("search_count annonçait ", n_attendu, " lignes, on en a rangé ",
         nrow(brut), ".",
@@ -166,8 +150,7 @@ if (MAXLIG == 0) vert("le compte correspond exactement à search_count")
 # ---------------------------------------------------------------------------
 etape(8, "La chaîne du dashboard, inchangée")
 # ---------------------------------------------------------------------------
-# Le point de tout l'exercice : à partir d'ici, c'est le code de la phase 1,
-# celui qui tourne déjà sur les exports fichier. Aucune branche « si API ».
+# À partir d'ici, le code commun aux exports et à l'API.
 ecr <- normalise_ecritures(brut)
 vert(nrow(ecr), "écritures normalisées (",
      nrow(brut) - nrow(ecr), "lignes sans compte ou sans date écartées )")
@@ -201,8 +184,7 @@ if (!nrow(p)) {
 # ---------------------------------------------------------------------------
 if (!is.null(FICHIER)) {
   etape(10, "Comparaison avec l'export manuel")
-  # Les deux sources doivent donner le même compte de résultat au centime près
-  # (docs/odoo.md §4, étape 4). Un écart n'est pas un arrondi à accepter.
+  # Les deux sources doivent donner le même compte de résultat au centime.
   cf <- compta_mensuelle(normalise_ecritures(lit_ecritures_fichier(FICHIER)))
   comp <- full_join(cp %>% select(ANNEE, MOIS, COMPTE, API = VALEUR),
                     cf %>% select(ANNEE, MOIS, COMPTE, FICHIER = VALEUR),

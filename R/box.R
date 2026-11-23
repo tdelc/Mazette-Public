@@ -1,9 +1,4 @@
-# Les encarts de l'écran d'accueil et du volet Maintenant.
-#
-# Des tuiles qui portent un chiffre, sa comparaison et sa couleur. Elles sont
-# construites ici plutôt que dans chaque volet, pour que « +12 % » veuille dire
-# la même chose partout.
-
+# Les encarts du volet Maintenant : un chiffre, sa comparaison, sa couleur.
 
 
 #### Box Ventes ####
@@ -68,10 +63,8 @@ box_ventes_total <- function(db_kpi,db_obj,date_debut,nb_jours,
 }
 
 
-# `montrer_unite` : par défaut, la pastille d'unité n'apparaît que si la série
-# ne compte qu'une carte. Sur les sept cartes d'une semaine elle se répéterait
-# à l'identique sept fois — du bruit, alors que le total juste à côté porte
-# déjà l'information. Passer TRUE pour forcer l'affichage partout.
+# `montrer_unite` : par défaut, la pastille d'unité n'apparaît que sur une
+# carte seule ; sur les sept cartes d'une semaine, elle se répéterait.
 table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
                       fl_semaine=TRUE,fl_objectif=TRUE,width = "14%",
                       unite_tva = "HTVA", montrer_unite = NULL){
@@ -120,15 +113,12 @@ table_kpi <- function(db,fl_midi=TRUE,fl_boisson=TRUE,
 }
 
 
-# Fonction pour générer une infoBox avec une info-bulle
-
 # Barre de répartition en deux segments. La mise en forme vit dans style.css
 # (.ventes-barre), pour que la barre s'adapte à la largeur de sa carte.
 generate_bar <- function(percent1, percent2, color1, color2, title) {
   if (is.na(percent1) || is.na(percent2) || percent1 + percent2 <= 0) return(NULL)
   
-  # On n'inscrit le pourcentage que si le segment est assez large : en dessous,
-  # le texte était rogné et illisible (« 7% » dans un filet de 10 px).
+  # Le pourcentage n'est inscrit que si le segment est assez large pour lui.
   etiquette <- function(p) if (p >= 18) paste0(p, "%") else ""
   
   div(
@@ -144,10 +134,8 @@ generate_bar <- function(percent1, percent2, color1, color2, title) {
 }
 
 # Carte de ventes d'une journée (ou d'un total) : CA, atteinte de l'objectif
-# et barres de répartition.
-# `width` n'est plus utilisé : la largeur est pilotée par la grille responsive
-# qui contient les cartes (.ventes-grid). L'argument reste pour ne pas casser
-# les appels existants.
+# et barres de répartition. `width` est ignoré : la grille .ventes-grid règle
+# la largeur.
 caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
                       percent_nourriture, percent_semaine, percent_weekend,
                       width = NULL, ca_color = NULL, objectif = NULL,
@@ -155,7 +143,7 @@ caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
 
   couleur <- if (is.null(ca_color)) couleur_objectif(ca, objectif) else ca_color
   
-  # Les barres n'ont pas de sens sur une journée sans activité
+  # Les barres n'ont pas de sens sur une journée sans activité.
   barres <- if (!is.na(ca) && ca > 5) {
     div(
       class = "ventes-barres",
@@ -168,8 +156,7 @@ caInfoBox <- function(title, ca, percent_midi, percent_soir, percent_boisson,
     )
   } else NULL
   
-  # L'unité était collée dans l'intitulé (« objectif HTVA 1 234 € ») : elle
-  # remonte sur le chiffre de CA, qui est celui qu'on lit et qu'on recopie.
+  # L'unité accompagne le chiffre de CA, celui qu'on lit et qu'on recopie.
   objectif_ligne <- if (!is.null(objectif) && !is.na(objectif) && objectif > 0) {
     div(class = "ventes-obj",
         "objectif ", format_CA(objectif, -1), " · ",

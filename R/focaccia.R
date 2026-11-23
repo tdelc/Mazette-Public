@@ -77,10 +77,8 @@ focaccias_variantes <- function(fo) {
 evo_focaccias <- function(db_produits, n_semaines = 26, fin = NULL, unite_tva = "HTVA") {
   fin <- if (is.null(fin)) max(db_produits$DATE, na.rm = TRUE) else as.Date(fin)
   debut <- floor_date(fin, "week", week_start = 1) - weeks(n_semaines - 1)
-  # Les quantités par option sont calculées AVANT le regroupement : dans un
-  # summarise(), `QUANTITE = sum(QUANTITE)` écrase la colonne, et un
-  # `QUANTITE[FROMAGE]` écrit ensuite indexerait le total (scalaire) au lieu
-  # des lignes — ce qui ne produit que des NA.
+  # Les quantités par option sont calculées avant le regroupement : dans un
+  # summarise(), `QUANTITE = sum(QUANTITE)` écraserait la colonne.
   conso_focaccias(db_produits, debut, fin, unite_tva) %>%
     mutate(SEMAINE   = floor_date(DATE, "week", week_start = 1),
            Q_FROMAGE = QUANTITE * FROMAGE,
@@ -114,7 +112,7 @@ kpi_focaccias_tiles <- function(fs, unite_tva = NULL) {
     tuile_evolution(ca, ca_m1, titre_avec_tva("CA focaccias", unite_tva), "euro-sign",
                     function(x) format_CA(x, -1)),
     kpi_tile(if (jours_ouverts > 0) format(round(q / jours_ouverts, 1)) else "—",
-             "Par jour d'ouverture", CONSO_BRUN, "gauge-high",
+             "Par jour d'ouverture", COUL_BRUN, "gauge-high",
              sous_titre = paste0(jours_ouverts, " jours servis")),
     tuile_evolution(pct(act, "FROMAGE"), pct(prec, "FROMAGE"),
                     "Avec fromage", "cheese", function(x) format_pct(x)),
@@ -130,14 +128,12 @@ graph_focaccias_jour <- function(jour_act, jour_prec) {
   if (is.null(jour_act) || nrow(jour_act) == 0)
     return(plotly_empty() %>% layout(title = "Aucune focaccia vendue"))
   
-  # `add_lines` retrie les points par x : avec des jours en texte, la trace S-1
-  # ressortait dans l'ordre alphabétique (dimanche, jeudi, lundi...). On passe
-  # donc un FACTEUR ORDONNÉ, dont le tri suit les niveaux lundi -> dimanche.
+  # Un facteur ordonné : add_lines() retrie les points par x.
   jours <- factor(as.character(jour_act$JOUR), levels = as.character(jour_act$JOUR))
   
   p <- plot_ly() %>%
     add_bars(x = jours, y = jour_act$QUANTITE, name = "Semaine",
-             marker = list(color = CONSO_BRUN),
+             marker = list(color = COUL_BRUN),
              hovertemplate = paste0(jours, "<br>", jour_act$QUANTITE,
                                     " focaccias<extra></extra>"))
   if (!is.null(jour_prec) && nrow(jour_prec) == nrow(jour_act))
@@ -165,7 +161,7 @@ graph_variantes_focaccias <- function(var) {
   
   plot_ly() %>%
     add_bars(x = as.character(doux$GARNITURE), y = doux$QUANTITE,
-             name = "Standard", marker = list(color = CONSO_AMBRE),
+             name = "Standard", marker = list(color = COUL_AMBRE),
              hovertemplate = paste0(doux$GARNITURE, "<br>", doux$QUANTITE,
                                     "<extra></extra>")) %>%
     add_bars(x = as.character(epice$GARNITURE), y = epice$QUANTITE,
@@ -184,8 +180,8 @@ graph_variantes_focaccias <- function(var) {
 graph_evo_focaccias <- function(evo, semaine = NULL) {
   if (is.null(evo) || nrow(evo) == 0)
     return(plotly_empty() %>% layout(title = "Aucune donnée"))
-  couleurs <- if (is.null(semaine)) CONSO_BRUN
-  else ifelse(evo$SEMAINE == as.Date(semaine), CONSO_AMBRE, CONSO_BRUN)
+  couleurs <- if (is.null(semaine)) COUL_BRUN
+  else ifelse(evo$SEMAINE == as.Date(semaine), COUL_AMBRE, COUL_BRUN)
   
   plot_ly(evo) %>%
     add_bars(x = ~SEMAINE, y = ~QUANTITE, name = "Focaccias",
@@ -234,9 +230,7 @@ table_focaccias <- function(fs, unite_tva = NULL) {
     mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
     arrange(desc(Q))
   
-  # Le total est calculé hors du mutate : `ifelse(sum(Q) > 0, ...)` renverrait
-  # une valeur de longueur 1 (la condition est un scalaire), recyclée sur
-  # toutes les lignes — toutes les parts afficheraient le même pourcentage.
+  # Total calculé à part : un ifelse() à condition scalaire serait recyclé.
   total <- sum(res$Q)
   
   res %>%
@@ -244,8 +238,7 @@ table_focaccias <- function(fs, unite_tva = NULL) {
            EVO = ifelse(Q_M1 > 0, round(100 * (Q - Q_M1) / Q_M1, 1), NA_real_)) %>%
     transmute(Variante   = VARIANTE,
               Quantité   = Q,
-              # une décimale : à l'entier, huit petites parts arrondies
-              # chacune vers le haut faisaient une somme à 102 %
+              # Une décimale : à l'entier, les parts ne somment pas à 100 %.
               `Part`           = ifelse(is.na(PART), "—", paste0(round(PART, 1), " %")),
               !!sym(col_name) := format_CA(CA, -1),
               `Qté S-1`        = Q_M1,
@@ -254,13 +247,11 @@ table_focaccias <- function(fs, unite_tva = NULL) {
 }
 
 
-##### Focaccias — aide à la production #####
+# ##### Focaccias — aide à la production #####
 # Combien produire de chaque préparation pour la semaine à venir ?
-#
 
 
-# Dernières semaines ENTIÈREMENT couvertes par les données. Une semaine
-# tronquée par la fin du jeu de données tirerait la moyenne vers le bas.
+# Dernières semaines entièrement couvertes par les données.
 semaines_completes <- function(dates, n = 3, fin = NULL) {
   dates <- as.Date(dates)
   fin <- if (is.null(fin)) max(dates, na.rm = TRUE) else as.Date(fin)

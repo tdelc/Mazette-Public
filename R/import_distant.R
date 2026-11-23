@@ -1,29 +1,10 @@
-# Faire tourner l'import ailleurs qu'ici.
+# Lancer l'import ailleurs que dans le processus Shiny, qui n'a qu'un fil
+# d'exécution : le workflow GitHub Actions (.github/workflows/import.yml)
+# relit les sources et dépose le cache sur Drive, que le dashboard reprend
+# ensuite (cf. recharge_donnees()).
 #
-# ---------------------------------------------------------------------------
-# Le problème
-# ---------------------------------------------------------------------------
-# L'import lit une dizaine de classeurs Drive et interroge Odoo : quelques
-# minutes, et une pointe de mémoire. Le lancer DANS le processus Shiny, c'est
-# geler le dashboard pour tout le monde pendant ce temps — R n'a qu'un fil
-# d'exécution, et l'hébergeur ne promet qu'un gigaoctet.
-#
-# Le travail va donc ailleurs : un workflow GitHub Actions
-# (.github/workflows/import.yml) fait exactement ce que faisait l'import au
-# démarrage — lire les sources, écrire le .RData, le déposer sur Drive — et le
-# dashboard n'a plus qu'à reprendre le fichier (cf. recharge_donnees()).
-#
-# Ce fichier est le fil qui relie les deux : déclencher le workflow, et savoir
-# où il en est.
-#
-# ---------------------------------------------------------------------------
-# Ce qui n'est pas ici
-# ---------------------------------------------------------------------------
-# Le jeton. Le dépôt est public : GH_TOKEN_IMPORT vit dans les variables
-# d'environnement de l'hébergeur, comme LINK_JSON et les identifiants Odoo.
-# Sans lui, config_import_distant() rend NULL et le dashboard se rabat sur
-# l'import local — ce qui est le bon comportement en développement, où bloquer
-# son propre R pendant trois minutes ne dérange personne.
+# Le jeton GH_TOKEN_IMPORT vit dans les variables de l'hébergeur. Sans lui,
+# config_import_distant() rend NULL et l'import se fait sur place.
 
 DEPOT_DEFAUT    <- "tdelc/Mazette-Public"
 REF_DEFAUT      <- "main"
@@ -35,9 +16,7 @@ IMPORT_DISTANT_ENV <- c(token = "GH_TOKEN_IMPORT",  # un PAT « fine-grained »,
                         ref   = "GH_REF")           # facultatif
 
 #' Les identifiants du dépôt, ou NULL si l'import distant n'est pas configuré.
-#'
-#' Seul le jeton est obligatoire : le dépôt et la branche ont des valeurs par
-#' défaut justes, et les écrire deux fois serait deux fois à les corriger.
+#' Seul le jeton est obligatoire.
 config_import_distant <- function(env = IMPORT_DISTANT_ENV) {
   v <- vapply(env, Sys.getenv, "")
   if (!nzchar(v[["token"]])) return(NULL)
@@ -46,10 +25,7 @@ config_import_distant <- function(env = IMPORT_DISTANT_ENV) {
        ref   = if (nzchar(v[["ref"]]))   v[["ref"]]   else REF_DEFAUT)
 }
 
-#' L'appel HTTP, isolé pour que tout le reste se teste sans réseau.
-#'
-#' Rend toujours la même forme — un code et un contenu — quel que soit le
-#' verbe. La suite de tests passe une doublure à sa place.
+#' L'appel HTTP, isolé pour que le reste se teste sans réseau.
 appel_github <- function(methode, url, conf, corps = NULL) {
   entetes <- httr::add_headers(
     Authorization          = paste("Bearer", conf$token),
@@ -69,11 +45,9 @@ url_workflow <- function(conf, workflow = WORKFLOW_IMPORT, suffixe)
   paste0("https://api.github.com/repos/", conf$depot,
          "/actions/workflows/", workflow, "/", suffixe)
 
-#' Demander un import complet au serveur d'intégration.
+#' Demander un import complet à GitHub Actions.
 #'
-#' @return `list(ok, message)`. Le message est destiné à l'écran : il nomme ce
-#'   qui manque plutôt que le code HTTP, parce que « 404 » n'a jamais aidé
-#'   personne à comprendre qu'un fichier de workflow n'était pas sur la branche.
+#' @return `list(ok, message)`, le message étant écrit pour l'écran.
 declenche_import_distant <- function(conf = config_import_distant(),
                                      workflow = WORKFLOW_IMPORT,
                                      appel = appel_github) {
@@ -129,8 +103,7 @@ etat_import_distant <- function(conf = config_import_distant(),
        message    = texte_etat_import(run))
 }
 
-# `x %||% y` est dans base depuis R 4.4 seulement, et le dépôt doit tourner
-# sur un peu plus ancien : on se passe de l'opérateur.
+# %||% n'est dans base que depuis R 4.4.
 ou_na <- function(x) if (is.null(x) || !length(x)) NA_character_ else as.character(x)
 
 #' L'état d'une exécution, en une ligne lisible.

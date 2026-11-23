@@ -30,11 +30,8 @@ label_periode <- function(periode, unite = c("semaine", "mois", "annee")) {
          annee   = format(periode, "%Y"))
 }
 
-# Ratio en % (NA si dénominateur nul)
-#
-# ifelse() renvoie un vecteur de la longueur de sa CONDITION : avec un
-# dénominateur scalaire et un numérateur vectoriel, il ne rendait qu'une seule
-# valeur, recyclée sur toute la colonne. On recycle donc explicitement.
+# Ratio en % (NA si dénominateur nul). Les deux vecteurs sont recyclés
+# explicitement : ifelse() rendrait la longueur de sa seule condition.
 ratio_pct <- function(num, den) {
   n <- max(length(num), length(den))
   if (n == 0) return(numeric(0))
@@ -42,16 +39,8 @@ ratio_pct <- function(num, den) {
   ifelse(!is.na(den) & den > 0, round(100 * num / den, 1), NA_real_)
 }
 
-# Étiquette d'unité de TVA, à accoler à un intitulé de CA.
-#
-# Le style est volontairement défini en CSS (.badge-tva) plutôt qu'en ligne :
-# la pastille se pose sur des fonds très différents — brun, ambre, crème — et
-# doit rester lisible sur les trois. Elle emprunte donc sa couleur au texte qui
-# l'entoure via currentColor, au lieu de figer un couple fond/texte qui serait
-# faux dans deux cas sur trois.
-#
-# Titre d'un value_box :
-#   output$title_vb <- renderUI(titre_avec_tva("CA de la veille", input$unite_tva))
+# Pastille d'unité de TVA, à accoler à un intitulé de CA. Son style vit en
+# CSS (.badge-tva, en currentColor) pour rester lisible sur tous les fonds.
 badge_tva <- function(unite) {
   if (is.null(unite) || !nzchar(unite)) return(NULL)
   span(class = "badge-tva", unite)
@@ -86,28 +75,11 @@ bandeau_alerte <- function(afficher, texte,
   )
 }
 
-# Les zones d'alerte, et le verrou qu'elles referment sur elles-mêmes.
+# Zones d'alerte : les uiOutput de classe `zone-alerte` dans ui.R.
 #
-# ---------------------------------------------------------------------------
-# Le piège, en trois temps
-# ---------------------------------------------------------------------------
-# 1. Un uiOutput vide reste un <div>, et la grille bslib lui accorde quand même
-#    son gap. D'où `.zone-alerte:empty { display: none }` dans www/style.css,
-#    pour qu'une alerte absente ne laisse pas une bande blanche.
-# 2. Mais Shiny SUSPEND les sorties masquées (suspendWhenHidden, vrai par
-#    défaut) : il ne calcule pas ce que personne ne regarde.
-# 3. Au démarrage, la zone est vide, donc masquée, donc suspendue, donc jamais
-#    calculée, donc toujours vide. Le verrou est parfait, et parfaitement
-#    silencieux : la sortie reste bloquée sur « recalculating », sans erreur,
-#    sans message, et sans jamais rien afficher.
-#
-# Dix bandeaux en étaient morts sans que personne s'en aperçoive — y compris
-# celui qui signale une comptabilité incomplète, et celui qui renvoie vers les
-# onglets où vivent les coûts.
-#
-# La liste est NOMMÉE ici plutôt que devinée : un test vérifie qu'elle couvre
-# exactement les uiOutput marqués `zone-alerte` dans ui.R, pour que la
-# prochaine zone ajoutée ne retombe pas dans le même verrou.
+# Une zone vide est masquée en CSS (.zone-alerte:empty), et Shiny suspend les
+# sorties masquées. Sans réveil explicite, une zone vide au démarrage ne serait
+# donc jamais calculée. Un test vérifie que cette liste couvre toutes les zones.
 ZONES_ALERTE <- c(
   "src_alerte_onss", "src_alerte_manque",
   "expl_vraisemblance", "expl_alerte_periode",
@@ -118,10 +90,8 @@ ZONES_ALERTE <- c(
   "det_bandeau", "det_tickets_alerte"
 )
 
-# À appeler une fois, à la fin du serveur : toutes les sorties doivent exister.
-#
-# Pas de try() autour : un identifiant qui ne correspond à rien doit faire
-# tomber l'application au démarrage, pas disparaître dans un silence de plus.
+# À appeler une fois, à la fin du serveur. Pas de try() : un identifiant
+# inconnu doit faire tomber l'application au démarrage.
 reveille_zones_alerte <- function(output, zones = ZONES_ALERTE) {
   for (id in zones) outputOptions(output, id, suspendWhenHidden = FALSE)
   invisible(zones)
