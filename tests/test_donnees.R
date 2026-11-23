@@ -66,3 +66,44 @@ ok("une biere a 21 % reste une boisson",
 ok("la pizza sur place, a 12 %, est de la nourriture",
    h$CD_SECTEUR[h$PRODUIT_FULL == "Pizza"] == "Nourriture")
 ok("aucune vente sans nature", !any(is.na(h$CD_SECTEUR)))
+
+# ---------- les remises de la caisse ----------
+# « 20% sur produit : Espresso » : une ligne negative, absente de l'export
+# produits. Elle doit prendre le taux du produit remise, ou 21 % a defaut.
+ok("un libelle de remise designe son produit",
+   identical(produit_remise(c("20% sur produit : Espresso",
+                              "10 % sur produit: Jus pomme 25cL ",
+                              "Espresso", "20% sur produit : ")),
+             c("Espresso", "Jus pomme 25cL", NA, NA)))
+tk <- tibble(ID_PRODUIT = c(1, 2, 3, 4, 5, 5),
+             PRODUIT = c("Espresso", "Cannelés de Bordeaux",
+                         "20% sur produit : espresso",
+                         "10% sur produit : Cannelés de Bordeaux",
+                         "10% sur produit : Flat White AVOINE",
+                         "10% sur produit : Flat White AVOINE"),
+             PRIX_TOTAL = c(3, 4, -0.6, -0.4, -0.5, -0.5), QUANTITE = 1)
+ref <- tibble(PRODUIT_FULL = "Cannelés de Bordeaux", TAUX_TVA = 0.12,
+              CATEGORIE = "SUCRÉ")
+tva_id <- tibble(ID_PRODUIT = 1, TAUX_TVA = 0.21, CATEGORIE = "CAFÉ")
+rem <- tva_remises(tk, ref, tva_id)
+ok("chaque remise sans taux en recoit un", setequal(rem$ID_PRODUIT, c(3, 4, 5)))
+ok("par le libelle de caisse du produit, sans tenir compte de la casse",
+   rem$TAUX_TVA[rem$ID_PRODUIT == 3] == 0.21)
+ok("par l'export produits quand il le connait",
+   rem$TAUX_TVA[rem$ID_PRODUIT == 4] == 0.12)
+ok("et 21 % quand le produit remise est introuvable",
+   rem$TAUX_TVA[rem$ID_PRODUIT == 5] == 0.21)
+ok("une remise ne prend pas de categorie", all(is.na(rem$CATEGORIE)))
+ok("un produit deja connu n'est pas touche", !1 %in% rem$ID_PRODUIT)
+ok("un produit ordinaire sans taux reste signale",
+   { tk2 <- bind_rows(tk, tibble(ID_PRODUIT = 6, PRODUIT = "Mystère",
+                                  PRIX_TOTAL = 2, QUANTITE = 1))
+     r2 <- tva_remises(tk2, ref, tva_id)
+     !6 %in% r2$ID_PRODUIT &&
+       identical(produits_sans_tva(tk2, bind_rows(tva_id, r2))$PRODUIT,
+                 c("Cannelés de Bordeaux", "Mystère")) })
+ok("le controle trie par poids, signe ignore",
+   { tk3 <- tibble(ID_PRODUIT = c(7, 8), PRODUIT = c("a", "b"),
+                   PRIX_TOTAL = c(0, -300), QUANTITE = 1)
+     produits_sans_tva(tk3, tva_id[0, ])$PRODUIT[1] == "b" })
+

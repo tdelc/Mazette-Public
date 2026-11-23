@@ -754,6 +754,13 @@ PRODUITS_REF[PRODUITS_REF$PRODUIT_FULL %in% vec_sucre,"CATEGORIE"] <- "SUCRÉ"
 # Le taux de TVA, cherché sur tous les libellés du produit (cf. R/donnees.R).
 TVA_PAR_ID <- tva_par_produit(DB_TICKET, PRODUITS_REF)
 
+# Les remises (« 20% sur produit : Espresso ») prennent le taux du produit
+# remisé, ou 21 % s'il est introuvable (cf. R/donnees.R).
+TVA_REMISES <- tva_remises(DB_TICKET, PRODUITS_REF, TVA_PAR_ID)
+if (nrow(TVA_REMISES))
+  cli::cli_alert_info("{nrow(TVA_REMISES)} remise{?s} rattachée{?s} au taux du produit remisé.")
+TVA_PAR_ID <- bind_rows(TVA_PAR_ID, TVA_REMISES)
+
 # On GARDE les produits dont aucun libellé n'a de taux, au lieu de les écarter.
 #
 # Les écarter ne les faisait pas disparaître des tickets : leurs lignes y
